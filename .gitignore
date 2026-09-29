@@ -51,3 +51,6 @@ $RECYCLE.BIN/
 # Build artifacts
 *.exe
 *.obj
+
+out/
+

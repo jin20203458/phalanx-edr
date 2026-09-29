@@ -25,6 +25,7 @@ Focus: Deterministic low-overhead ETW kernel telemetry, zero-loss double-buffere
 </engineering_rules>
 
 <critical_rules>
+- **Build/Run**: (Phase 1 확립 예정) Sensor 빌드는 `powershell -ExecutionPolicy Bypass -File .\build_local.ps1`, Core/Cockpit은 `dotnet build Phalanx.sln` 예정.
 - **Paths**: Use relative paths (`../Obsidian.Agent/`, etc.)
 - **Privileges**: Sensor executable requires administrator elevation (`requireAdministrator` in app.manifest) for ETW kernel sessions.
 - **Secrets**: NEVER commit API keys, Google Cloud credentials, or private threat intelligence tokens to git.

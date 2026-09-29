@@ -50,6 +50,7 @@ message MitigationCommand {
         ACTION_RESUME = 1;          // Unfreeze suspended process/thread
         ACTION_BLOCK_IP = 2;        // Network isolation
         ACTION_EXTEND_TIMEOUT = 3;  // One-shot extension for deep AI investigation (max 1 time)
+        ACTION_SUSPEND = 4;         // Freeze target process for AI deep investigation (preserves volatile memory)
     }
     ActionType action = 1;
     uint32 target_pid = 2;

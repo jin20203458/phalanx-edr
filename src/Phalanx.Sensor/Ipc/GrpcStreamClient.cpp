@@ -121,6 +121,9 @@ bool GrpcStreamClient::Start() {
                                         case phalanx::MitigationCommand::ACTION_EXTEND_TIMEOUT:
                                             impl_->actuator->ExtendTimeout(cmd.target_pid());
                                             break;
+                                        case phalanx::MitigationCommand::ACTION_SUSPEND:
+                                            impl_->actuator->SuspendProcess(cmd.target_pid());
+                                            break;
                                         default:
                                             break;
                                     }

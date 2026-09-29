@@ -152,7 +152,7 @@ void ProcessTree::EvictOldestTombstoneInternal() {
 
     auto it = nodes_.find(evict_pid);
     if (it != nodes_.end() && !it->second.is_alive) {
-        // 부모의 자식 목록에서도 정리
+        // 부모의 자식 목록에서도 정리 (상향 링크 절단)
         if (it->second.ppid != 0) {
             auto parent_it = nodes_.find(it->second.ppid);
             if (parent_it != nodes_.end()) {
@@ -160,6 +160,15 @@ void ProcessTree::EvictOldestTombstoneInternal() {
                 ch.erase(std::remove(ch.begin(), ch.end(), evict_pid), ch.end());
             }
         }
+
+        // 자식들의 부모 링크 정리 (하향 링크 절단: 고아 처리)
+        for (uint32_t child_pid : it->second.children_pids) {
+            auto child_it = nodes_.find(child_pid);
+            if (child_it != nodes_.end() && child_it->second.ppid == evict_pid) {
+                child_it->second.ppid = 0;
+            }
+        }
+
         nodes_.erase(it);
     }
 }

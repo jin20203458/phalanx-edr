@@ -1,3 +1,4 @@
-﻿add_subdirectory(SensorTests)
+add_subdirectory(SensorTests)
 add_subdirectory(MockGrpcServer)
 add_subdirectory(IpcE2ETest)
+add_subdirectory(EngineTests)

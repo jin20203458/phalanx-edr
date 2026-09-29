@@ -1,4 +1,4 @@
-﻿set(SENSOR_SOURCES
+set(SENSOR_SOURCES
     main.cpp
     Actuator/SafetyWatchdog.h
     Actuator/SafetyWatchdog.cpp
@@ -6,6 +6,10 @@
     Actuator/ProcessActuator.cpp
     Collector/EtwKernelCollector.h
     Collector/EtwKernelCollector.cpp
+    Process/ProcessTree.h
+    Process/ProcessTree.cpp
+    Rules/LocalRuleEngine.h
+    Rules/LocalRuleEngine.cpp
     Queue/DoubleBufferedSwapQueue.h
     Ipc/GrpcStreamClient.h
     Ipc/GrpcStreamClient.cpp

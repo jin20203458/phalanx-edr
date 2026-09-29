@@ -1,9 +1,11 @@
-﻿#pragma once
+#pragma once
 
 #include <memory>
 #include <string>
 #include <functional>
 #include "../Queue/DoubleBufferedSwapQueue.h"
+#include "../Process/ProcessTree.h"
+#include "../Rules/LocalRuleEngine.h"
 #include "phalanx.pb.h"
 
 namespace Phalanx::Collector {
@@ -16,15 +18,22 @@ using ProcessEventCallback = std::function<void(const phalanx::ProcessEvent&)>;
  *
  * Microsoft-Windows-Kernel-Process 매니페스트 프로바이더를 실시간 구독하여,
  * ProcessStart(이벤트 ID 1) 및 ProcessStop(이벤트 ID 2) 이벤트를 블로킹 없이
- * 마이크로초 단위 속도로 파싱하여 DoubleBufferedSwapQueue로 즉각 푸시합니다.
+ * 마이크로초 단위 속도로 파싱하고 ProcessTree 갱신 및 LocalRuleEngine 평가를 거쳐
+ * DoubleBufferedSwapQueue로 즉각 푸시합니다.
  */
 class EtwKernelCollector {
 public:
-    explicit EtwKernelCollector(std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> queue);
+    explicit EtwKernelCollector(
+        std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> queue,
+        std::shared_ptr<Process::ProcessTree> tree = nullptr,
+        std::shared_ptr<Rules::LocalRuleEngine> rule_engine = nullptr);
     ~EtwKernelCollector();
 
     EtwKernelCollector(const EtwKernelCollector&) = delete;
     EtwKernelCollector& operator=(const EtwKernelCollector&) = delete;
+
+    void SetProcessTree(std::shared_ptr<Process::ProcessTree> tree);
+    void SetRuleEngine(std::shared_ptr<Rules::LocalRuleEngine> rule_engine);
 
     /**
      * @brief 실시간 콘솔 출력 또는 1차 반사신경 진단을 위한 옵저버 콜백 등록

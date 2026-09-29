@@ -9,6 +9,8 @@ namespace Phalanx::Collector {
 
 struct EtwKernelCollector::Impl {
     std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> queue;
+    std::shared_ptr<Process::ProcessTree> tree;
+    std::shared_ptr<Rules::LocalRuleEngine> rule_engine;
     ProcessEventCallback observer_callback;
 
     std::atomic<bool> running{false};
@@ -16,16 +18,29 @@ struct EtwKernelCollector::Impl {
     std::unique_ptr<krabs::user_trace> trace;
     std::thread worker_thread;
 
-    explicit Impl(std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> q)
-        : queue(std::move(q)) {}
+    explicit Impl(std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> q,
+                  std::shared_ptr<Process::ProcessTree> t,
+                  std::shared_ptr<Rules::LocalRuleEngine> r)
+        : queue(std::move(q)), tree(std::move(t)), rule_engine(std::move(r)) {}
 };
 
-EtwKernelCollector::EtwKernelCollector(std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> queue)
-    : impl_(std::make_unique<Impl>(std::move(queue))) {
+EtwKernelCollector::EtwKernelCollector(
+    std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> queue,
+    std::shared_ptr<Process::ProcessTree> tree,
+    std::shared_ptr<Rules::LocalRuleEngine> rule_engine)
+    : impl_(std::make_unique<Impl>(std::move(queue), std::move(tree), std::move(rule_engine))) {
 }
 
 EtwKernelCollector::~EtwKernelCollector() {
     Stop();
+}
+
+void EtwKernelCollector::SetProcessTree(std::shared_ptr<Process::ProcessTree> tree) {
+    impl_->tree = std::move(tree);
+}
+
+void EtwKernelCollector::SetRuleEngine(std::shared_ptr<Rules::LocalRuleEngine> rule_engine) {
+    impl_->rule_engine = std::move(rule_engine);
 }
 
 void EtwKernelCollector::SetProcessObserver(ProcessEventCallback callback) {
@@ -82,7 +97,19 @@ bool EtwKernelCollector::Start() {
 
                             uint64_t ts = static_cast<uint64_t>(record.EventHeader.TimeStamp.QuadPart);
                             ev.set_timestamp_ns(ts);
-                            ev.set_is_suspended(false);
+
+                            // 1. C++ 인메모리 프로세스 트리(DAG) 갱신
+                            if (impl_->tree) {
+                                impl_->tree->OnProcessStart(ev);
+                            }
+
+                            // 2. 100μs 로컬 규칙 엔진 평가 및 액추에이터 집행 (사살/동결/통과)
+                            if (impl_->rule_engine && impl_->tree) {
+                                impl_->rule_engine->EvaluateAndAct(ev, *impl_->tree);
+                            } else {
+                                ev.set_is_suspended(false);
+                                ev.set_is_terminated(false);
+                            }
 
                             impl_->events_captured.fetch_add(1, std::memory_order_relaxed);
 
@@ -94,6 +121,16 @@ bool EtwKernelCollector::Start() {
                             // 락-스왑 큐로 즉시 푸시 (수집 스레드 블로킹 방지)
                             if (impl_->queue) {
                                 impl_->queue->Push(std::move(ev));
+                            }
+                        } else if (schema.event_id() == 2) {
+                            // 이벤트 ID 2: ProcessStop (프로세스 종료)
+                            krabs::parser parser(schema);
+                            uint32_t pid = 0;
+                            if (parser.try_parse(L"ProcessID", pid)) {
+                                if (impl_->tree) {
+                                    uint64_t ts = static_cast<uint64_t>(record.EventHeader.TimeStamp.QuadPart);
+                                    impl_->tree->OnProcessStop(pid, ts);
+                                }
                             }
                         }
                     } catch (...) {

@@ -19,6 +19,8 @@
 #include "Queue/DoubleBufferedSwapQueue.h"
 #include "Actuator/SafetyWatchdog.h"
 #include "Actuator/ProcessActuator.h"
+#include "Process/ProcessTree.h"
+#include "Rules/LocalRuleEngine.h"
 #include "Collector/EtwKernelCollector.h"
 #include "Ipc/GrpcStreamClient.h"
 
@@ -94,10 +96,29 @@ int main(int argc, char* argv[]) {
     auto watchdog = std::make_shared<Phalanx::Actuator::SafetyWatchdog>(std::chrono::milliseconds(10000));
     auto actuator = std::make_shared<Phalanx::Actuator::ProcessActuator>(watchdog);
 
-    // 4. ETW 커널 이벤트 수집기 초기화 및 가동
-    auto collector = std::make_shared<Phalanx::Collector::EtwKernelCollector>(queue);
+    // 4. C++ 인메모리 프로세스 트리(DAG) 및 스냅샷 웜업 초기화
+    auto process_tree = std::make_shared<Phalanx::Process::ProcessTree>();
+    if (process_tree->InitializeFromSnapshot()) {
+        std::cout << "🌳 [ProcessTree] 기동 스냅샷 웜업 완료 (활성 프로세스: "
+                  << process_tree->ActiveNodeCount() << "개)" << std::endl;
+    } else {
+        std::cout << "⚠️ [ProcessTree] 기동 스냅샷 웜업 실패 (빈 트리로 시작)" << std::endl;
+    }
+
+    // 5. 100μs 로컬 규칙 엔진 초기화
+    auto rule_engine = std::make_shared<Phalanx::Rules::LocalRuleEngine>(actuator);
+
+    // 6. ETW 커널 이벤트 수집기 초기화 및 가동
+    auto collector = std::make_shared<Phalanx::Collector::EtwKernelCollector>(queue, process_tree, rule_engine);
     collector->SetProcessObserver([](const phalanx::ProcessEvent& ev) {
-        std::cout << "🔍 [커널-프로세스] PID: " << ev.process_id()
+        std::string status_badge = "[정상]";
+        if (ev.is_terminated()) {
+            status_badge = "💀 [0.1ms 즉각 사살]";
+        } else if (ev.is_suspended()) {
+            status_badge = "❄️ [24μs 원자적 동결]";
+        }
+
+        std::cout << status_badge << " [커널-프로세스] PID: " << ev.process_id()
                   << " | PPID: " << ev.parent_process_id()
                   << " | 이미지: " << ev.image_name()
                   << " | 커맨드라인: " << (ev.command_line().empty() ? "(없음)" : ev.command_line())
@@ -109,7 +130,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // 5. gRPC 양방향 스트리밍 IPC 파이프라인 초기화
+    // 7. gRPC 양방향 스트리밍 IPC 파이프라인 초기화
     std::unique_ptr<Phalanx::Ipc::GrpcStreamClient> grpc_client;
     if (!standalone) {
         grpc_client = std::make_unique<Phalanx::Ipc::GrpcStreamClient>(endpoint, queue, actuator);
@@ -121,19 +142,28 @@ int main(int argc, char* argv[]) {
 
     std::cout << "✅ [Phalanx.Sensor] 센서 엔진 정상 가동 중. 종료하려면 Ctrl+C를 누르십시오.\n" << std::endl;
 
-    // 6. 메인 루프 (종료 신호 감지 대기)
+    // 8. 메인 루프 (종료 신호 감지 대기)
     while (!g_shutdown_requested.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
-    // 7. 정상 종료 및 리소스 해제 (Graceful Teardown)
+    // 9. 정상 종료 및 리소스 해제 (Graceful Teardown)
     std::cout << "\n>>> Phalanx 센서 안전 종료 절차 진행 중..." << std::endl;
     if (grpc_client) {
         grpc_client->Stop();
     }
     collector->Stop();
 
+    auto m = rule_engine->GetMetrics();
     std::cout << ">>> 총 수집된 커널 이벤트: " << collector->EventsCaptured() << std::endl;
+    std::cout << ">>> [규칙 엔진 지표] 총 평가 이벤트: " << m.total_evaluated << std::endl;
+    std::cout << ">>> [규칙 엔진 지표] 사살(Kill) 집행: " << m.total_killed << std::endl;
+    std::cout << ">>> [규칙 엔진 지표] 동결(Suspend) 집행: " << m.total_suspended << std::endl;
+    std::cout << ">>> [규칙 엔진 지표] 정상 통과: " << m.total_passed << std::endl;
+    std::cout << ">>> [규칙 엔진 지표] 평균 규칙 평가 지연 시간: " << m.avg_eval_latency_us << "μs" << std::endl;
+    std::cout << ">>> [프로세스 트리] 활성 노드: " << process_tree->ActiveNodeCount()
+              << " | 톰스톤 노드: " << process_tree->TombstoneCount() << std::endl;
+
     if (grpc_client) {
         std::cout << ">>> 전송된 배치 수: " << grpc_client->BatchesSent() << std::endl;
         std::cout << ">>> 전송된 총 이벤트 수: " << grpc_client->EventsSent() << std::endl;

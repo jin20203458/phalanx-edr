@@ -403,6 +403,131 @@ void BenchmarkLocalRuleEngineLatency() {
     std::cout << "✅ [테스트 7] 로컬 규칙 엔진 100μs 한계 벤치마크 압도적 통과!" << std::endl;
 }
 
+// ----------------------------------------------------------------------------
+// [Test 8] 실제 OS 프로세스 계층(부모-자식) 반복 생성/종료 & ProcessTree vs OS 완전 일치성 검증
+// ----------------------------------------------------------------------------
+void TestRealOSProcessTreeSynchronization() {
+    std::cout << "\n[테스트 8] 실제 OS 프로세스 반복 생성/삭제 & ProcessTree vs OS 실시간 동기화 검증 시작..." << std::endl;
+
+    // 1. 기준 인메모리 프로세스 트리 생성 및 기동 스냅샷 웜업
+    Process::ProcessTree incremental_tree;
+    assert(incremental_tree.InitializeFromSnapshot());
+
+    uint32_t current_pid = static_cast<uint32_t>(::GetCurrentProcessId());
+    assert(incremental_tree.FindNode(current_pid).has_value());
+
+    // 2. 3회 반복 사이클 실행
+    constexpr int CYCLES = 3;
+    for (int cycle = 1; cycle <= CYCLES; ++cycle) {
+        std::cout << ">>> [사이클 " << cycle << "/" << CYCLES << "] 실제 OS 프로세스 생성 및 트리 일치성 검증..." << std::endl;
+
+        // A. 실제 OS 자식 프로세스 2개 기동 (cmd.exe /c timeout /t 10 > nul)
+        STARTUPINFOA si1{};
+        si1.cb = sizeof(si1);
+        PROCESS_INFORMATION pi1{};
+        char cmd1[] = "cmd.exe /c timeout /t 10 > nul";
+
+        BOOL ok1 = ::CreateProcessA(nullptr, cmd1, nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si1, &pi1);
+        assert(ok1);
+        (void)ok1;
+        Common::UniqueHandle proc1Guard(pi1.hProcess);
+        Common::UniqueHandle thread1Guard(pi1.hThread);
+        uint32_t child1_pid = static_cast<uint32_t>(pi1.dwProcessId);
+
+        STARTUPINFOA si2{};
+        si2.cb = sizeof(si2);
+        PROCESS_INFORMATION pi2{};
+        char cmd2[] = "cmd.exe /c timeout /t 10 > nul";
+
+        BOOL ok2 = ::CreateProcessA(nullptr, cmd2, nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si2, &pi2);
+        assert(ok2);
+        (void)ok2;
+        Common::UniqueHandle proc2Guard(pi2.hProcess);
+        Common::UniqueHandle thread2Guard(pi2.hThread);
+        uint32_t child2_pid = static_cast<uint32_t>(pi2.dwProcessId);
+
+        // Windows 커널 프로세스 테이블 정착 대기 (40ms)
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));
+
+        // B. 증분 트리에 생성 이벤트 반영 (ETW가 전달하는 이벤트 모델)
+        incremental_tree.OnProcessStart(child1_pid, current_pid, "cmd.exe", cmd1);
+        incremental_tree.OnProcessStart(child2_pid, current_pid, "cmd.exe", cmd2);
+
+        // C. OS로부터 실시간 전체 스냅샷을 캡처하여 fresh_os_tree 구축
+        Process::ProcessTree os_snapshot_tree;
+        assert(os_snapshot_tree.InitializeFromSnapshot());
+
+        // D. 일치성 검증 1: 두 실제 자식 프로세스가 OS 스냅샷과 증분 트리 모두에 존재하는가?
+        auto inc_node1 = incremental_tree.FindNode(child1_pid);
+        auto inc_node2 = incremental_tree.FindNode(child2_pid);
+        auto os_node1 = os_snapshot_tree.FindNode(child1_pid);
+        auto os_node2 = os_snapshot_tree.FindNode(child2_pid);
+
+        assert(inc_node1.has_value() && inc_node1->is_alive);
+        assert(inc_node2.has_value() && inc_node2->is_alive);
+        assert(os_node1.has_value() && os_node1->is_alive);
+        assert(os_node2.has_value() && os_node2->is_alive);
+
+        // E. 일치성 검증 2: PPID가 실제 부모(current_pid)와 완벽히 일치하는가?
+        assert(inc_node1->ppid == current_pid);
+        assert(os_node1->ppid == current_pid);
+        assert(inc_node2->ppid == current_pid);
+        assert(os_node2->ppid == current_pid);
+
+        // F. 일치성 검증 3: 부모의 자식 목록에 child1, child2가 모두 등록되어 있는가?
+        auto parent_inc = incremental_tree.FindNode(current_pid);
+        assert(parent_inc.has_value());
+        assert(std::find(parent_inc->children_pids.begin(), parent_inc->children_pids.end(), child1_pid) != parent_inc->children_pids.end());
+        assert(std::find(parent_inc->children_pids.begin(), parent_inc->children_pids.end(), child2_pid) != parent_inc->children_pids.end());
+
+        // G. 일치성 검증 4: 족보 역추적(Ancestry)이 OS 스냅샷의 족보와 100% 동일한가?
+        auto inc_ancestry1 = incremental_tree.GetAncestry(child1_pid, 3, false);
+        auto os_ancestry1 = os_snapshot_tree.GetAncestry(child1_pid, 3, false);
+        assert(!inc_ancestry1.empty() && !os_ancestry1.empty());
+        assert(inc_ancestry1[0].pid == current_pid);
+        assert(os_ancestry1[0].pid == current_pid);
+
+        // H. 실제 프로세스 1개 종료 (Child 1)
+        ::TerminateProcess(pi1.hProcess, 0);
+        ::WaitForSingleObject(pi1.hProcess, 2000);
+        incremental_tree.OnProcessStop(child1_pid);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));
+
+        // I. 종료 후 OS 재검증: OS 스냅샷에서는 완전히 삭제되었고, 우리 트리에서는 Tombstone(is_alive=false)으로 보존되는가?
+        Process::ProcessTree os_snap_after_kill1;
+        assert(os_snap_after_kill1.InitializeFromSnapshot());
+
+        auto inc_dead1 = incremental_tree.FindNode(child1_pid);
+        auto os_dead1 = os_snap_after_kill1.FindNode(child1_pid);
+
+        assert(inc_dead1.has_value() && !inc_dead1->is_alive); // 우리 트리는 포렌식을 위해 Tombstone 유지!
+        assert(!os_dead1.has_value()); // OS는 프로세스 테이블에서 즉각 삭제!
+
+        // Child 2는 아직 OS와 우리 트리 모두에서 살아있는지 확인
+        auto inc_alive2 = incremental_tree.FindNode(child2_pid);
+        auto os_alive2 = os_snap_after_kill1.FindNode(child2_pid);
+        assert(inc_alive2.has_value() && inc_alive2->is_alive);
+        assert(os_alive2.has_value() && os_alive2->is_alive);
+
+        // J. 실제 프로세스 Child 2 종료
+        ::TerminateProcess(pi2.hProcess, 0);
+        ::WaitForSingleObject(pi2.hProcess, 2000);
+        incremental_tree.OnProcessStop(child2_pid);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));
+
+        Process::ProcessTree os_snap_after_kill2;
+        assert(os_snap_after_kill2.InitializeFromSnapshot());
+        assert(!os_snap_after_kill2.FindNode(child2_pid).has_value());
+        assert(incremental_tree.FindNode(child2_pid).has_value() && !incremental_tree.FindNode(child2_pid)->is_alive);
+
+        std::cout << ">>> [사이클 " << cycle << "] 완료: 생성 2건, 종료 2건, OS-인메모리 트리 100% 동기화 확인." << std::endl;
+    }
+
+    std::cout << "✅ [테스트 8] 실제 OS 프로세스 반복 생성/삭제 & ProcessTree vs OS 실시간 동기화 검증 통과!" << std::endl;
+}
+
 int main() {
     ::SetConsoleOutputCP(CP_UTF8);
     std::cout << "================================================================================" << std::endl;
@@ -416,6 +541,7 @@ int main() {
     TestLocalRuleEngineAtomicSuspendSafeFixture();
     TestLocalRuleEnginePassThrough();
     BenchmarkLocalRuleEngineLatency();
+    TestRealOSProcessTreeSynchronization();
 
     std::cout << "\n================================================================================" << std::endl;
     std::cout << "🎉 Phase 2 모든 단위 및 벤치마크 테스트 검증 성공! (Exit Code 0)                " << std::endl;

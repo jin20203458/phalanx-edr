@@ -1,4 +1,4 @@
-﻿#include "EtwKernelCollector.h"
+#include "EtwKernelCollector.h"
 #include "../Common/Win32Handles.h"
 #include <krabs.hpp>
 #include <iostream>
@@ -33,84 +33,91 @@ void EtwKernelCollector::SetProcessObserver(ProcessEventCallback callback) {
 }
 
 bool EtwKernelCollector::Start() {
-    if (impl_->running.load(std::memory_order_relaxed)) {
-        return true;
+    // 1. CAS 연산으로 오직 하나의 스레드만 false -> true 전이에 성공하도록 보장 (Check-Then-Act TOCTOU 방지)
+    bool expected = false;
+    if (!impl_->running.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        return true; // 이미 가동 중이면 즉시 성공 반환
     }
-    impl_->running.store(true, std::memory_order_release);
 
-    impl_->worker_thread = std::thread([this]() {
-        try {
-            // Microsoft-Windows-Kernel-Process 프로바이더 GUID: {22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}
-            static const krabs::guid KernelProcessGuid(L"{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}");
-            krabs::provider<> provider(KernelProcessGuid);
+    // 2. 스레드 생성 예외 안전성 확보 (OS 자원 부족 등으로 std::system_error 발생 시 원자적 롤백)
+    try {
+        impl_->worker_thread = std::thread([this]() {
+            try {
+                // Microsoft-Windows-Kernel-Process 프로바이더 GUID: {22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}
+                static const krabs::guid KernelProcessGuid(L"{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}");
+                krabs::provider<> provider(KernelProcessGuid);
 
-            provider.add_on_event_callback([this](const EVENT_RECORD& record, const krabs::trace_context& trace_context) {
-                try {
-                    krabs::schema schema(record, trace_context.schema_locator);
-                    // 이벤트 ID 1: ProcessStart (프로세스 생성)
-                    if (schema.event_id() == 1) {
-                        krabs::parser parser(schema);
-                        phalanx::ProcessEvent ev;
+                provider.add_on_event_callback([this](const EVENT_RECORD& record, const krabs::trace_context& trace_context) {
+                    try {
+                        krabs::schema schema(record, trace_context.schema_locator);
+                        // 이벤트 ID 1: ProcessStart (프로세스 생성)
+                        if (schema.event_id() == 1) {
+                            krabs::parser parser(schema);
+                            phalanx::ProcessEvent ev;
 
-                        uint32_t pid = 0;
-                        if (parser.try_parse(L"ProcessID", pid)) {
-                            ev.set_process_id(pid);
-                        }
-                        uint32_t ppid = 0;
-                        if (parser.try_parse(L"ParentProcessID", ppid)) {
-                            ev.set_parent_process_id(ppid);
-                        }
-                        std::wstring img_w;
-                        if (parser.try_parse(L"ImageName", img_w) || parser.try_parse(L"ImageFileName", img_w)) {
-                            ev.set_image_name(Common::Utf16ToUtf8(img_w));
-                        }
-                        std::wstring cmd_w;
-                        if (parser.try_parse(L"CommandLine", cmd_w)) {
-                            ev.set_command_line(Common::Utf16ToUtf8(cmd_w));
-                        }
-                        uint32_t session_id = 0;
-                        if (parser.try_parse(L"SessionID", session_id)) {
-                            ev.set_session_id(session_id);
-                        }
-                        uint32_t elevation = 0;
-                        if (parser.try_parse(L"TokenElevationType", elevation)) {
-                            ev.set_token_elevation_type(elevation);
-                        }
+                            uint32_t pid = 0;
+                            if (parser.try_parse(L"ProcessID", pid)) {
+                                ev.set_process_id(pid);
+                            }
+                            uint32_t ppid = 0;
+                            if (parser.try_parse(L"ParentProcessID", ppid)) {
+                                ev.set_parent_process_id(ppid);
+                            }
+                            std::wstring image_name;
+                            if (parser.try_parse(L"ImageName", image_name)) {
+                                ev.set_image_name(Common::Utf16ToUtf8(image_name));
+                            }
+                            std::wstring cmd_line;
+                            if (parser.try_parse(L"CommandLine", cmd_line)) {
+                                ev.set_command_line(Common::Utf16ToUtf8(cmd_line));
+                            }
+                            uint32_t session_id = 0;
+                            if (parser.try_parse(L"SessionID", session_id)) {
+                                ev.set_session_id(session_id);
+                            }
+                            uint32_t token_elevation = 0;
+                            if (parser.try_parse(L"TokenElevationType", token_elevation)) {
+                                ev.set_token_elevation_type(token_elevation);
+                            }
 
-                        uint64_t ts = static_cast<uint64_t>(record.EventHeader.TimeStamp.QuadPart);
-                        ev.set_timestamp_ns(ts);
-                        ev.set_is_suspended(false);
+                            uint64_t ts = static_cast<uint64_t>(record.EventHeader.TimeStamp.QuadPart);
+                            ev.set_timestamp_ns(ts);
+                            ev.set_is_suspended(false);
 
-                        impl_->events_captured.fetch_add(1, std::memory_order_relaxed);
+                            impl_->events_captured.fetch_add(1, std::memory_order_relaxed);
 
-                        // 실시간 콘솔 출력 또는 휴리스틱 감시용 옵저버 통지
-                        if (impl_->observer_callback) {
-                            impl_->observer_callback(ev);
+                            // 실시간 콘솔 출력 또는 휴리스틱 감시용 옵저버 통지
+                            if (impl_->observer_callback) {
+                                impl_->observer_callback(ev);
+                            }
+
+                            // 락-스왑 큐로 즉시 푸시 (수집 스레드 블로킹 방지)
+                            if (impl_->queue) {
+                                impl_->queue->Push(std::move(ev));
+                            }
                         }
-
-                        // 락-스왑 큐로 즉시 푸시 (수집 스레드 블로킹 방지)
-                        if (impl_->queue) {
-                            impl_->queue->Push(std::move(ev));
-                        }
+                    } catch (...) {
+                        // 비블로킹 원칙 준수: 손상된 이벤트 레코드는 무시하고 즉시 복귀
                     }
-                } catch (...) {
-                    // 비블로킹 원칙 준수: 손상된 이벤트 레코드는 무시하고 즉시 복귀
-                }
-            });
+                });
 
-            impl_->trace = std::make_unique<krabs::user_trace>(L"PhalanxKernelProcessSession");
-            impl_->trace->enable(provider);
-            std::cout << "🚀 [ETW] Microsoft-Windows-Kernel-Process 트레이스 세션 구동 중..." << std::endl;
-            impl_->trace->start();
-            std::cout << "🛑 [ETW] 트레이스 세션 종료됨." << std::endl;
-        } catch (const std::exception& ex) {
-            std::cerr << "❌ [ETW 예외 발생] " << ex.what() << std::endl;
-            impl_->running.store(false, std::memory_order_release);
-        } catch (...) {
-            std::cerr << "❌ [ETW 알 수 없는 예외 발생]" << std::endl;
-            impl_->running.store(false, std::memory_order_release);
-        }
-    });
+                impl_->trace = std::make_unique<krabs::user_trace>(L"PhalanxKernelProcessSession");
+                impl_->trace->enable(provider);
+                std::cout << "🚀 [ETW] Microsoft-Windows-Kernel-Process 트레이스 세션 구동 중..." << std::endl;
+                impl_->trace->start();
+                std::cout << "🛑 [ETW] 트레이스 세션 종료됨." << std::endl;
+            } catch (const std::exception& ex) {
+                std::cerr << "❌ [ETW 예외 발생] " << ex.what() << std::endl;
+                impl_->running.store(false, std::memory_order_release);
+            } catch (...) {
+                std::cerr << "❌ [ETW 알 수 없는 예외 발생]" << std::endl;
+                impl_->running.store(false, std::memory_order_release);
+            }
+        });
+    } catch (...) {
+        impl_->running.store(false, std::memory_order_release);
+        return false;
+    }
 
     return true;
 }

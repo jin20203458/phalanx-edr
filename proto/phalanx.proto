@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package phalanx;
+
+option csharp_namespace = "Phalanx.Shared.Protos";
+
+// Process lifecycle event
+message ProcessEvent {
+    uint32 process_id = 1;
+    uint32 parent_process_id = 2;
+    string image_name = 3;
+    string command_line = 4;
+    uint64 timestamp_ns = 5;
+    bool is_suspended = 6;
+    uint32 session_id = 7;
+    uint32 token_elevation_type = 8;
+}
+
+// Network connection event
+message NetworkEvent {
+    uint32 process_id = 1;
+    string source_address = 2;
+    uint32 source_port = 3;
+    string destination_address = 4;
+    uint32 destination_port = 5;
+    string protocol = 6;
+    uint64 timestamp_ns = 7;
+}
+
+// Module / DLL load event
+message ImageEvent {
+    uint32 process_id = 1;
+    uint64 image_base = 2;
+    uint64 image_size = 3;
+    string file_name = 4;
+    uint64 timestamp_ns = 5;
+}
+
+// Batch container for zero-loss streaming
+message TelemetryBatch {
+    repeated ProcessEvent process_events = 1;
+    repeated NetworkEvent network_events = 2;
+    repeated ImageEvent image_events = 3;
+}
+
+// Mitigation command dispatched from C# Core
+message MitigationCommand {
+    enum ActionType {
+        ACTION_KILL = 0;
+        ACTION_RESUME = 1;      // Unfreeze suspended process/thread
+        ACTION_BLOCK_IP = 2;    // Network isolation
+    }
+    ActionType action = 1;
+    uint32 target_pid = 2;
+    string target_ip = 3;
+    string reason = 4;
+}
+
+// Bidirectional streaming telemetry service
+service PhalanxService {
+    rpc StreamTelemetry(stream TelemetryBatch) returns (stream MitigationCommand);
+}

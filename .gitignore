@@ -1,0 +1,49 @@
+# Visual Studio / MSBuild
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+Debug/
+Release/
+x64/
+x86/
+ARM/
+ARM64/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio Code
+.vscode/
+
+# Rider / ReSharper
+.idea/
+*.DotSettings.user
+
+# C++ Precompiled Headers / IntelliSense Cache
+*.ipch
+*.pch
+*.pdb
+*.ilk
+*.idb
+
+# vcpkg
+vcpkg_installed/
+
+# LiteDB & Local Databases
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# PDF & Incident Exports
+*.pdf
+IncidentReports/
+
+# OS Generated
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store

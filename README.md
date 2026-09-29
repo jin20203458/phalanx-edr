@@ -10,6 +10,7 @@ Phalanx는 Windows ETW 커널 텔레메트리와 자율 AI 위협 헌팅 에이�
 - [01_system_architecture.md](https://github.com/jin20203458/Obsidian.Agent/blob/main/Phalanx/docs/01_system_architecture.md): C++ 센서, gRPC 양방향 스트리밍 및 WPF 관제 콘솔 토폴로지
 - [02_ai_agent_investigation_design.md](https://github.com/jin20203458/Obsidian.Agent/blob/main/Phalanx/docs/02_ai_agent_investigation_design.md): ReAct 위협 헌터 에이전트, 5대 OS 도구 및 Threat Graph 메모리 설계
 - [03_implementation_roadmap.md](https://github.com/jin20203458/Obsidian.Agent/blob/main/Phalanx/docs/03_implementation_roadmap.md): 단계별(Phase 1~4) 구현 마일스톤 및 완료 정의(DoD)
+- [04_concurrency_queue_benchmark.md](https://github.com/jin20203458/Obsidian.Agent/blob/main/Phalanx/docs/04_concurrency_queue_benchmark.md): Boost 락프리 SPSC 링버퍼 vs 더블 버퍼드 락-스왑 큐 1:1 실측 벤치마크 보고서
 
 > **참고**: 전체 시스템 구성도 및 흐름도는 중복을 방지하기 위해 [01_system_architecture.md](https://github.com/jin20203458/Obsidian.Agent/blob/main/Phalanx/docs/01_system_architecture.md)에서 제공합니다.
 

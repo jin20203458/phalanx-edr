@@ -36,3 +36,10 @@ Phalanx는 Windows ETW 커널 텔레메트리와 자율 AI 위협 헌팅 에이�
 3. **Phase 3 (AI Agent & Tools)**: ReAct 추론 루프 및 5대 OS 조사 도구 체계
 4. **Phase 4 (Cockpit & Presentation)**: WPF 노드 그래프 UI 및 QuestPDF 리포트
 
+## 참조 로컬 코드 자산 (Reference Code Assets)
+구현 시 기존 검증된 로컬 프로젝트의 패턴을 직접 참조합니다:
+- **C++ 락-스왑 큐 & 비동기 gRPC**: `../MundusVivens.GameServer.Cpp` (`AsyncGrpcClient.cpp`)
+- **C# gRPC 수신 & LiteDB 캐시**: `../MundusVivens`
+- **AI 스트리밍 사고/서사 텍스트**: `../GRC` (`Themes/ModernStyles.xaml`)
+- **엔터프라이즈 대시보드 & 캡슐 버튼**: `../../../../clang-lab/UI_WPF/ArqaStatic` (`Themes/DarkTheme.xaml`)
+

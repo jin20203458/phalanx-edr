@@ -23,15 +23,25 @@
 namespace Phalanx::Process {
 
 /**
+ * @brief PID 재사용 방지를 위한 (start_time_ns << 32) | pid 조합의 전역 고유 식별자(process_guid) 생성
+ */
+inline uint64_t GenerateProcessGuid(uint32_t pid, uint64_t start_time_ns) noexcept {
+    return (start_time_ns << 32) | static_cast<uint64_t>(pid);
+}
+
+/**
  * @brief C++ RAM 상에서 관리되는 개별 프로세스 트리 노드.
  */
 struct ProcessNode {
     uint32_t pid{0};
     uint32_t ppid{0};
+    uint64_t guid{0};
+    uint64_t parent_guid{0};
     std::string image_name;
     std::string command_line;
     uint64_t start_time{0};
     uint64_t exit_time{0};
+    uint64_t exit_code{0};
     uint32_t session_id{0};
     uint32_t token_elevation_type{0};
     bool is_alive{true};
@@ -64,6 +74,12 @@ public:
     bool InitializeFromSnapshot();
 
     /**
+     * @brief 현재 활성(is_alive == true) 상태인 모든 프로세스를 LIFECYCLE_SNAPSHOT 이벤트 벡터로 일괄 추출.
+     *        C# 관제기 최초 접속 시 1회 덤프 핸드셰이크용으로 사용됩니다.
+     */
+    [[nodiscard]] std::vector<phalanx::ProcessEvent> GetActiveSnapshotEvents() const;
+
+    /**
      * @brief ETW ProcessStart 수신 시 트리 노드 삽입 및 부모-자식 관계 링크.
      *        동일 PID가 이미 존재하는 경우 PID 재사용으로 간주하여 이전 노드를 덮어쓰고 링크를 갱신합니다.
      */
@@ -79,8 +95,9 @@ public:
     /**
      * @brief ETW ProcessStop 수신 시 노드를 Tombstone 상태로 전환하고 큐에 등록.
      *        Tombstone 개수가 상한(기본 10,000개)을 초과하면 가장 오래된 종료 노드를 즉시 제거합니다.
+     * @return 종료된 프로세스 노드의 정보 (이미 종료되었거나 없으면 std::nullopt)
      */
-    void OnProcessStop(uint32_t pid, uint64_t exit_timestamp = 0);
+    std::optional<ProcessNode> OnProcessStop(uint32_t pid, uint64_t exit_timestamp = 0, uint64_t exit_code = 0);
 
     /**
      * @brief 특정 PID의 부모/조부모 계층 족보를 10μs 이내에 역추적하여 반환.

@@ -35,17 +35,19 @@ bool ProcessTree::InitializeFromSnapshot() {
         node.pid = static_cast<uint32_t>(pe.th32ProcessID);
         node.ppid = static_cast<uint32_t>(pe.th32ParentProcessID);
         node.image_name = Common::Utf16ToUtf8(pe.szExeFile);
+        node.guid = GenerateProcessGuid(node.pid, 0);
         node.is_alive = true;
         nodes_.emplace(node.pid, std::move(node));
         loaded++;
     } while (::Process32NextW(hSnap, &pe));
 
-    // 로드된 프로세스 간 부모-자식 링크 형성
+    // 로드된 프로세스 간 부모-자식 링크 및 GUID 연결 형성
     for (auto& [pid, node] : nodes_) {
         if (node.ppid != 0 && node.ppid != pid) {
             auto parent_it = nodes_.find(node.ppid);
             if (parent_it != nodes_.end()) {
                 parent_it->second.children_pids.push_back(pid);
+                node.parent_guid = parent_it->second.guid;
             }
         }
     }
@@ -53,10 +55,35 @@ bool ProcessTree::InitializeFromSnapshot() {
     return loaded > 0;
 }
 
+std::vector<phalanx::ProcessEvent> ProcessTree::GetActiveSnapshotEvents() const {
+    std::shared_lock<std::shared_mutex> lock(rw_lock_);
+    std::vector<phalanx::ProcessEvent> events;
+    events.reserve(nodes_.size());
+
+    for (const auto& [pid, node] : nodes_) {
+        if (!node.is_alive) continue;
+        phalanx::ProcessEvent ev;
+        ev.set_process_id(node.pid);
+        ev.set_parent_process_id(node.ppid);
+        ev.set_image_name(node.image_name);
+        ev.set_command_line(node.command_line);
+        ev.set_timestamp_ns(node.start_time);
+        ev.set_session_id(node.session_id);
+        ev.set_token_elevation_type(node.token_elevation_type);
+        ev.set_lifecycle(phalanx::ProcessLifecycle::LIFECYCLE_SNAPSHOT);
+        ev.set_process_guid(node.guid);
+        ev.set_parent_process_guid(node.parent_guid);
+        events.push_back(std::move(ev));
+    }
+    return events;
+}
+
 void ProcessTree::OnProcessStart(const phalanx::ProcessEvent& event) {
     ProcessNode node;
     node.pid = event.process_id();
     node.ppid = event.parent_process_id();
+    node.guid = event.process_guid() ? event.process_guid() : GenerateProcessGuid(node.pid, event.timestamp_ns());
+    node.parent_guid = event.parent_process_guid();
     node.image_name = event.image_name();
     node.command_line = event.command_line();
     node.start_time = event.timestamp_ns();
@@ -74,6 +101,7 @@ void ProcessTree::OnProcessStart(uint32_t pid, uint32_t ppid, std::string image_
     ProcessNode node;
     node.pid = pid;
     node.ppid = ppid;
+    node.guid = GenerateProcessGuid(pid, start_time);
     node.image_name = std::move(image_name);
     node.command_line = std::move(command_line);
     node.start_time = start_time;
@@ -88,6 +116,10 @@ void ProcessTree::OnProcessStart(uint32_t pid, uint32_t ppid, std::string image_
 void ProcessTree::InsertOrOverwriteNodeInternal(ProcessNode&& node) {
     uint32_t pid = node.pid;
     uint32_t ppid = node.ppid;
+
+    if (node.guid == 0) {
+        node.guid = GenerateProcessGuid(pid, node.start_time);
+    }
 
     auto it = nodes_.find(pid);
     if (it != nodes_.end()) {
@@ -114,7 +146,7 @@ void ProcessTree::InsertOrOverwriteNodeInternal(ProcessNode&& node) {
         nodes_.emplace(pid, std::move(node));
     }
 
-    // 신규 부모와 자식 링크 형성
+    // 신규 부모와 자식 링크 형성 및 부모 GUID 계승
     if (ppid != 0 && ppid != pid) {
         auto parent_it = nodes_.find(ppid);
         if (parent_it != nodes_.end()) {
@@ -122,12 +154,16 @@ void ProcessTree::InsertOrOverwriteNodeInternal(ProcessNode&& node) {
             if (std::find(ch.begin(), ch.end(), pid) == ch.end()) {
                 ch.push_back(pid);
             }
+            if (nodes_[pid].parent_guid == 0) {
+                nodes_[pid].parent_guid = parent_it->second.guid;
+            }
         }
     }
 }
 
-void ProcessTree::OnProcessStop(uint32_t pid, uint64_t exit_timestamp) {
+std::optional<ProcessNode> ProcessTree::OnProcessStop(uint32_t pid, uint64_t exit_timestamp, uint64_t exit_code) {
     std::unique_lock<std::shared_mutex> lock(rw_lock_);
+    std::optional<ProcessNode> stopped_node;
     auto it = nodes_.find(pid);
     if (it != nodes_.end()) {
         if (it->second.is_alive) {
@@ -135,7 +171,9 @@ void ProcessTree::OnProcessStop(uint32_t pid, uint64_t exit_timestamp) {
             it->second.exit_time = exit_timestamp ? exit_timestamp :
                 static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count());
+            it->second.exit_code = exit_code;
             tombstone_queue_.push_back(pid);
+            stopped_node = it->second;
         }
     }
 
@@ -143,6 +181,8 @@ void ProcessTree::OnProcessStop(uint32_t pid, uint64_t exit_timestamp) {
     while (tombstone_queue_.size() > max_tombstones_) {
         EvictOldestTombstoneInternal();
     }
+
+    return stopped_node;
 }
 
 void ProcessTree::EvictOldestTombstoneInternal() {

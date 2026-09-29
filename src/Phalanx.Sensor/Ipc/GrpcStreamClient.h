@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <string>
 #include <memory>
@@ -11,6 +11,10 @@
 #include "phalanx.pb.h"
 #include "phalanx.grpc.pb.h"
 
+namespace Phalanx::Process {
+class ProcessTree;
+}
+
 namespace Phalanx::Ipc {
 
 // 방어 명령 수신 시 실행될 콜백 핸들러 타입
@@ -20,6 +24,7 @@ using CommandHandler = std::function<void(const phalanx::MitigationCommand&)>;
  * @brief Phalanx 텔레메트리 전송을 위한 고속 비동기 양방향 gRPC 스트리밍 클라이언트.
  *
  * asio-grpc C++20 코루틴 파이프라인:
+ *  - 초기 덤프: 연결 성공 시점 ProcessTree 기저 스냅샷 1회 일괄 전송 (LIFECYCLE_SNAPSHOT).
  *  - 송신 루프: 10ms 주기로 DoubleBufferedSwapQueue를 플러시하여 TelemetryBatch 일괄 전송.
  *  - 수신 루프: Core에서 하달하는 MitigationCommand를 비동기 수신하여 ProcessActuator로 디스패치.
  *  - 연결 두절 시 지수 백오프 기반 자동 재연결 지원.
@@ -28,7 +33,8 @@ class GrpcStreamClient {
 public:
     GrpcStreamClient(std::string target_endpoint,
                      std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> queue,
-                     std::shared_ptr<Actuator::ProcessActuator> actuator);
+                     std::shared_ptr<Actuator::ProcessActuator> actuator,
+                     std::shared_ptr<Process::ProcessTree> tree = nullptr);
     ~GrpcStreamClient();
 
     GrpcStreamClient(const GrpcStreamClient&) = delete;

@@ -4,6 +4,16 @@ package phalanx;
 
 option csharp_namespace = "Phalanx.Shared.Protos";
 
+// 프로세스 생명주기 상태 구분
+enum ProcessLifecycle {
+    LIFECYCLE_UNKNOWN = 0;
+    LIFECYCLE_SNAPSHOT = 1;     // 엔진 기동/재연결 시 기존 프로세스 일괄 주입
+    LIFECYCLE_START = 2;        // 신규 프로세스 생성 (ProcessStart)
+    LIFECYCLE_STOP = 3;         // 프로세스 정상 종료 (ProcessStop)
+    LIFECYCLE_SUSPENDED = 4;    // 24μs 원자적 동결 집행 완료
+    LIFECYCLE_TERMINATED = 5;   // 0.1ms 현장 사살 완료
+}
+
 // 프로세스 생명주기 이벤트
 message ProcessEvent {
     uint32 process_id = 1;
@@ -15,6 +25,10 @@ message ProcessEvent {
     uint32 session_id = 7;
     uint32 token_elevation_type = 8;
     bool is_terminated = 9;
+    ProcessLifecycle lifecycle = 10;
+    uint64 process_guid = 11;        // PID 재사용 방지용 전역 고유 ID
+    uint64 parent_process_guid = 12; // 부모 고유 ID
+    uint64 exit_code = 13;           // LIFECYCLE_STOP 시 프로세스 종료 코드
 }
 
 // 네트워크 연결 이벤트

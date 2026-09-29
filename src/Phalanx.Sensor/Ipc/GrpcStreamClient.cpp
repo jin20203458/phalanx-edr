@@ -1,4 +1,5 @@
 #include "GrpcStreamClient.h"
+#include "../Process/ProcessTree.h"
 #include <grpcpp/grpcpp.h>
 #include <agrpc/asio_grpc.hpp>
 #include <agrpc/client_rpc.hpp>
@@ -18,6 +19,7 @@ struct GrpcStreamClient::Impl {
     std::string target_endpoint;
     std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> queue;
     std::shared_ptr<Actuator::ProcessActuator> actuator;
+    std::shared_ptr<Process::ProcessTree> tree;
     CommandHandler custom_command_handler;
 
     agrpc::GrpcContext grpc_context;
@@ -29,16 +31,19 @@ struct GrpcStreamClient::Impl {
 
     Impl(std::string endpoint,
          std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> q,
-         std::shared_ptr<Actuator::ProcessActuator> act)
+         std::shared_ptr<Actuator::ProcessActuator> act,
+         std::shared_ptr<Process::ProcessTree> tr = nullptr)
         : target_endpoint(std::move(endpoint)),
           queue(std::move(q)),
-          actuator(std::move(act)) {}
+          actuator(std::move(act)),
+          tree(std::move(tr)) {}
 };
 
 GrpcStreamClient::GrpcStreamClient(std::string target_endpoint,
                                    std::shared_ptr<Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>> queue,
-                                   std::shared_ptr<Actuator::ProcessActuator> actuator)
-    : impl_(std::make_unique<Impl>(std::move(target_endpoint), std::move(queue), std::move(actuator))) {
+                                   std::shared_ptr<Actuator::ProcessActuator> actuator,
+                                   std::shared_ptr<Process::ProcessTree> tree)
+    : impl_(std::make_unique<Impl>(std::move(target_endpoint), std::move(queue), std::move(actuator), std::move(tree))) {
 }
 
 GrpcStreamClient::~GrpcStreamClient() {
@@ -84,6 +89,24 @@ bool GrpcStreamClient::Start() {
 
                     is_connected_.store(true, std::memory_order_release);
                     std::cout << "⚡ [gRPC] 텔레메트리 스트림 연결 성공: " << impl_->target_endpoint << std::endl;
+
+                    // [초기 스냅샷 핸드셰이크] C# 관제 콘솔 최초 접속 시 ProcessTree의 기존 프로세스 일괄 덤프 전송
+                    if (impl_->tree) {
+                        auto snapshot_events = impl_->tree->GetActiveSnapshotEvents();
+                        if (!snapshot_events.empty()) {
+                            phalanx::TelemetryBatch snapshot_batch;
+                            for (auto& ev : snapshot_events) {
+                                *snapshot_batch.add_process_events() = std::move(ev);
+                            }
+                            bool snap_write_ok = co_await rpc->write(snapshot_batch, boost::asio::use_awaitable);
+                            if (snap_write_ok) {
+                                batches_sent_.fetch_add(1, std::memory_order_relaxed);
+                                events_sent_.fetch_add(snapshot_batch.process_events_size(), std::memory_order_relaxed);
+                                std::cout << "🌳 [gRPC] 기저 프로세스 트리 초기 스냅샷 전송 완료 ("
+                                          << snapshot_batch.process_events_size() << "개 노드)" << std::endl;
+                            }
+                        }
+                    }
 
                     std::atomic<bool> stream_active{true};
 

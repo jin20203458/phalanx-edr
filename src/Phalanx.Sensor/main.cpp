@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) {
     // 7. gRPC 양방향 스트리밍 IPC 파이프라인 초기화
     std::unique_ptr<Phalanx::Ipc::GrpcStreamClient> grpc_client;
     if (!standalone) {
-        grpc_client = std::make_unique<Phalanx::Ipc::GrpcStreamClient>(endpoint, queue, actuator);
+        grpc_client = std::make_unique<Phalanx::Ipc::GrpcStreamClient>(endpoint, queue, actuator, process_tree);
         grpc_client->Start();
         std::cout << "🌐 [IPC] gRPC 스트리밍 클라이언트 시작됨. 대상: " << endpoint << std::endl;
     } else {

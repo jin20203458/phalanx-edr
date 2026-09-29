@@ -97,6 +97,13 @@ bool EtwKernelCollector::Start() {
 
                             uint64_t ts = static_cast<uint64_t>(record.EventHeader.TimeStamp.QuadPart);
                             ev.set_timestamp_ns(ts);
+                            ev.set_process_guid(Process::GenerateProcessGuid(pid, ts));
+                            if (impl_->tree && ppid != 0) {
+                                auto parent_node = impl_->tree->FindNode(ppid);
+                                if (parent_node.has_value()) {
+                                    ev.set_parent_process_guid(parent_node->guid);
+                                }
+                            }
 
                             // 1. C++ 인메모리 프로세스 트리(DAG) 갱신
                             if (impl_->tree) {
@@ -111,6 +118,14 @@ bool EtwKernelCollector::Start() {
                                 ev.set_is_terminated(false);
                             }
 
+                            if (ev.is_terminated()) {
+                                ev.set_lifecycle(phalanx::ProcessLifecycle::LIFECYCLE_TERMINATED);
+                            } else if (ev.is_suspended()) {
+                                ev.set_lifecycle(phalanx::ProcessLifecycle::LIFECYCLE_SUSPENDED);
+                            } else {
+                                ev.set_lifecycle(phalanx::ProcessLifecycle::LIFECYCLE_START);
+                            }
+
                             impl_->events_captured.fetch_add(1, std::memory_order_relaxed);
 
                             // 실시간 콘솔 출력 또는 휴리스틱 감시용 옵저버 통지
@@ -123,13 +138,39 @@ bool EtwKernelCollector::Start() {
                                 impl_->queue->Push(std::move(ev));
                             }
                         } else if (schema.event_id() == 2) {
-                            // 이벤트 ID 2: ProcessStop (프로세스 종료)
+                            // 이벤트 ID 2: ProcessStop (프로세스 정상/비정상 종료)
                             krabs::parser parser(schema);
                             uint32_t pid = 0;
                             if (parser.try_parse(L"ProcessID", pid)) {
+                                uint64_t ts = static_cast<uint64_t>(record.EventHeader.TimeStamp.QuadPart);
+                                uint32_t exit_code = 0;
+                                parser.try_parse(L"ExitCode", exit_code);
+
+                                phalanx::ProcessEvent ev;
+                                ev.set_process_id(pid);
+                                ev.set_timestamp_ns(ts);
+                                ev.set_exit_code(exit_code);
+                                ev.set_lifecycle(phalanx::ProcessLifecycle::LIFECYCLE_STOP);
+
                                 if (impl_->tree) {
-                                    uint64_t ts = static_cast<uint64_t>(record.EventHeader.TimeStamp.QuadPart);
-                                    impl_->tree->OnProcessStop(pid, ts);
+                                    auto stopped_node = impl_->tree->OnProcessStop(pid, ts, exit_code);
+                                    if (stopped_node.has_value()) {
+                                        ev.set_parent_process_id(stopped_node->ppid);
+                                        ev.set_image_name(stopped_node->image_name);
+                                        ev.set_command_line(stopped_node->command_line);
+                                        ev.set_process_guid(stopped_node->guid);
+                                        ev.set_parent_process_guid(stopped_node->parent_guid);
+                                    }
+                                }
+
+                                impl_->events_captured.fetch_add(1, std::memory_order_relaxed);
+
+                                if (impl_->observer_callback) {
+                                    impl_->observer_callback(ev);
+                                }
+
+                                if (impl_->queue) {
+                                    impl_->queue->Push(std::move(ev));
                                 }
                             }
                         }

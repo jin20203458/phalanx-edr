@@ -114,13 +114,14 @@ public class GeminiRestClient
     /// Gemini 모델에 프롬프트를 전송하고 텍스트/JSON 응답을 수신합니다.
     /// 실전 클라우드 네트워크 왕복 및 토큰 교환을 고려하여 기본 10초 타임아웃 링크가 적용됩니다.
     /// </summary>
-    public async Task<string> GenerateContentAsync(
-        string userPrompt,
-        string? systemInstruction = null,
+    /// <summary>
+    /// Gemini REST API에 임의의 GeminiRequest를 전송하고 원본 응답 및 GeminiResponse 객체를 반환합니다.
+    /// </summary>
+    public async Task<(GeminiResponse Response, string RawJson)> SendRequestRawAsync(
+        GeminiRequest requestBody,
         CancellationToken cancellationToken = default,
-        int timeoutMs = 10000)
+        int timeoutMs = 15000)
     {
-        // 실시간 네트워크 왕복 및 클라우드 추론 대기 (기본 10초)
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(timeoutMs));
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
@@ -145,6 +146,36 @@ public class GeminiRestClient
             url = $"https://generativelanguage.googleapis.com/v1beta/models/{_modelName}:generateContent?key={_apiKey}";
         }
 
+        string jsonPayload = JsonSerializer.Serialize(requestBody, JsonOptions);
+        httpRequest.RequestUri = new Uri(url);
+        httpRequest.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+        using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token);
+        string responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException($"Gemini API HTTP {(int)response.StatusCode} 에러: {responseJson}");
+        }
+
+        var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseJson, JsonOptions);
+        if (geminiResponse == null)
+        {
+            throw new InvalidOperationException($"Gemini API 응답 역직렬화 실패: {responseJson}");
+        }
+
+        return (geminiResponse, responseJson);
+    }
+
+    /// <summary>
+    /// Gemini 모델에 프롬프트를 전송하고 텍스트/JSON 응답을 수신합니다.
+    /// </summary>
+    public async Task<string> GenerateContentAsync(
+        string userPrompt,
+        string? systemInstruction = null,
+        CancellationToken cancellationToken = default,
+        int timeoutMs = 10000)
+    {
         var requestBody = new GeminiRequest(
             Contents: new List<Content>
             {
@@ -160,17 +191,9 @@ public class GeminiRestClient
             )
         );
 
-        string jsonPayload = JsonSerializer.Serialize(requestBody, JsonOptions);
-        httpRequest.RequestUri = new Uri(url);
-        httpRequest.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+        var (geminiResponse, _) = await SendRequestRawAsync(requestBody, cancellationToken, timeoutMs);
 
-        using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token);
-        response.EnsureSuccessStatusCode();
-
-        string responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
-        var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseJson, JsonOptions);
-
-        if (geminiResponse?.Candidates == null || geminiResponse.Candidates.Count == 0)
+        if (geminiResponse.Candidates == null || geminiResponse.Candidates.Count == 0)
         {
             throw new InvalidOperationException("Gemini API가 빈 응답(Candidates 0건)을 반환했습니다.");
         }

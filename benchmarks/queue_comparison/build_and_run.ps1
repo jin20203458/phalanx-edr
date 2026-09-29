@@ -1,4 +1,4 @@
-# build_and_run.ps1
+# build_and_run.ps1 - 큐 비교 벤치마크 빌드 및 실행 스크립트
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vcvars = $null
 

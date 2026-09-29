@@ -4,7 +4,7 @@ package phalanx;
 
 option csharp_namespace = "Phalanx.Shared.Protos";
 
-// Process lifecycle event
+// 프로세스 생명주기 이벤트
 message ProcessEvent {
     uint32 process_id = 1;
     uint32 parent_process_id = 2;
@@ -17,7 +17,7 @@ message ProcessEvent {
     bool is_terminated = 9;
 }
 
-// Network connection event
+// 네트워크 연결 이벤트
 message NetworkEvent {
     uint32 process_id = 1;
     string source_address = 2;
@@ -28,7 +28,7 @@ message NetworkEvent {
     uint64 timestamp_ns = 7;
 }
 
-// Module / DLL load event
+// 모듈 / DLL 로드 이벤트
 message ImageEvent {
     uint32 process_id = 1;
     uint64 image_base = 2;
@@ -37,21 +37,21 @@ message ImageEvent {
     uint64 timestamp_ns = 5;
 }
 
-// Batch container for zero-loss streaming
+// 무손실 스트리밍을 위한 배치 컨테이너
 message TelemetryBatch {
     repeated ProcessEvent process_events = 1;
     repeated NetworkEvent network_events = 2;
     repeated ImageEvent image_events = 3;
 }
 
-// Mitigation command dispatched from C# Core
+// C# 코어 관제 콘솔에서 하달되는 위협 완화 및 대응 명령
 message MitigationCommand {
     enum ActionType {
-        ACTION_KILL = 0;
-        ACTION_RESUME = 1;          // Unfreeze suspended process/thread
-        ACTION_BLOCK_IP = 2;        // Network isolation
-        ACTION_EXTEND_TIMEOUT = 3;  // One-shot extension for deep AI investigation (max 1 time)
-        ACTION_SUSPEND = 4;         // Freeze target process for AI deep investigation (preserves volatile memory)
+        ACTION_KILL = 0;            // 악성 프로세스 즉각 강제 사살
+        ACTION_RESUME = 1;          // 동결된 프로세스/스레드 복구 (동결 해제)
+        ACTION_BLOCK_IP = 2;        // 네트워크 IP 격리 차단
+        ACTION_EXTEND_TIMEOUT = 3;  // AI 심층 조사를 위한 1회성 타임아웃 연장 (최대 1회 제한)
+        ACTION_SUSPEND = 4;         // AI 심층 조사를 위한 타깃 프로세스 원자적 동결 (메모리 보존)
     }
     ActionType action = 1;
     uint32 target_pid = 2;
@@ -59,7 +59,7 @@ message MitigationCommand {
     string reason = 4;
 }
 
-// Bidirectional streaming telemetry service
+// 양방향 스트리밍 텔레메트리 gRPC 서비스
 service PhalanxService {
     rpc StreamTelemetry(stream TelemetryBatch) returns (stream MitigationCommand);
 }

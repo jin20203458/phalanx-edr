@@ -1,11 +1,11 @@
-﻿cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.24)
 
 project(Phalanx CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Ensure Unicode, NOMINMAX, and Lean-and-mean Windows definitions
+# 유니코드, NOMINMAX 및 경량 윈도우 정의 설정
 add_compile_definitions(
     UNICODE
     _UNICODE
@@ -18,7 +18,7 @@ if (MSVC)
     add_compile_options("/utf-8" "/EHsc" "/W4" "/permissive-")
 endif()
 
-# Find required dependencies
+# 필수 의존성 패키지 탐색
 find_package(gRPC CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
@@ -31,7 +31,7 @@ endif()
 message(STATUS "Found krabsetw: ${KRABSETW_INCLUDE_DIRS}")
 
 # -------------------------------------------------------------------------
-# Protobuf / gRPC Generation
+# Protobuf / gRPC 소스 코드 생성
 # -------------------------------------------------------------------------
 set(PROTO_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/proto")
 set(PROTO_FILE "${PROTO_SRC_DIR}/phalanx.proto")
@@ -73,6 +73,6 @@ target_link_libraries(phalanx_proto PUBLIC
     protobuf::libprotobuf
 )
 
-# Subdirectories
+# 하위 디렉터리 추가
 add_subdirectory(src/Phalanx.Sensor)
 add_subdirectory(tests)

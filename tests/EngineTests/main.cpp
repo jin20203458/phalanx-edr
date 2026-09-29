@@ -96,7 +96,7 @@ void TestPIDReuseAndTombstoneMemoryBounding() {
 
     // 2. 동일 PID 2000 재할당 (Windows PID Reuse)
     tree.OnProcessStart(1001, 0, "services.exe");
-    tree.OnProcessStart(2000, 1001, "new_service.exe"); // Overwrite
+    tree.OnProcessStart(2000, 1001, "new_service.exe"); // 덮어쓰기 (PID 재사용)
     auto reused = tree.FindNode(2000);
     assert(reused.has_value());
     assert(reused->is_alive == true);

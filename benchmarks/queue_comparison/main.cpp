@@ -13,7 +13,7 @@
 
 #pragma comment(lib, "winmm.lib")
 
-// Boost Lock-Free SPSC Queue
+// Boost Lock-Free SPSC 큐 헤더
 #include <boost/lockfree/spsc_queue.hpp>
 
 #ifdef _WIN32
@@ -38,8 +38,8 @@ struct BenchmarkProcessEvent {
     uint32_t session_id;
     uint32_t token_elevation_type;
     bool is_suspended;
-    char image_name[35];       // e.g., "C:\\Windows\\System32\\powershell.exe"
-    char command_line[68];     // e.g., "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass"
+    char image_name[35];       // 예시: "C:\\Windows\\System32\\powershell.exe"
+    char command_line[68];     // 예시: "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass"
 };
 #pragma pack(pop)
 
@@ -86,11 +86,11 @@ public:
 
     bool Push(const T& item) {
         std::lock_guard<std::mutex> lock(write_lock_);
-        if (write_buffer_->size() < InitialCapacity * 4) { // Safety cap
+        if (write_buffer_->size() < InitialCapacity * 4) { // 안전 상한선
             write_buffer_->push_back(item);
             return true;
         }
-        return false; // Dropped
+        return false; // 드롭됨
     }
 
     // 소비자: 락을 극히 짧게 쥐고 포인터만 맞교환 (Zero Dynamic Heap Allocation)
@@ -132,7 +132,7 @@ int main() {
     constexpr int CONSUMER_TICK_INTERVAL_MS = 10; // 10ms (100Hz) EDR 배치 전송 주기
 
     // ------------------------------------------------------------------------
-    // Test 1: Boost Lock-Free SPSC Queue
+    // 테스트 1: Boost Lock-Free SPSC 큐
     // ------------------------------------------------------------------------
     {
         std::cout << "\n>>> [테스트 1] Boost Lock-Free SPSC Queue 실행 중 (1,000,000 이벤트)..." << std::endl;
@@ -146,7 +146,7 @@ int main() {
 
         auto t_start = std::chrono::high_resolution_clock::now();
 
-        // Producer Thread (ETW 콜백 모사)
+        // 생산자 스레드 (ETW 콜백 모사)
         std::thread producer([&]() {
             BenchmarkProcessEvent ev;
             ev.process_id = 8492;
@@ -169,7 +169,7 @@ int main() {
             producer_done.store(true, std::memory_order_release);
         });
 
-        // Consumer Thread (10ms 주기 gRPC 일괄 전송 모사)
+        // 소비자 스레드 (10ms 주기 gRPC 일괄 전송 모사)
         std::thread consumer([&]() {
             std::vector<BenchmarkProcessEvent> batch;
             batch.reserve(SPSC_CAPACITY);
@@ -204,7 +204,7 @@ int main() {
     }
 
     // ------------------------------------------------------------------------
-    // Test 2: Double-Buffered Swap Queue (Phalanx)
+    // 테스트 2: Double-Buffered Swap Queue (Phalanx 이중 버퍼 맞교환)
     // ------------------------------------------------------------------------
     {
         std::cout << "\n>>> [테스트 2] DoubleBufferedSwapQueue (포인터 스왑) 실행 중 (1,000,000 이벤트)..." << std::endl;
@@ -218,7 +218,7 @@ int main() {
 
         auto t_start = std::chrono::high_resolution_clock::now();
 
-        // Producer Thread (ETW 콜백 모사)
+        // 생산자 스레드 (ETW 콜백 모사)
         std::thread producer([&]() {
             BenchmarkProcessEvent ev;
             ev.process_id = 8492;
@@ -240,7 +240,7 @@ int main() {
             producer_done.store(true, std::memory_order_release);
         });
 
-        // Consumer Thread (10ms 주기 gRPC 일괄 전송 모사)
+        // 소비자 스레드 (10ms 주기 gRPC 일괄 전송 모사)
         std::thread consumer([&]() {
             while (!producer_done.load(std::memory_order_acquire)) {
                 auto c_start = std::chrono::high_resolution_clock::now();

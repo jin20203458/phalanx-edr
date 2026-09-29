@@ -56,7 +56,7 @@ ActuatorResult ProcessActuator::SuspendProcessAtomic(uint32_t pid, HANDLE hProce
         std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
     );
 
-    if (status >= 0) { // NT_SUCCESS(status)
+    if (status >= 0) { // NT_SUCCESS(status) 성공 상태 확인
         result.success = true;
         result.method = FreezeMethod::ATOMIC_NT;
         result.message = "NtSuspendProcess 원자적 동결 완료 (" + std::to_string(result.elapsed_microseconds) + "μs 소요)";

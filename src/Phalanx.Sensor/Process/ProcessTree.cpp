@@ -100,6 +100,15 @@ void ProcessTree::InsertOrOverwriteNodeInternal(ProcessNode&& node) {
                 vec.erase(std::remove(vec.begin(), vec.end(), pid), vec.end());
             }
         }
+
+        // PID 재사용: 기존 노드를 부모로 가리키던 자식들의 링크 절단 (새 프로세스로의 유령 입양 방지)
+        for (uint32_t child_pid : it->second.children_pids) {
+            auto child_it = nodes_.find(child_pid);
+            if (child_it != nodes_.end() && child_it->second.ppid == pid) {
+                child_it->second.ppid = 0;
+            }
+        }
+
         it->second = std::move(node);
     } else {
         nodes_.emplace(pid, std::move(node));

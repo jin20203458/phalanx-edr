@@ -1,4 +1,4 @@
-﻿#include "GrpcStreamClient.h"
+#include "GrpcStreamClient.h"
 #include <grpcpp/grpcpp.h>
 #include <agrpc/asio_grpc.hpp>
 #include <agrpc/client_rpc.hpp>
@@ -117,6 +117,9 @@ bool GrpcStreamClient::Start() {
                                             break;
                                         case phalanx::MitigationCommand::ACTION_BLOCK_IP:
                                             std::cout << "🌐 [Actuator] IP 차단 요청 수신: " << cmd.target_ip() << std::endl;
+                                            break;
+                                        case phalanx::MitigationCommand::ACTION_EXTEND_TIMEOUT:
+                                            impl_->actuator->ExtendTimeout(cmd.target_pid());
                                             break;
                                         default:
                                             break;

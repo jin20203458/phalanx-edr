@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -45,13 +45,14 @@ public:
 
     /**
      * @brief 동결된 타깃 프로세스와 대상 스레드 ID 목록을 워치독 감시 목록에 등록
+     *        (원자적 동결인 경우 thread_ids가 비어있을 수 있음)
      */
-    void RegisterSuspended(uint32_t pid, std::vector<DWORD> thread_ids, std::chrono::milliseconds timeout = std::chrono::milliseconds(0));
+    void RegisterSuspended(uint32_t pid, std::vector<DWORD> thread_ids = {}, std::chrono::milliseconds timeout = std::chrono::milliseconds(0));
 
     /**
-     * @brief 장시간 소요되는 AI 수사 중 조기 동결 해제를 방지하기 위해 만료 시한을 연장(Keep-Alive)
+     * @brief AI 심층 수사 진입 시 조기 동결 해제를 방지하기 위해 만료 시한을 1회 연장 (최대 1회 한도)
      */
-    bool RefreshKeepAlive(uint32_t pid, std::chrono::milliseconds extend_by = std::chrono::milliseconds(10000));
+    bool ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by = std::chrono::milliseconds(10000));
 
     /**
      * @brief 프로세스 종료(Kill) 또는 명시적 동결 해제 시 감시 목록에서 등록 제거
@@ -66,6 +67,7 @@ private:
         uint32_t pid{0};
         std::vector<DWORD> thread_ids;
         std::chrono::steady_clock::time_point deadline;
+        int extend_count{0}; // 최대 1회 연장 제한 가드
     };
 
     // 백그라운드에서 주기적으로 만료 시한을 검사하는 감시 루프

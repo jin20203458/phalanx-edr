@@ -1,4 +1,4 @@
-﻿#include "SafetyWatchdog.h"
+#include "SafetyWatchdog.h"
 #include <iostream>
 
 namespace Phalanx::Actuator {
@@ -36,12 +36,17 @@ void SafetyWatchdog::RegisterSuspended(uint32_t pid, std::vector<DWORD> thread_i
     std::cout << "[Watchdog] PID " << pid << " 등록 완료 (동결 안전 타임아웃: " << timeout.count() << "ms)" << std::endl;
 }
 
-bool SafetyWatchdog::RefreshKeepAlive(uint32_t pid, std::chrono::milliseconds extend_by) {
+bool SafetyWatchdog::ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by) {
     std::lock_guard<std::mutex> lock(entries_lock_);
     auto it = entries_.find(pid);
     if (it != entries_.end()) {
+        if (it->second.extend_count >= 1) {
+            std::cerr << "⚠️ [Watchdog] PID " << pid << "의 타임아웃 추가 연장 거부: 최대 연장 한도(1회) 초과!" << std::endl;
+            return false;
+        }
+        it->second.extend_count++;
         it->second.deadline = std::chrono::steady_clock::now() + extend_by;
-        std::cout << "[Watchdog] PID " << pid << " 수사 킵얼라이브 연장 (+" << extend_by.count() << "ms)" << std::endl;
+        std::cout << "⏱️ [Watchdog] PID " << pid << " 수사 타임아웃 1회 연장 완료 (+" << extend_by.count() << "ms, 누적 " << it->second.extend_count << "회)" << std::endl;
         return true;
     }
     return false;

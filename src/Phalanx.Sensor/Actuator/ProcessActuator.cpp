@@ -1,12 +1,20 @@
-﻿#include "ProcessActuator.h"
+#include "ProcessActuator.h"
 #include "../Common/Win32Handles.h"
 #include <tlhelp32.h>
 #include <iostream>
+#include <chrono>
 
 namespace Phalanx::Actuator {
 
 ProcessActuator::ProcessActuator(std::shared_ptr<SafetyWatchdog> watchdog)
     : watchdog_(std::move(watchdog)) {
+    // ntdll.dll 에서 NtSuspendProcess 및 NtResumeProcess 미공개 API 동적 바인딩
+    HMODULE hNtdll = ::GetModuleHandleW(L"ntdll.dll");
+    if (hNtdll) {
+        nt_suspend_process_ = reinterpret_cast<pfnNtSuspendProcess>(::GetProcAddress(hNtdll, "NtSuspendProcess"));
+        nt_resume_process_ = reinterpret_cast<pfnNtResumeProcess>(::GetProcAddress(hNtdll, "NtResumeProcess"));
+    }
+
     if (watchdog_) {
         // 워치독 타임아웃 만료 시 호출될 자동 복구 핸들러 등록
         watchdog_->SetAutoResumeCallback([this](uint32_t pid, const std::vector<DWORD>& thread_ids) {
@@ -17,7 +25,6 @@ ProcessActuator::ProcessActuator(std::shared_ptr<SafetyWatchdog> watchdog)
 
 std::vector<DWORD> ProcessActuator::EnumerateProcessThreads(uint32_t pid) {
     std::vector<DWORD> thread_ids;
-    // 시스템 전체 스레드 스냅샷 생성
     HANDLE hSnap = ::CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnap == INVALID_HANDLE_VALUE) {
         return thread_ids;
@@ -38,7 +45,36 @@ std::vector<DWORD> ProcessActuator::EnumerateProcessThreads(uint32_t pid) {
     return thread_ids;
 }
 
-ActuatorResult ProcessActuator::SuspendProcess(uint32_t pid) {
+ActuatorResult ProcessActuator::SuspendProcessAtomic(uint32_t pid, HANDLE hProcess) {
+    auto start_time = std::chrono::steady_clock::now();
+    ActuatorResult result;
+    result.pid = pid;
+
+    LONG status = nt_suspend_process_(hProcess);
+    auto end_time = std::chrono::steady_clock::now();
+    result.elapsed_microseconds = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
+    );
+
+    if (status >= 0) { // NT_SUCCESS(status)
+        result.success = true;
+        result.method = FreezeMethod::ATOMIC_NT;
+        result.message = "NtSuspendProcess 원자적 동결 완료 (" + std::to_string(result.elapsed_microseconds) + "μs 소요)";
+        
+        // 워치독에 등록 (스레드 목록은 비어 있어도 원자적 복구 수행 가능)
+        if (watchdog_) {
+            watchdog_->RegisterSuspended(pid, {});
+        }
+        return result;
+    }
+
+    result.success = false;
+    result.message = "NtSuspendProcess 실패 (NTSTATUS: " + std::to_string(status) + ")";
+    return result;
+}
+
+ActuatorResult ProcessActuator::SuspendProcessFallback(uint32_t pid) {
+    auto start_time = std::chrono::steady_clock::now();
     ActuatorResult result;
     result.pid = pid;
 
@@ -64,15 +100,22 @@ ActuatorResult ProcessActuator::SuspendProcess(uint32_t pid) {
         }
     }
 
+    auto end_time = std::chrono::steady_clock::now();
+    result.elapsed_microseconds = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count()
+    );
+
     if (suspended_tids.empty()) {
         result.success = false;
-        result.message = "타깃 프로세스의 스레드를 동결하지 못했습니다";
+        result.message = "타깃 프로세스의 스레드를 동결하지 못했습니다 (권한 부족 또는 종료됨)";
         return result;
     }
 
     result.threads_affected = static_cast<uint32_t>(suspended_tids.size());
     result.success = true;
-    result.message = "타깃 프로세스가 성공적으로 동결(Freeze)되었습니다";
+    result.method = FreezeMethod::THREAD_SNAPSHOT;
+    result.message = "Toolhelp32 스레드 순회 동결 완료 (" + std::to_string(result.threads_affected) + "개 스레드, " +
+                     std::to_string(result.elapsed_microseconds) + "μs 소요)";
 
     // 동결 성공 시 OS 로더 락 데드락 방지를 위해 세이프티 워치독에 등록
     if (watchdog_) {
@@ -82,20 +125,51 @@ ActuatorResult ProcessActuator::SuspendProcess(uint32_t pid) {
     return result;
 }
 
-ActuatorResult ProcessActuator::ResumeProcess(uint32_t pid) {
+ActuatorResult ProcessActuator::SuspendProcess(uint32_t pid) {
+    // 1순위: ntdll!NtSuspendProcess 원자적 동결 시도 (10~20μs 목표, 강제 폴백 모드가 아닐 때)
+    if (!force_fallback_.load(std::memory_order_acquire) && nt_suspend_process_) {
+        HANDLE hProcess = ::OpenProcess(PROCESS_SUSPEND_RESUME, FALSE, pid);
+        if (hProcess) {
+            Common::UniqueHandle procGuard(hProcess);
+            auto atomic_result = SuspendProcessAtomic(pid, hProcess);
+            if (atomic_result.success) {
+                return atomic_result;
+            }
+            std::cerr << "⚠️ [Actuator] 1순위 NtSuspendProcess 실패: " << atomic_result.message
+                      << " ➔ 2순위 Toolhelp32 폴백 가동!" << std::endl;
+        } else {
+            std::cerr << "⚠️ [Actuator] PROCESS_SUSPEND_RESUME 권한으로 프로세스 열기 실패 (PID: " << pid
+                      << ") ➔ 2순위 Toolhelp32 폴백 가동!" << std::endl;
+        }
+    }
+
+    // 2순위: Toolhelp32 + SuspendThread 우아한 자동 폴백 (Graceful Fallback)
+    return SuspendProcessFallback(pid);
+}
+
+ActuatorResult ProcessActuator::ResumeProcessAtomic(uint32_t pid, HANDLE hProcess) {
     ActuatorResult result;
     result.pid = pid;
 
-    std::vector<DWORD> tids;
-    bool had_watchdog_entry = false;
-
-    // 워치독에서 대상 프로세스를 등록 해제하며 동결된 스레드 목록 회수
-    if (watchdog_) {
-        had_watchdog_entry = watchdog_->Deregister(pid, tids);
+    LONG status = nt_resume_process_(hProcess);
+    if (status >= 0) {
+        result.success = true;
+        result.method = FreezeMethod::ATOMIC_NT;
+        result.message = "NtResumeProcess 원자적 복구 완료";
+        return result;
     }
 
-    // 워치독에 없는 경우 현재 존재하는 스레드를 직접 열거하여 복구
-    if (!had_watchdog_entry || tids.empty()) {
+    result.success = false;
+    result.message = "NtResumeProcess 실패 (NTSTATUS: " + std::to_string(status) + ")";
+    return result;
+}
+
+ActuatorResult ProcessActuator::ResumeProcessFallback(uint32_t pid, const std::vector<DWORD>& thread_ids) {
+    ActuatorResult result;
+    result.pid = pid;
+
+    std::vector<DWORD> tids = thread_ids;
+    if (tids.empty()) {
         tids = EnumerateProcessThreads(pid);
     }
 
@@ -115,8 +189,32 @@ ActuatorResult ProcessActuator::ResumeProcess(uint32_t pid) {
 
     result.threads_affected = resumed_count;
     result.success = (resumed_count > 0);
-    result.message = result.success ? "타깃 프로세스 스레드 정상 복구 완료" : "스레드 복구 실패";
+    result.method = FreezeMethod::THREAD_SNAPSHOT;
+    result.message = result.success ? "스레드 순회 복구 완료 (" + std::to_string(resumed_count) + "개 스레드)"
+                                    : "스레드 복구 실패 (스레드를 열 수 없음)";
     return result;
+}
+
+ActuatorResult ProcessActuator::ResumeProcess(uint32_t pid) {
+    std::vector<DWORD> tids;
+    if (watchdog_) {
+        watchdog_->Deregister(pid, tids);
+    }
+
+    // 1순위: ntdll!NtResumeProcess 원자적 복구 시도 (강제 폴백 모드가 아닐 때)
+    if (!force_fallback_.load(std::memory_order_acquire) && nt_resume_process_) {
+        HANDLE hProcess = ::OpenProcess(PROCESS_SUSPEND_RESUME, FALSE, pid);
+        if (hProcess) {
+            Common::UniqueHandle procGuard(hProcess);
+            auto atomic_res = ResumeProcessAtomic(pid, hProcess);
+            if (atomic_res.success) {
+                return atomic_res;
+            }
+        }
+    }
+
+    // 2순위: 개별 스레드 순회 복구 폴백
+    return ResumeProcessFallback(pid, tids);
 }
 
 ActuatorResult ProcessActuator::TerminateTargetProcess(uint32_t pid, uint32_t exit_code, std::string_view reason) {
@@ -155,14 +253,41 @@ ActuatorResult ProcessActuator::TerminateTargetProcess(uint32_t pid, uint32_t ex
 }
 
 void ProcessActuator::HandleAutoResume(uint32_t pid, const std::vector<DWORD>& thread_ids) {
-    for (DWORD tid : thread_ids) {
-        HANDLE hThread = ::OpenThread(THREAD_SUSPEND_RESUME, FALSE, tid);
-        if (hThread) {
-            Common::UniqueHandle guard(hThread);
-            ::ResumeThread(hThread);
+    // 1순위: NtResumeProcess 시도
+    bool atomic_succeeded = false;
+    if (nt_resume_process_) {
+        HANDLE hProcess = ::OpenProcess(PROCESS_SUSPEND_RESUME, FALSE, pid);
+        if (hProcess) {
+            Common::UniqueHandle procGuard(hProcess);
+            if (nt_resume_process_(hProcess) >= 0) {
+                atomic_succeeded = true;
+                std::cout << "[Actuator] 고아 프로세스 PID " << pid << " NtResumeProcess 원자적 자동 복구 완료" << std::endl;
+            }
         }
     }
-    std::cout << "[Actuator] 고아 프로세스 PID " << pid << "의 " << thread_ids.size() << "개 스레드 자동 복구 완료" << std::endl;
+
+    // 2순위: 실패 또는 스레드 목록이 있는 경우 개별 스레드 복구 폴백
+    if (!atomic_succeeded) {
+        std::vector<DWORD> tids = thread_ids;
+        if (tids.empty()) {
+            tids = EnumerateProcessThreads(pid);
+        }
+        for (DWORD tid : tids) {
+            HANDLE hThread = ::OpenThread(THREAD_SUSPEND_RESUME, FALSE, tid);
+            if (hThread) {
+                Common::UniqueHandle guard(hThread);
+                ::ResumeThread(hThread);
+            }
+        }
+        std::cout << "[Actuator] 고아 프로세스 PID " << pid << "의 " << tids.size() << "개 스레드 자동 복구 완료" << std::endl;
+    }
+}
+
+bool ProcessActuator::ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by) {
+    if (watchdog_) {
+        return watchdog_->ExtendTimeout(pid, extend_by);
+    }
+    return false;
 }
 
 } // namespace Phalanx::Actuator

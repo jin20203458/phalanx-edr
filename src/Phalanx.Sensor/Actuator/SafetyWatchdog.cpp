@@ -33,7 +33,7 @@ void SafetyWatchdog::RegisterSuspended(uint32_t pid, std::vector<DWORD> thread_i
     entry.deadline = std::chrono::steady_clock::now() + timeout;
 
     entries_[pid] = std::move(entry);
-    std::cout << "[Watchdog] PID " << pid << " registered with " << timeout.count() << "ms timeout watchdog." << std::endl;
+    std::cout << "[Watchdog] PID " << pid << " 등록 완료 (동결 안전 타임아웃: " << timeout.count() << "ms)" << std::endl;
 }
 
 bool SafetyWatchdog::RefreshKeepAlive(uint32_t pid, std::chrono::milliseconds extend_by) {
@@ -41,7 +41,7 @@ bool SafetyWatchdog::RefreshKeepAlive(uint32_t pid, std::chrono::milliseconds ex
     auto it = entries_.find(pid);
     if (it != entries_.end()) {
         it->second.deadline = std::chrono::steady_clock::now() + extend_by;
-        std::cout << "[Watchdog] PID " << pid << " keep-alive refreshed by " << extend_by.count() << "ms." << std::endl;
+        std::cout << "[Watchdog] PID " << pid << " 수사 킵얼라이브 연장 (+" << extend_by.count() << "ms)" << std::endl;
         return true;
     }
     return false;
@@ -84,10 +84,10 @@ void SafetyWatchdog::WatchdogLoop() {
             }
         }
 
-        // Trigger auto-resume for expired entries
+        // 제한 시간이 초과된 고아 동결(Orphan Freeze) 프로세스를 자동으로 해제
         for (const auto& expired : expired_entries) {
-            std::cerr << "⚠️ [Watchdog] Orphan freeze timeout reached for PID " << expired.pid
-                      << "! Triggering automatic resume to avoid loader lock deadlocks." << std::endl;
+            std::cerr << "⚠️ [Watchdog] PID " << expired.pid
+                      << "의 동결 안전 타임아웃 도달! 로더 락 데드락 방지를 위해 자동 동결 해제(Auto-Resume)를 수행합니다." << std::endl;
             if (auto_resume_callback_) {
                 auto_resume_callback_(expired.pid, expired.thread_ids);
             }

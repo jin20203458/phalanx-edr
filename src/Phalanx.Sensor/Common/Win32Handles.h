@@ -20,7 +20,7 @@
 namespace Phalanx::Common {
 
 // ----------------------------------------------------------------------------
-// RAII Wrapper for Win32 HANDLE
+// Win32 HANDLE 자원 해제를 보장하는 RAII 래퍼
 // ----------------------------------------------------------------------------
 struct HandleDeleter {
     void operator()(HANDLE handle) const noexcept {
@@ -37,7 +37,7 @@ inline UniqueHandle MakeUniqueHandle(HANDLE h) noexcept {
 }
 
 // ----------------------------------------------------------------------------
-// RAII Wrapper for HMODULE
+// Win32 HMODULE(DLL 모듈 핸들) 자동 해제를 위한 RAII 래퍼
 // ----------------------------------------------------------------------------
 struct ModuleDeleter {
     void operator()(HMODULE hModule) const noexcept {
@@ -50,7 +50,7 @@ struct ModuleDeleter {
 using UniqueHModule = std::unique_ptr<std::remove_pointer_t<HMODULE>, ModuleDeleter>;
 
 // ----------------------------------------------------------------------------
-// RAII Wrapper for SC_HANDLE
+// Win32 SC_HANDLE(서비스 제어 관리자 핸들) 자동 해제를 위한 RAII 래퍼
 // ----------------------------------------------------------------------------
 struct ServiceHandleDeleter {
     void operator()(SC_HANDLE hSc) const noexcept {
@@ -63,10 +63,11 @@ struct ServiceHandleDeleter {
 using UniqueScHandle = std::unique_ptr<std::remove_pointer_t<SC_HANDLE>, ServiceHandleDeleter>;
 
 // ----------------------------------------------------------------------------
-// Windows Privilege & Elevation Utilities
+// Windows 프로세스 토큰 권한 및 관리자 권한 확인 유틸리티
 // ----------------------------------------------------------------------------
 class PrivilegeHelper {
 public:
+    // 현재 프로세스가 관리자 권한으로 실행 중인지 확인
     static bool IsElevated() noexcept {
         HANDLE hToken = nullptr;
         if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
@@ -82,6 +83,7 @@ public:
         return false;
     }
 
+    // 타깃 프로세스 제어(동결/사살)를 위한 SeDebugPrivilege 디버그 권한 활성화
     static bool EnableDebugPrivilege() noexcept {
         HANDLE hToken = nullptr;
         if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
@@ -108,7 +110,7 @@ public:
 };
 
 // ----------------------------------------------------------------------------
-// UTF-8 <-> UTF-16 Conversion Utilities
+// UTF-8 및 UTF-16 상호 변환 유틸리티 함수
 // ----------------------------------------------------------------------------
 inline std::string Utf16ToUtf8(std::wstring_view wstr) {
     if (wstr.empty()) return {};

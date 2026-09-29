@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <cassert>
 #include <thread>
 #include <vector>
@@ -11,7 +11,7 @@
 #include "../../src/Phalanx.Sensor/Common/Win32Handles.h"
 
 void TestDoubleBufferedSwapQueue() {
-    std::cout << "[Test] Starting DoubleBufferedSwapQueue 100,000 items concurrent push test..." << std::endl;
+    std::cout << "[단위테스트] DoubleBufferedSwapQueue 100,000건 동시 Push 및 무손실 스왑 검증 시작..." << std::endl;
     Phalanx::Queue::DoubleBufferedSwapQueue<uint32_t, 32768> queue;
 
     constexpr int NUM_PRODUCERS = 4;
@@ -45,7 +45,7 @@ void TestDoubleBufferedSwapQueue() {
                 total_collected.fetch_add(batch->size(), std::memory_order_relaxed);
             }
         }
-        // Final drain
+        // 최종 잔여 버퍼 플러시 (Final drain)
         auto* batch = queue.SwapAndFlush();
         if (batch) {
             total_collected.fetch_add(batch->size(), std::memory_order_relaxed);
@@ -62,18 +62,18 @@ void TestDoubleBufferedSwapQueue() {
     consuming.store(false, std::memory_order_release);
     consumer.join();
 
-    std::cout << ">>> Collected: " << total_collected.load() << " / " << TOTAL_ITEMS
-              << " | Dropped: " << queue.DroppedCount() << std::endl;
+    std::cout << ">>> 수집된 항목 수: " << total_collected.load() << " / " << TOTAL_ITEMS
+              << " | 유실(Dropped) 수: " << queue.DroppedCount() << std::endl;
 
     if (total_collected.load() != TOTAL_ITEMS || queue.DroppedCount() != 0) {
-        std::cerr << "❌ DoubleBufferedSwapQueue test FAILED!" << std::endl;
+        std::cerr << "❌ DoubleBufferedSwapQueue 테스트 실패!" << std::endl;
         std::exit(1);
     }
-    std::cout << "✅ DoubleBufferedSwapQueue test PASSED!" << std::endl;
+    std::cout << "✅ DoubleBufferedSwapQueue 동시성 테스트 통과!" << std::endl;
 }
 
 void TestSafetyWatchdog() {
-    std::cout << "\n[Test] Starting SafetyWatchdog timeout and auto-resume test..." << std::endl;
+    std::cout << "\n[단위테스트] SafetyWatchdog 타임아웃 및 자동 재개(Auto-Resume) 검증 시작..." << std::endl;
     auto watchdog = std::make_shared<Phalanx::Actuator::SafetyWatchdog>(std::chrono::milliseconds(200));
 
     std::atomic<bool> callback_invoked{false};
@@ -87,35 +87,35 @@ void TestSafetyWatchdog() {
     watchdog->RegisterSuspended(99999, {101, 102}, std::chrono::milliseconds(200));
     assert(watchdog->TrackedCount() == 1);
 
-    // Wait for timeout
+    // 타임아웃 만료 대기
     std::this_thread::sleep_for(std::chrono::milliseconds(450));
 
     if (!callback_invoked.load(std::memory_order_acquire) || resumed_pid.load() != 99999) {
-        std::cerr << "❌ SafetyWatchdog test FAILED!" << std::endl;
+        std::cerr << "❌ SafetyWatchdog 테스트 실패!" << std::endl;
         std::exit(1);
     }
 
     assert(watchdog->TrackedCount() == 0);
-    std::cout << "✅ SafetyWatchdog test PASSED!" << std::endl;
+    std::cout << "✅ SafetyWatchdog 자동 재개 테스트 통과!" << std::endl;
 }
 
 void TestProcessActuatorThreadEnumeration() {
-    std::cout << "\n[Test] Starting ProcessActuator thread enumeration test..." << std::endl;
+    std::cout << "\n[단위테스트] ProcessActuator 프로세스 스레드 열거 기능 검증 시작..." << std::endl;
     DWORD current_pid = ::GetCurrentProcessId();
     auto threads = Phalanx::Actuator::ProcessActuator::EnumerateProcessThreads(current_pid);
 
-    std::cout << ">>> Current process PID " << current_pid << " has " << threads.size() << " threads." << std::endl;
+    std::cout << ">>> 현재 프로세스 PID " << current_pid << " 의 스레드 수: " << threads.size() << std::endl;
     if (threads.empty()) {
-        std::cerr << "❌ Thread enumeration FAILED!" << std::endl;
+        std::cerr << "❌ 스레드 열거 실패!" << std::endl;
         std::exit(1);
     }
-    std::cout << "✅ ProcessActuator thread enumeration test PASSED!" << std::endl;
+    std::cout << "✅ ProcessActuator 스레드 열거 테스트 통과!" << std::endl;
 }
 
 int main() {
     ::SetConsoleOutputCP(CP_UTF8);
     std::cout << "================================================================================" << std::endl;
-    std::cout << "   PHALANX SENSOR UNIT TESTS                                                    " << std::endl;
+    std::cout << "   PHALANX SENSOR 핵심 컴포넌트 단위 테스트 (Unit Tests)                        " << std::endl;
     std::cout << "================================================================================" << std::endl;
 
     TestDoubleBufferedSwapQueue();
@@ -123,7 +123,7 @@ int main() {
     TestProcessActuatorThreadEnumeration();
 
     std::cout << "\n================================================================================" << std::endl;
-    std::cout << "🎉 ALL UNIT TESTS PASSED SUCCESSFULLY! (Exit Code 0)                            " << std::endl;
+    std::cout << "🎉 모든 단위 테스트 검증 성공! (Exit Code 0)                                     " << std::endl;
     std::cout << "================================================================================" << std::endl;
     return 0;
 }

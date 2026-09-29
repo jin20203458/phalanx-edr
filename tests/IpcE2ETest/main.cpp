@@ -1,4 +1,4 @@
-﻿#ifndef WIN32_LEAN_AND_MEAN
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #ifndef NOMINMAX
@@ -46,7 +46,7 @@ public:
 int main() {
     ::SetConsoleOutputCP(CP_UTF8);
     std::cout << "================================================================================" << std::endl;
-    std::cout << "   PHALANX gRPC IPC END-TO-END VERIFICATION TEST                               " << std::endl;
+    std::cout << "   PHALANX gRPC IPC 양방향 파이프라인 종단간(E2E) 검증 테스트                    " << std::endl;
     std::cout << "================================================================================" << std::endl;
 
     std::string server_addr("127.0.0.1:50099");
@@ -55,7 +55,7 @@ int main() {
     builder.AddListeningPort(server_addr, grpc::InsecureServerCredentials());
     builder.RegisterService(&service);
     auto server = builder.BuildAndStart();
-    std::cout << "🚀 [E2E Test] In-process Mock gRPC Server listening on " << server_addr << std::endl;
+    std::cout << "🚀 [E2E Test] 프로세스 내 Mock gRPC 서버 대기 중: " << server_addr << std::endl;
 
     auto queue = std::make_shared<Phalanx::Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>>();
     auto client = std::make_unique<Phalanx::Ipc::GrpcStreamClient>(server_addr, queue, nullptr);
@@ -63,29 +63,29 @@ int main() {
     std::atomic<bool> client_cmd_received{false};
     client->SetCustomCommandHandler([&client_cmd_received](const phalanx::MitigationCommand& cmd) {
         if (cmd.target_pid() == 7777 && cmd.action() == phalanx::MitigationCommand::ACTION_KILL) {
-            std::cout << "🛡️ [E2E Test] Client callback received MitigationCommand: ACTION_KILL for PID "
-                      << cmd.target_pid() << std::endl;
+            std::cout << "🛡️ [E2E Test] 클라이언트 콜백이 MitigationCommand 수신: ACTION_KILL (PID "
+                      << cmd.target_pid() << ")" << std::endl;
             client_cmd_received.store(true, std::memory_order_release);
         }
     });
 
     client->Start();
 
-    // Wait for connection
+    // 연결 수립 대기
     int attempts = 0;
     while (!client->IsConnected() && attempts++ < 30) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     if (!client->IsConnected()) {
-        std::cerr << "❌ [E2E Test] Failed to connect to gRPC server!" << std::endl;
+        std::cerr << "❌ [E2E Test] gRPC 서버 연결 실패!" << std::endl;
         server->Shutdown();
         return 1;
     }
-    std::cout << "✅ [E2E Test] gRPC Stream connected!" << std::endl;
+    std::cout << "✅ [E2E Test] gRPC 스트림 연결 성공!" << std::endl;
 
-    // Push test event
-    std::cout << "📦 [E2E Test] Pushing synthetic malicious process event (PID 7777) into DoubleBufferedSwapQueue..." << std::endl;
+    // 가상 테스트 이벤트 투입
+    std::cout << "📦 [E2E Test] 가상 악성 프로세스 이벤트(PID 7777)를 DoubleBufferedSwapQueue 에 삽입..." << std::endl;
     phalanx::ProcessEvent ev;
     ev.set_process_id(7777);
     ev.set_parent_process_id(1000);
@@ -94,7 +94,7 @@ int main() {
     ev.set_timestamp_ns(123456789);
     queue->Push(std::move(ev));
 
-    // Wait for round-trip response
+    // 왕복 응답 수신 대기 (센서 -> 서버 -> 완화 명령 -> 센서 콜백)
     attempts = 0;
     while (!client_cmd_received.load(std::memory_order_acquire) && attempts++ < 30) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -104,20 +104,20 @@ int main() {
     server->Shutdown();
 
     if (!service.batch_received.load()) {
-        std::cerr << "❌ [E2E Test] Server did not receive TelemetryBatch!" << std::endl;
+        std::cerr << "❌ [E2E Test] 서버가 TelemetryBatch 를 수신하지 못했습니다!" << std::endl;
         return 1;
     }
     if (!service.command_sent.load()) {
-        std::cerr << "❌ [E2E Test] Server did not dispatch MitigationCommand!" << std::endl;
+        std::cerr << "❌ [E2E Test] 서버가 MitigationCommand 를 발행하지 못했습니다!" << std::endl;
         return 1;
     }
     if (!client_cmd_received.load()) {
-        std::cerr << "❌ [E2E Test] Client did not receive MitigationCommand!" << std::endl;
+        std::cerr << "❌ [E2E Test] 클라이언트가 MitigationCommand 를 수신하지 못했습니다!" << std::endl;
         return 1;
     }
 
     std::cout << "================================================================================" << std::endl;
-    std::cout << "🎉 FULL BIDIRECTIONAL gRPC PIPELINE ROUNDTRIP SUCCESSFUL! (Exit Code 0)         " << std::endl;
+    std::cout << "🎉 gRPC 양방향 스트리밍 파이프라인 왕복(Round-trip) 검증 완료! (Exit Code 0)     " << std::endl;
     std::cout << "================================================================================" << std::endl;
     return 0;
 }

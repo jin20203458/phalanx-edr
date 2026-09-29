@@ -1,4 +1,4 @@
-﻿#ifndef WIN32_LEAN_AND_MEAN
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #ifndef NOMINMAX
@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
     ::SetConsoleCP(CP_UTF8);
     WindowsTimerGuard timer_guard;
 
-    // 1. Parse Arguments (check help before elevation check)
+    // 1. 명령줄 인자 파싱 (관리자 권한 확인 전 도움말 플래그 우선 처리)
     std::string endpoint = "127.0.0.1:50051";
     bool standalone = false;
 
@@ -62,85 +62,85 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--standalone") {
             standalone = true;
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "Usage: Phalanx.Sensor.exe [--endpoint <ip:port>] [--standalone]\n"
-                      << "  --endpoint <ip:port> : gRPC Core telemetry endpoint (default: 127.0.0.1:50051)\n"
-                      << "  --standalone          : Run without gRPC server, logging kernel events locally\n";
+            std::cout << "사용법: Phalanx.Sensor.exe [--endpoint <ip:port>] [--standalone]\n"
+                      << "  --endpoint <ip:port> : gRPC Core 원격 측정 엔드포인트 (기본값: 127.0.0.1:50051)\n"
+                      << "  --standalone          : gRPC 서버 없이 로컬 콘솔에만 커널 이벤트를 출력하는 단독 실행 모드\n";
             return 0;
         }
     }
 
     std::cout << "================================================================================" << std::endl;
-    std::cout << "   PHALANX EDR - C++20 Native Kernel Telemetry Sensor (Phalanx.Sensor)          " << std::endl;
+    std::cout << "   PHALANX EDR - C++20 네이티브 커널 텔레메트리 센서 (Phalanx.Sensor)            " << std::endl;
     std::cout << "================================================================================" << std::endl;
 
-    // 2. Check Administrator Elevation
+    // 2. 관리자 권한 확인 (ETW 커널 세션 생성 및 프로세스 액추에이터 제어에 필수)
     if (!Phalanx::Common::PrivilegeHelper::IsElevated()) {
-        std::cerr << "❌ [Access Denied] Phalanx.Sensor requires Administrator elevation to create\n"
-                  << "   real-time ETW kernel trace sessions and manage process actuators.\n"
-                  << "   Please run this executable as Administrator." << std::endl;
+        std::cerr << "❌ [접근 거부] Phalanx.Sensor는 실시간 ETW 커널 추적 세션 생성 및\n"
+                  << "   프로세스 액추에이터 실행을 위해 반드시 '관리자 권한'이 필요합니다.\n"
+                  << "   관리자 권한으로 다시 실행해 주십시오." << std::endl;
         return ERROR_ACCESS_DENIED;
     }
 
     if (Phalanx::Common::PrivilegeHelper::EnableDebugPrivilege()) {
-        std::cout << "🔑 [Privilege] SeDebugPrivilege enabled successfully." << std::endl;
+        std::cout << "🔑 [권한] SeDebugPrivilege 활성화 성공." << std::endl;
     } else {
-        std::cout << "⚠️ [Privilege] Could not enable SeDebugPrivilege. Some system processes may be protected." << std::endl;
+        std::cout << "⚠️ [권한] SeDebugPrivilege 활성화 실패. 일부 시스템 프로세스 제어가 제한될 수 있습니다." << std::endl;
     }
 
     ::SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 
-    // 3. Initialize Concurrency Queue & Actuators
+    // 3. 동시성 큐 및 안전 워치독/액추에이터 초기화
     auto queue = std::make_shared<Phalanx::Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>>();
     auto watchdog = std::make_shared<Phalanx::Actuator::SafetyWatchdog>(std::chrono::milliseconds(10000));
     auto actuator = std::make_shared<Phalanx::Actuator::ProcessActuator>(watchdog);
 
-    // 4. Initialize ETW Kernel Collector
+    // 4. ETW 커널 이벤트 수집기 초기화 및 가동
     auto collector = std::make_shared<Phalanx::Collector::EtwKernelCollector>(queue);
     collector->SetProcessObserver([](const phalanx::ProcessEvent& ev) {
-        std::cout << "🔍 [Kernel-Process] PID: " << ev.process_id()
+        std::cout << "🔍 [커널-프로세스] PID: " << ev.process_id()
                   << " | PPID: " << ev.parent_process_id()
-                  << " | Image: " << ev.image_name()
-                  << " | Cmd: " << (ev.command_line().empty() ? "(none)" : ev.command_line())
+                  << " | 이미지: " << ev.image_name()
+                  << " | 커맨드라인: " << (ev.command_line().empty() ? "(없음)" : ev.command_line())
                   << std::endl;
     });
 
     if (!collector->Start()) {
-        std::cerr << "❌ [Collector] Failed to start ETW Kernel Collector!" << std::endl;
+        std::cerr << "❌ [수집기] ETW 커널 수집기 시작 실패!" << std::endl;
         return 1;
     }
 
-    // 5. Initialize gRPC Streaming Pipeline
+    // 5. gRPC 양방향 스트리밍 IPC 파이프라인 초기화
     std::unique_ptr<Phalanx::Ipc::GrpcStreamClient> grpc_client;
     if (!standalone) {
         grpc_client = std::make_unique<Phalanx::Ipc::GrpcStreamClient>(endpoint, queue, actuator);
         grpc_client->Start();
-        std::cout << "🌐 [IPC] gRPC Streaming client started. Target: " << endpoint << std::endl;
+        std::cout << "🌐 [IPC] gRPC 스트리밍 클라이언트 시작됨. 대상: " << endpoint << std::endl;
     } else {
-        std::cout << "ℹ️ [IPC] Running in standalone mode (no gRPC streaming)." << std::endl;
+        std::cout << "ℹ️ [IPC] 독립 실행(standalone) 모드로 동작 중 (gRPC 스트리밍 비활성화)." << std::endl;
     }
 
-    std::cout << "✅ [Phalanx.Sensor] Sensor engine running. Press Ctrl+C to terminate.\n" << std::endl;
+    std::cout << "✅ [Phalanx.Sensor] 센서 엔진 정상 가동 중. 종료하려면 Ctrl+C를 누르십시오.\n" << std::endl;
 
-    // 6. Main Loop
+    // 6. 메인 루프 (종료 신호 감지 대기)
     while (!g_shutdown_requested.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
-    // 7. Graceful Teardown
-    std::cout << "\n>>> Shuting down Phalanx Sensor..." << std::endl;
+    // 7. 정상 종료 및 리소스 해제 (Graceful Teardown)
+    std::cout << "\n>>> Phalanx 센서 안전 종료 절차 진행 중..." << std::endl;
     if (grpc_client) {
         grpc_client->Stop();
     }
     collector->Stop();
 
-    std::cout << ">>> Total events captured: " << collector->EventsCaptured() << std::endl;
+    std::cout << ">>> 총 수집된 커널 이벤트: " << collector->EventsCaptured() << std::endl;
     if (grpc_client) {
-        std::cout << ">>> Total batches sent: " << grpc_client->BatchesSent() << std::endl;
-        std::cout << ">>> Total events sent: " << grpc_client->EventsSent() << std::endl;
-        std::cout << ">>> Total commands received: " << grpc_client->CommandsReceived() << std::endl;
+        std::cout << ">>> 전송된 배치 수: " << grpc_client->BatchesSent() << std::endl;
+        std::cout << ">>> 전송된 총 이벤트 수: " << grpc_client->EventsSent() << std::endl;
+        std::cout << ">>> 수신된 완화 명령 수: " << grpc_client->CommandsReceived() << std::endl;
     }
-    std::cout << ">>> DoubleBufferedSwapQueue dropped count: " << queue->DroppedCount() << std::endl;
-    std::cout << ">>> Shutdown complete. Goodbye." << std::endl;
+    std::cout << ">>> 이중 버퍼 스왑 큐 유실(Dropped) 수: " << queue->DroppedCount() << std::endl;
+    std::cout << ">>> 모든 리소스가 안전하게 정리되었습니다. 종료합니다." << std::endl;
 
     return 0;
 }

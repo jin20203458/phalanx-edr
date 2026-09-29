@@ -40,14 +40,14 @@ bool EtwKernelCollector::Start() {
 
     impl_->worker_thread = std::thread([this]() {
         try {
-            // Microsoft-Windows-Kernel-Process GUID: {22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}
+            // Microsoft-Windows-Kernel-Process 프로바이더 GUID: {22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}
             static const krabs::guid KernelProcessGuid(L"{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}");
             krabs::provider<> provider(KernelProcessGuid);
 
             provider.add_on_event_callback([this](const EVENT_RECORD& record, const krabs::trace_context& trace_context) {
                 try {
                     krabs::schema schema(record, trace_context.schema_locator);
-                    // Event ID 1: ProcessStart
+                    // 이벤트 ID 1: ProcessStart (프로세스 생성)
                     if (schema.event_id() == 1) {
                         krabs::parser parser(schema);
                         phalanx::ProcessEvent ev;
@@ -83,29 +83,31 @@ bool EtwKernelCollector::Start() {
 
                         impl_->events_captured.fetch_add(1, std::memory_order_relaxed);
 
+                        // 실시간 콘솔 출력 또는 휴리스틱 감시용 옵저버 통지
                         if (impl_->observer_callback) {
                             impl_->observer_callback(ev);
                         }
 
+                        // 락-스왑 큐로 즉시 푸시 (수집 스레드 블로킹 방지)
                         if (impl_->queue) {
                             impl_->queue->Push(std::move(ev));
                         }
                     }
                 } catch (...) {
-                    // Non-blocking, drop malformed record
+                    // 비블로킹 원칙 준수: 손상된 이벤트 레코드는 무시하고 즉시 복귀
                 }
             });
 
             impl_->trace = std::make_unique<krabs::user_trace>(L"PhalanxKernelProcessSession");
             impl_->trace->enable(provider);
-            std::cout << "🚀 [ETW] Starting Microsoft-Windows-Kernel-Process trace session..." << std::endl;
+            std::cout << "🚀 [ETW] Microsoft-Windows-Kernel-Process 트레이스 세션 구동 중..." << std::endl;
             impl_->trace->start();
-            std::cout << "🛑 [ETW] Trace session ended." << std::endl;
+            std::cout << "🛑 [ETW] 트레이스 세션 종료됨." << std::endl;
         } catch (const std::exception& ex) {
-            std::cerr << "❌ [ETW Exception] " << ex.what() << std::endl;
+            std::cerr << "❌ [ETW 예외 발생] " << ex.what() << std::endl;
             impl_->running.store(false, std::memory_order_release);
         } catch (...) {
-            std::cerr << "❌ [ETW Unknown Exception]" << std::endl;
+            std::cerr << "❌ [ETW 알 수 없는 예외 발생]" << std::endl;
             impl_->running.store(false, std::memory_order_release);
         }
     });

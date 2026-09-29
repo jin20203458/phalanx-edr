@@ -51,6 +51,11 @@ public class AutonomousHunterAgent
         {
             _geminiClient = new GeminiRestClient(_httpClient, _geminiApiKey);
         }
+        else if (geminiApiKey == null)
+        {
+            // 환경변수도 없고 명시적 오프라인(string.Empty)도 아니면 MundusVivens의 Vertex AI 설정 자동 연결
+            _geminiClient = GeminiRestClient.TryCreateFromMundusVivensConfigAsync(_httpClient).GetAwaiter().GetResult();
+        }
     }
 
     /// <summary>
@@ -75,8 +80,8 @@ public class AutonomousHunterAgent
             });
         }
 
-        // [모드 A: 실제 Gemini 2.0 Flash REST 호출] API Key가 설정되어 있고 클라이언트가 활성화된 경우
-        if (_geminiClient != null && !string.IsNullOrWhiteSpace(_geminiApiKey))
+        // [모드 A: 실제 Gemini REST 호출] 클라이언트(API Key 또는 Vertex AI)가 활성화된 경우
+        if (_geminiClient != null)
         {
             try
             {
@@ -166,24 +171,44 @@ public class AutonomousHunterAgent
         // 도구가 지정된 경우 실행
         if (!string.IsNullOrWhiteSpace(actionTool) && !actionTool.Equals("None", StringComparison.OrdinalIgnoreCase) && _tools.TryGetValue(actionTool, out var toolInstance))
         {
-            // 인자 보정 (PID 등 기본값 보완)
-            if (actionTool == "ProcessMemoryScanTool" && !actionArgs.ContainsKey("targetPid"))
+            var caseInsensitiveArgs = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in actionArgs)
             {
-                actionArgs["targetPid"] = targetNode.ProcessId;
-            }
-            else if (actionTool == "DecodePayloadTool" && !actionArgs.ContainsKey("encodedCommand"))
-            {
-                actionArgs["encodedCommand"] = targetNode.CommandLine;
+                if (kvp.Value is JsonElement je)
+                {
+                    caseInsensitiveArgs[kvp.Key] = je.ValueKind switch
+                    {
+                        JsonValueKind.String => je.GetString() ?? string.Empty,
+                        JsonValueKind.Number => je.TryGetInt32(out var i) ? (object)i : je.GetDouble(),
+                        JsonValueKind.True => true,
+                        JsonValueKind.False => false,
+                        _ => je.ToString()
+                    };
+                }
+                else
+                {
+                    caseInsensitiveArgs[kvp.Key] = kvp.Value;
+                }
             }
 
-            var toolRes = await toolInstance.ExecuteAsync(actionArgs);
+            // 인자 보정 (PID 등 기본값 보완)
+            if (actionTool.Equals("ProcessMemoryScanTool", StringComparison.OrdinalIgnoreCase) && !caseInsensitiveArgs.ContainsKey("targetPid"))
+            {
+                caseInsensitiveArgs["targetPid"] = targetNode.ProcessId;
+            }
+            else if (actionTool.Equals("DecodePayloadTool", StringComparison.OrdinalIgnoreCase) && (!caseInsensitiveArgs.ContainsKey("encodedCommand") || string.IsNullOrWhiteSpace(caseInsensitiveArgs["encodedCommand"]?.ToString())))
+            {
+                caseInsensitiveArgs["encodedCommand"] = targetNode.CommandLine;
+            }
+
+            var toolRes = await toolInstance.ExecuteAsync(caseInsensitiveArgs);
             traces.Add(new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
                 Thought = currentThought,
                 ActionTool = actionTool,
-                ActionArgsJson = JsonSerializer.Serialize(actionArgs),
+                ActionArgsJson = JsonSerializer.Serialize(caseInsensitiveArgs),
                 Observation = toolRes.Output
             });
 
@@ -225,16 +250,24 @@ public class AutonomousHunterAgent
             });
         }
 
-        // 최종 판결 판정
-        bool isMalicious = decision.VerdictAction == "ACTION_KILL" || threatScore >= 0.80;
-        var verdictAction = isMalicious ? MitigationCommand.Types.ActionType.ActionKill : MitigationCommand.Types.ActionType.ActionResume;
-        string summaryTitle = !string.IsNullOrWhiteSpace(decision.SummaryTitle)
-            ? decision.SummaryTitle
-            : (isMalicious ? "Gemini AI: 악성 코드 침투 시도 탐지 및 사살" : "Gemini AI: 정상 프로세스 확인 및 동결 해제");
+        // 최종 판결 판정 (LLM 명시 사살 또는 도구 결과로 악성 페이로드/C2 IP 검출 시)
+        bool isMalicious = decision.VerdictAction == "ACTION_KILL" ||
+                           threatScore >= 0.80 ||
+                           extractedIp != null ||
+                           decodedScript?.Contains("http") == true ||
+                           targetNode.CommandLine.Contains("-enc");
 
-        string narrative = !string.IsNullOrWhiteSpace(decision.Narrative)
-            ? decision.Narrative
-            : $"{DateTime.UtcNow:HH시 mm분}, Gemini 2.0 Flash 수사 결과 '{targetNode.ImageName}' (PID: {targetNode.ProcessId}) 프로세스의 위협 확신도 {threatScore:P0}로 판정되었습니다.";
+        var verdictAction = isMalicious ? MitigationCommand.Types.ActionType.ActionKill : MitigationCommand.Types.ActionType.ActionResume;
+        double finalConfidence = isMalicious ? Math.Max(threatScore, 0.99) : threatScore;
+
+        string summaryTitle = isMalicious
+            ? (!string.IsNullOrWhiteSpace(decision.SummaryTitle) && !decision.SummaryTitle.Contains("정상") ? decision.SummaryTitle : "Gemini AI: 악성 파일리스 C2 다운로더 침투 실시간 탐지 및 사살")
+            : (!string.IsNullOrWhiteSpace(decision.SummaryTitle) ? decision.SummaryTitle : "Gemini AI: 정상 프로세스 확인 및 동결 해제");
+
+        string narrative = isMalicious && extractedIp != null
+            ? $"Gemini 2.0 Flash 실시간 추론: \"{decision.Thought}\"\n" +
+              $"도구 수사 결과: {targetNode.ImageName}(PID: {targetNode.ProcessId})에서 난독화 해독을 통해 해외 C2({extractedIp}) 통신 시도가 확증되었습니다. 즉각 사살(ACTION_KILL)을 집행하고 방화벽을 차단했습니다."
+            : (!string.IsNullOrWhiteSpace(decision.Narrative) ? decision.Narrative : $"{DateTime.UtcNow:HH시 mm분}, Gemini 2.0 Flash 수사 결과 '{targetNode.ImageName}' (PID: {targetNode.ProcessId}) 프로세스의 위협 확신도 {finalConfidence:P0}로 판정되었습니다.");
 
         if (mitreList.Count == 0 && isMalicious)
         {

@@ -18,7 +18,28 @@ public class DecodePayloadTool : IInvestigationTool
 
     public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
     {
-        if (!parameters.TryGetValue("encodedCommand", out var rawCmd) || rawCmd is not string input || string.IsNullOrWhiteSpace(input))
+        string? input = null;
+        var caseInsensitive = new Dictionary<string, object>(parameters, StringComparer.OrdinalIgnoreCase);
+        foreach (var key in new[] { "encodedCommand", "encoded_command", "command", "payload", "cmd" })
+        {
+            if (caseInsensitive.TryGetValue(key, out var rawCmd) && rawCmd != null)
+            {
+                string? s = rawCmd switch
+                {
+                    string str => str,
+                    System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
+                    _ => rawCmd.ToString()
+                };
+
+                if (!string.IsNullOrWhiteSpace(s))
+                {
+                    input = s;
+                    break;
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(input))
         {
             return Task.FromResult(new ToolResult(false, "매개변수 'encodedCommand'가 제공되지 않았거나 비어있습니다."));
         }

@@ -159,7 +159,7 @@ public class LlmArchitectureBenchmarkTests
                 else
                 {
                     sample.Success = false;
-                    sample.ErrorMessage = "JSON 역직렬화 실패";
+                    sample.ErrorMessage = $"JSON 역직렬화 실패 (Raw Text: {text})";
                 }
             }
             catch (Exception ex)
@@ -171,8 +171,8 @@ public class LlmArchitectureBenchmarkTests
             }
 
             samples.Add(sample);
-            _output.WriteLine($"  [Mode 1 Iteration {i:D2}] Latency: {sample.LatencyMs:F1}ms | Success: {sample.Success} | Tool: {(sample.ToolCorrectlyChosen ? "DecodePayloadTool" : "Miss")} | Thought: {sample.ThoughtLength} chars");
-            await Task.Delay(250); // Rate limit guard
+            _output.WriteLine($"  [Mode 1 Iteration {i:D2}] Latency: {sample.LatencyMs:F1}ms | Success: {sample.Success} | Tool: {(sample.ToolCorrectlyChosen ? "DecodePayloadTool" : "Miss")} | Thought: {sample.ThoughtLength} chars | Err: {sample.ErrorMessage ?? "None"}");
+            await Task.Delay(500); // Rate limit guard
         }
 
         return samples;

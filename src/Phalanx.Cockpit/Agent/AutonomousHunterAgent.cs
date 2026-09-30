@@ -61,8 +61,8 @@ public class AutonomousHunterAgent
             }
             else if (geminiApiKey == null)
             {
-                // 환경변수도 없고 명시적 오프라인(string.Empty)도 아니면 MundusVivens의 Vertex AI 설정 자동 연결
-                _geminiClient = GeminiRestClient.TryCreateFromMundusVivensConfig(clientHttp);
+                // 환경변수도 없고 명시적 오프라인(string.Empty)도 아니면 Phalanx 자체 로컬(Config/google-credentials.json 등)의 Vertex AI 설정 자동 연결
+                _geminiClient = GeminiRestClient.TryCreateFromLocalConfig(clientHttp);
             }
         }
     }

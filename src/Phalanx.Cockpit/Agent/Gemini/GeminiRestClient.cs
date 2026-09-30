@@ -65,19 +65,46 @@ public class GeminiRestClient
     }
 
     /// <summary>
-    /// MundusVivens의 AppSettings.json 및 Config/google-credentials.json을 동기적으로 탐색하여 Vertex AI 클라이언트 생성
+    /// <summary>
+    /// Phalanx 자체 Config/google-credentials.json 및 AppSettings.json을 탐색하여 Vertex AI 클라이언트 생성
     /// </summary>
-    public static GeminiRestClient? TryCreateFromMundusVivensConfig(
+    public static GeminiRestClient? TryCreateFromLocalConfig(
         HttpClient? httpClient = null,
         string? modelName = null)
     {
         try
         {
-            string mvBasePath = @"C:\Users\user\Documents\GitHub\MundusVivens\MundusVivens.Prototype";
-            string appSettingsPath = Path.Combine(mvBasePath, "AppSettings.json");
-            string credentialsPath = Path.Combine(mvBasePath, "Config", "google-credentials.json");
+            // 1. Google Cloud 표준 환경 변수 확인
+            string? envCredPath = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
+            string? credentialsPath = null;
 
-            if (!File.Exists(credentialsPath))
+            if (!string.IsNullOrWhiteSpace(envCredPath) && File.Exists(envCredPath))
+            {
+                credentialsPath = envCredPath;
+            }
+            else
+            {
+                // 2. Phalanx 자체 로컬 Config 디렉터리 순회 탐색
+                string[] candidates = new[]
+                {
+                    Path.Combine(AppContext.BaseDirectory, "Config", "google-credentials.json"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "Config", "google-credentials.json"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "src", "Phalanx.Cockpit", "Config", "google-credentials.json"),
+                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\Config\google-credentials.json")),
+                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\Config\google-credentials.json"))
+                };
+
+                foreach (var candidate in candidates)
+                {
+                    if (File.Exists(candidate))
+                    {
+                        credentialsPath = candidate;
+                        break;
+                    }
+                }
+            }
+
+            if (credentialsPath == null || !File.Exists(credentialsPath))
             {
                 return null;
             }
@@ -86,21 +113,58 @@ public class GeminiRestClient
             string location = "global";
             string model = modelName ?? "gemini-3.7-flash";
 
-            if (File.Exists(appSettingsPath))
+            // AppSettings.json 탐색
+            string[] appSettingsCandidates = new[]
             {
-                var json = File.ReadAllText(appSettingsPath);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("ProjectId", out var p) && !string.IsNullOrWhiteSpace(p.GetString()))
+                Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
+                Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
+                Path.Combine(Directory.GetCurrentDirectory(), "src", "Phalanx.Cockpit", "AppSettings.json"),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json")),
+                Path.Combine(Path.GetDirectoryName(credentialsPath) ?? string.Empty, "..", "AppSettings.json")
+            };
+
+            foreach (var appSettingPath in appSettingsCandidates)
+            {
+                if (File.Exists(appSettingPath))
                 {
-                    projectId = p.GetString()!;
-                }
-                if (doc.RootElement.TryGetProperty("Location", out var loc) && !string.IsNullOrWhiteSpace(loc.GetString()))
-                {
-                    location = loc.GetString()!.ToLowerInvariant();
+                    try
+                    {
+                        var json = File.ReadAllText(appSettingPath);
+                        using var doc = JsonDocument.Parse(json);
+                        var root = doc.RootElement;
+                        JsonElement geminiSection = root;
+                        if (root.TryGetProperty("Gemini", out var gSec))
+                        {
+                            geminiSection = gSec;
+                        }
+
+                        if (geminiSection.TryGetProperty("ProjectId", out var p) && !string.IsNullOrWhiteSpace(p.GetString()))
+                        {
+                            projectId = p.GetString()!;
+                        }
+                        if (geminiSection.TryGetProperty("Location", out var loc) && !string.IsNullOrWhiteSpace(loc.GetString()))
+                        {
+                            location = loc.GetString()!.ToLowerInvariant();
+                        }
+                        if (geminiSection.TryGetProperty("ModelName", out var m) && !string.IsNullOrWhiteSpace(m.GetString()))
+                        {
+                            model = m.GetString()!;
+                        }
+                        break;
+                    }
+                    catch { }
                 }
             }
 
             string credJson = File.ReadAllText(credentialsPath);
+            using (var credDoc = JsonDocument.Parse(credJson))
+            {
+                if (credDoc.RootElement.TryGetProperty("project_id", out var pidElem) && !string.IsNullOrWhiteSpace(pidElem.GetString()))
+                {
+                    projectId = pidElem.GetString()!;
+                }
+            }
+
             var specCred = CredentialFactory.FromJson<ServiceAccountCredential>(credJson);
             var googleCred = specCred.ToGoogleCredential().CreateScoped("https://www.googleapis.com/auth/cloud-platform");
 
@@ -114,20 +178,34 @@ public class GeminiRestClient
         }
         catch (Exception ex)
         {
-            Trace.WriteLine($"[GeminiRestClient] MV Config 로드 실패: {ex.Message}");
+            Trace.WriteLine($"[GeminiRestClient] Phalanx 로컬 Config 로드 실패: {ex.Message}");
             return null;
         }
     }
 
+    [Obsolete("Use TryCreateFromLocalConfig instead.")]
+    public static GeminiRestClient? TryCreateFromMundusVivensConfig(
+        HttpClient? httpClient = null,
+        string? modelName = null) => TryCreateFromLocalConfig(httpClient, modelName);
+
     /// <summary>
-    /// MundusVivens의 AppSettings.json 및 Config/google-credentials.json을 자동 탐색하여 Vertex AI 클라이언트 비동기 생성
+    /// Phalanx 자체 AppSettings.json 및 Config/google-credentials.json을 자동 탐색하여 Vertex AI 클라이언트 비동기 생성
     /// </summary>
+    public static Task<GeminiRestClient?> TryCreateFromLocalConfigAsync(
+        HttpClient? httpClient = null,
+        string? modelName = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(TryCreateFromLocalConfig(httpClient, modelName));
+    }
+
+    [Obsolete("Use TryCreateFromLocalConfigAsync instead.")]
     public static Task<GeminiRestClient?> TryCreateFromMundusVivensConfigAsync(
         HttpClient? httpClient = null,
         string? modelName = null,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(TryCreateFromMundusVivensConfig(httpClient, modelName));
+        return TryCreateFromLocalConfigAsync(httpClient, modelName, cancellationToken);
     }
 
     /// <summary>

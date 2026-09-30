@@ -77,7 +77,7 @@ public class LlmArchitectureBenchmarkTests
     [Fact]
     public async Task RunFullComprehensiveBenchmark_10IterationsEach()
     {
-        var client = await GeminiRestClient.TryCreateFromMundusVivensConfigAsync();
+        var client = await GeminiRestClient.TryCreateFromLocalConfigAsync();
         Assert.NotNull(client);
 
         _output.WriteLine("=========================================================================================");

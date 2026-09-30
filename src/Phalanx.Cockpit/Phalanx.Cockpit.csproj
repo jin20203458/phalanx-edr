@@ -23,4 +23,13 @@
     <Protobuf Include="..\..\proto\phalanx.proto" GrpcServices="Both" Link="Protos\phalanx.proto" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="AppSettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Config\google-credentials.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

@@ -84,7 +84,7 @@ public class AutonomousHunterAgentTests
         );
 
         // 5. 검증:
-        // A) 타임아웃 10초 연장 명령(ACTION_EXTEND_TIMEOUT) 우선 발행 확인
+        // A) 타임아웃 50초 연장 명령(ACTION_EXTEND_TIMEOUT) 우선 발행 확인
         Assert.True(dispatchedCommands.Count >= 2);
         Assert.Equal(MitigationCommand.Types.ActionType.ActionExtendTimeout, dispatchedCommands[0].Action);
         Assert.Equal((uint)8492, dispatchedCommands[0].TargetPid);

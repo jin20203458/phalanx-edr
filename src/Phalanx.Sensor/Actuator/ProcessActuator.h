@@ -69,9 +69,9 @@ public:
     ActuatorResult TerminateTargetProcess(uint32_t pid, uint32_t exit_code = 1, std::string_view reason = "");
 
     /**
-     * @brief 동결된 프로세스의 워치독 안전 타임아웃 1회 연장 (최대 1회 제한)
+     * @brief 동결된 프로세스의 워치독 안전 타임아웃 1회 연장 (최대 1회 제한, 기본 50초)
      */
-    bool ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by = std::chrono::milliseconds(30000));
+    bool ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by = std::chrono::milliseconds(50000));
 
     /**
      * @brief Toolhelp32 스냅샷을 사용하여 특정 PID에 속한 모든 스레드 ID 목록을 고속 열거

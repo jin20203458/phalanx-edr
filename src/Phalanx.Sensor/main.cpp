@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
 
     // 3. 동시성 큐 및 안전 워치독/액추에이터 초기화
     auto queue = std::make_shared<Phalanx::Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>>();
-    auto watchdog = std::make_shared<Phalanx::Actuator::SafetyWatchdog>(std::chrono::milliseconds(30000));
+    auto watchdog = std::make_shared<Phalanx::Actuator::SafetyWatchdog>(std::chrono::milliseconds(10000));
     auto actuator = std::make_shared<Phalanx::Actuator::ProcessActuator>(watchdog);
 
     // 4. C++ 인메모리 프로세스 트리(DAG) 및 스냅샷 웜업 초기화

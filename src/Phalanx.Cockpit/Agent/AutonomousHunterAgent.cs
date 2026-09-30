@@ -11,10 +11,10 @@ using Phalanx.Shared.Protos;
 namespace Phalanx.Cockpit.Agent;
 
 /// <summary>
-/// Gemini 2.0 Flash 및 5대 OS 수사 도구 기반의 자율 위협 헌팅 에이전트(Autonomous Hunter Agent).
+/// Gemini 3.8 Flash 및 5대 OS 수사 도구 기반의 자율 위협 헌팅 에이전트(Autonomous Hunter Agent).
 /// C++ 엔진이 선제 동결한 회색지대 타깃을 대상으로 가설-도구호출-관찰 ReAct 루프를 순환하여
 /// 3초 이내에 심층 수사를 완료하고 사형/해제 최종 판결 및 침해사고 서사를 도출합니다.
-/// API Key 유무에 따라 실제 Gemini 2.0 Flash REST API 호출과 23ms 오프라인 결정론적 엔진을 자동 분기합니다.
+/// API Key 유무에 따라 실제 Gemini 3.8 Flash REST API 호출과 23ms 오프라인 결정론적 엔진을 자동 분기합니다.
 /// </summary>
 public class AutonomousHunterAgent
 {
@@ -69,14 +69,14 @@ public class AutonomousHunterAgent
         var sw = Stopwatch.StartNew();
         string incidentId = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
 
-        // [Step 0] 안전 워치독 타임아웃 1회성 30초 연장 티켓 확보 (C++ 센서 선제 전송)
+        // [Step 0] 안전 워치독 타임아웃 1회성 50초 연장 티켓 확보 (C++ 센서 선제 전송)
         if (commandSender != null)
         {
             await commandSender(new MitigationCommand
             {
                 Action = MitigationCommand.Types.ActionType.ActionExtendTimeout,
                 TargetPid = targetNode.ProcessId,
-                Reason = "AI 자율 수사 개시: 심층 조사를 위한 1회성 타임아웃 연장 (30초)"
+                Reason = "AI 자율 수사 개시: 심층 조사를 위한 1회성 타임아웃 연장 (50초)"
             });
         }
 
@@ -107,7 +107,7 @@ public class AutonomousHunterAgent
         Func<MitigationCommand, Task>? commandSender,
         CancellationToken cancellationToken)
     {
-        // SLA 레이스 컨디션 차단: C++ 센서가 타임아웃 1회 연장 티켓(30초)을 적용받아 최대 60초까지 감시하므로,
+        // SLA 레이스 컨디션 차단: C++ 센서 기본 워치독(10초) + 타임아웃 1회 연장 티켓(50초) = 누적 60초까지 감시하므로,
         // 워치독 만료 10초 전 안전 마진을 두어 50초(50,000ms) 내에 멀티턴 수사를 완결하도록 제한
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromMilliseconds(50000));

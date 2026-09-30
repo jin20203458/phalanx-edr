@@ -334,10 +334,61 @@ public class AutonomousHunterAgent
             });
         }
 
-        // 보조 도구 체인: IP 식별 시 방화벽 차단 연동
-        if (extractedIp != null && _tools.TryGetValue("SystemFirewallTool", out var fwTool))
+        // 1. ReAct 루프 종료 후 AI 판결 결정권(SSOT) 파이프라인
+        MitigationCommand.Types.ActionType verdictAction;
+        bool isMalicious;
+        double finalConfidence;
+        string summaryTitle;
+        string narrative;
+        var mitreList = latestDecision?.MitreTactics ?? new List<string>();
+
+        // 판결 유효성 검증: 정상 완결(reachedFinal) 및 유효한 판결 액션(ACTION_KILL / ACTION_RESUME) 명시 여부
+        bool hasValidAction = !string.IsNullOrWhiteSpace(latestDecision?.VerdictAction);
+        if (reachedFinal && latestDecision != null && hasValidAction)
         {
-            var fwThought = $"[Step {step} 추론] 식별된 외부 C2 통신 IP '{extractedIp}'에 대해 방화벽 차단 룰을 집행합니다.";
+            // [경로 A: AI 수사관 정상 판결 - 결정권 100% 존중 (SSOT)]
+            isMalicious = string.Equals(latestDecision.VerdictAction, "ACTION_KILL", StringComparison.OrdinalIgnoreCase);
+            verdictAction = isMalicious 
+                ? MitigationCommand.Types.ActionType.ActionKill 
+                : MitigationCommand.Types.ActionType.ActionResume;
+            
+            // 확신도 정규화 (0.0~1.0 보장, LLM의 0~100 스케일 대응)
+            double rawConf = latestDecision.ConfidenceScore > 0 ? latestDecision.ConfidenceScore : 0.95;
+            finalConfidence = rawConf > 1.0 ? rawConf / 100.0 : rawConf;
+            finalConfidence = Math.Clamp(finalConfidence, 0.0, 1.0);
+
+            summaryTitle = !string.IsNullOrWhiteSpace(latestDecision.SummaryTitle)
+                ? latestDecision.SummaryTitle
+                : (isMalicious ? "Gemini AI: 악성 위협 실시간 탐지 및 사살" : "Gemini AI: 정상 프로세스 확인 및 동결 해제");
+
+            narrative = !string.IsNullOrWhiteSpace(latestDecision.Narrative)
+                ? latestDecision.Narrative
+                : $"Gemini AI 자율 수사 종결: '{targetNode.ImageName}' (PID: {targetNode.ProcessId}) 프로세스에 대해 {latestDecision.VerdictAction} (확신도 {finalConfidence:P0}) 판결을 하달했습니다.";
+
+            // 악성 확정 시에만 미지정 TTP에 기본값 부여 (정상 프로세스에는 절대 피싱/악성 TTP 날조 주입 금지)
+            if (isMalicious && mitreList.Count == 0)
+            {
+                mitreList = new List<string> { "T1059.001" };
+            }
+        }
+        else
+        {
+            // [경로 B: Fail-Secure 안전 가드 (최대 5턴 초과, 판결 미도출 또는 비정상 포맷 시 안전 격리)]
+            isMalicious = true;
+            verdictAction = MitigationCommand.Types.ActionType.ActionKill;
+            finalConfidence = 0.99;
+            summaryTitle = "Gemini AI: 멀티턴 수사 한도 초과에 따른 Fail-Secure 사살 격리";
+            narrative = $"{DateTime.UtcNow:HH시 mm분}, 회색지대 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})가 ReAct 최대 허용 단계(5턴) 내에 무해성을 증명하지 못하여 엔터프라이즈 안전 격리 정책(Fail-Secure)에 따라 선제 사살 조치되었습니다.";
+            if (mitreList.Count == 0)
+            {
+                mitreList = new List<string> { "T1059.001" };
+            }
+        }
+
+        // 2. 보조 도구 체인: 악성 확정(isMalicious) 시에만 방화벽 C2 차단 연동
+        if (isMalicious && extractedIp != null && _tools.TryGetValue("SystemFirewallTool", out var fwTool))
+        {
+            var fwThought = $"[Step {step} 추론] 식별된 외부 악성 C2 통신 IP '{extractedIp}'에 대해 방화벽 차단 룰을 집행합니다.";
             var fwRes = await fwTool.ExecuteAsync(new() { ["maliciousIp"] = extractedIp });
             traces.Add(new ReActTraceRecord
             {
@@ -350,56 +401,23 @@ public class AutonomousHunterAgent
             });
         }
 
-        // 최종 판결 판정
-        bool isExplicitKill = latestDecision?.VerdictAction == "ACTION_KILL";
-        double threatScore = latestDecision?.ConfidenceScore ?? 0.0;
-        var mitreList = latestDecision?.MitreTactics ?? new List<string>();
+        string blockedIp = (isMalicious ? extractedIp : string.Empty) ?? string.Empty;
 
-        bool isMalicious = isExplicitKill ||
-                           threatScore >= 0.80 ||
-                           extractedIp != null ||
-                           decodedScript?.Contains("http") == true ||
-                           targetNode.CommandLine.Contains("-enc") ||
-                           !reachedFinal; // Fail-Secure: 5턴 내 결론 미도출 시 안전을 위해 사살 격리
-
-        var verdictAction = isMalicious ? MitigationCommand.Types.ActionType.ActionKill : MitigationCommand.Types.ActionType.ActionResume;
-        double finalConfidence = isMalicious ? Math.Max(threatScore, 0.99) : threatScore;
-
-        string summaryTitle = isMalicious
-            ? (!string.IsNullOrWhiteSpace(latestDecision?.SummaryTitle) && !latestDecision.SummaryTitle.Contains("정상")
-                ? latestDecision.SummaryTitle
-                : (reachedFinal ? "Gemini AI: 악성 위협 실시간 탐지 및 사살" : "Gemini AI: 멀티턴 수사 한도 초과에 따른 Fail-Secure 사살 격리"))
-            : (!string.IsNullOrWhiteSpace(latestDecision?.SummaryTitle)
-                ? latestDecision.SummaryTitle
-                : "Gemini AI: 정상 프로세스 확인 및 동결 해제");
-
-        string narrative = isMalicious && extractedIp != null
-            ? $"Gemini AI 실시간 멀티턴 추론: \"{latestDecision?.Thought}\"\n" +
-              $"도구 수사 결과: {targetNode.ImageName}(PID: {targetNode.ProcessId})에서 난독화 해독을 통해 해외 C2({extractedIp}) 통신 시도가 확증되었습니다. 즉각 사살(ACTION_KILL)을 집행하고 방화벽을 차단했습니다."
-            : (!string.IsNullOrWhiteSpace(latestDecision?.Narrative)
-                ? latestDecision.Narrative
-                : $"{DateTime.UtcNow:HH시 mm분}, Gemini 자율 수사 결과 '{targetNode.ImageName}' (PID: {targetNode.ProcessId}) 프로세스의 위협 확신도 {finalConfidence:P0}로 판정되었습니다.");
-
-        if (mitreList.Count == 0 && isMalicious)
-        {
-            mitreList = new List<string> { "T1566.001", "T1059.001", "T1071.001" };
-        }
-
-        // [최종 명령 C++ 전송]
+        // 3. [최종 명령 C++ 전송] (C++ 센서 액추에이터 구동을 위한 gRPC 통신)
         if (commandSender != null)
         {
             await commandSender(new MitigationCommand
             {
                 Action = verdictAction,
                 TargetPid = targetNode.ProcessId,
-                TargetIp = extractedIp ?? string.Empty,
+                TargetIp = blockedIp, // 악성 확정된 C2 IP만 전달 (정상 복구 시 공백 전달)
                 Reason = summaryTitle
             });
         }
 
         sw.Stop();
 
-        // [LiteDB 영구 저장]
+        // 4. [LiteDB 영구 저장] 확신도 및 차단 IP 무결성 보장
         var incidentRecord = new IncidentRecord
         {
             IncidentId = incidentId,
@@ -407,12 +425,12 @@ public class AutonomousHunterAgent
             TargetPid = targetNode.ProcessId,
             TargetImage = targetNode.ImageName,
             CommandLine = targetNode.CommandLine,
-            ConfidenceScore = Math.Max(threatScore, isMalicious ? 0.98 : 0.15),
+            ConfidenceScore = finalConfidence, // 정규화된 확신도 저장
             VerdictAction = verdictAction == MitigationCommand.Types.ActionType.ActionKill ? "ACTION_KILL" : "ACTION_RESUME",
             SummaryTitle = summaryTitle,
             Narrative = narrative,
             MitreTactics = mitreList,
-            BlockedIp = extractedIp ?? string.Empty,
+            BlockedIp = blockedIp, // 정상 스크립트는 차단 IP 없음
             RootCauseProcess = rootCause,
             TerminatedProcesses = isMalicious ? new() { $"{targetNode.ImageName} (PID: {targetNode.ProcessId})" } : new(),
             RemediationStatus = isMalicious ? "SECURED" : "RESTORED"
@@ -427,7 +445,7 @@ public class AutonomousHunterAgent
             summaryTitle,
             narrative,
             mitreList,
-            extractedIp,
+            blockedIp, // 정상 스크립트는 공백 전달
             traces,
             sw.Elapsed,
             incidentRecord

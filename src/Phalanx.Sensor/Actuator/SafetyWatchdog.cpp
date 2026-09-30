@@ -45,7 +45,7 @@ bool SafetyWatchdog::ExtendTimeout(uint32_t pid, std::chrono::milliseconds exten
             return false;
         }
         it->second.extend_count++;
-        it->second.deadline = std::chrono::steady_clock::now() + extend_by;
+        it->second.deadline = (std::max)(it->second.deadline, std::chrono::steady_clock::now()) + extend_by;
         std::cout << "⏱️ [Watchdog] PID " << pid << " 수사 타임아웃 1회 연장 완료 (+" << extend_by.count() << "ms, 누적 " << it->second.extend_count << "회)" << std::endl;
         return true;
     }

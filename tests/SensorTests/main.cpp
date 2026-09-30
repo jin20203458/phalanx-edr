@@ -101,8 +101,8 @@ void TestSafetyWatchdog() {
         std::exit(1);
     }
 
-    // 연장된 타임아웃(300ms) 만료 대기
-    std::this_thread::sleep_for(std::chrono::milliseconds(550));
+    // 누적 연장된 타임아웃(200ms + 300ms = 500ms) 만료 대기 (워치독 200ms 루프 틱 고려 750ms)
+    std::this_thread::sleep_for(std::chrono::milliseconds(750));
 
     if (!callback_invoked.load(std::memory_order_acquire) || resumed_pid.load() != 99999) {
         std::cerr << "❌ SafetyWatchdog 테스트 실패!" << std::endl;

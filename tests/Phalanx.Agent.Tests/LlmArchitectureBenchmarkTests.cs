@@ -120,7 +120,7 @@ public class LlmArchitectureBenchmarkTests
                     )
                 );
 
-                var (resp, rawJson) = await client.SendRequestRawAsync(request);
+                var (resp, rawJson) = await client.SendRequestRawAsync(request, timeoutMs: 25000);
                 sw.Stop();
                 sample.LatencyMs = sw.Elapsed.TotalMilliseconds;
 
@@ -182,12 +182,12 @@ public class LlmArchitectureBenchmarkTests
     {
         var samples = new List<BenchmarkSample>();
 
-        var responseSchema = new
+        var tunedSchema = new
         {
             type = "OBJECT",
             properties = new
             {
-                thought = new { type = "STRING" },
+                thought = new { type = "STRING", description = "의심 프로세스에 대한 상세 분석 가설 및 이유" },
                 action_tool = new { type = "STRING", @enum = new[] { "DecodePayloadTool", "ProcessMemoryScanTool", "SystemFirewallTool", "None" } },
                 action_args = new
                 {
@@ -202,11 +202,11 @@ public class LlmArchitectureBenchmarkTests
                 is_final_verdict = new { type = "BOOLEAN" },
                 verdict_action = new { type = "STRING", @enum = new[] { "ACTION_KILL", "ACTION_RESUME" } },
                 confidence_score = new { type = "NUMBER" },
-                summary_title = new { type = "STRING" },
-                narrative = new { type = "STRING" },
+                summary_title = new { type = "STRING", description = "20자 이내의 간결한 한 줄 요약 제목" },
+                narrative = new { type = "STRING", description = "최종 침해 서사 한 줄 요약" },
                 mitre_tactics = new { type = "ARRAY", items = new { type = "STRING" } }
             },
-            required = new[] { "thought", "action_tool", "is_final_verdict", "verdict_action", "confidence_score" }
+            required = new[] { "thought", "action_tool", "is_final_verdict", "verdict_action", "confidence_score", "summary_title", "narrative" }
         };
 
         for (int i = 1; i <= IterationCount; i++)
@@ -218,16 +218,16 @@ public class LlmArchitectureBenchmarkTests
             {
                 var request = new GeminiRequest(
                     Contents: new List<Content> { new Content("user", new List<Part> { new Part(UserPrompt) }) },
-                    SystemInstruction: new Content("system", new List<Part> { new Part(SystemInstruction) }),
+                    SystemInstruction: new Content("system", new List<Part> { new Part("당신은 Windows EDR 침해사고 대응 AI 수사관 'Phalanx'입니다. 동결된 프로세스의 부모-자식 관계와 명령줄을 분석하여 지정된 스키마로 응답하십시오.") }),
                     GenerationConfig: new GenerationConfig(
-                        Temperature: 0.2f,
-                        MaxOutputTokens: 4096,
+                        Temperature: 0.1f,
+                        MaxOutputTokens: 8192,
                         ResponseMimeType: "application/json",
-                        ResponseSchema: responseSchema
+                        ResponseSchema: tunedSchema
                     )
                 );
 
-                var (resp, rawJson) = await client.SendRequestRawAsync(request);
+                var (resp, rawJson) = await client.SendRequestRawAsync(request, timeoutMs: 25000);
                 sw.Stop();
                 sample.LatencyMs = sw.Elapsed.TotalMilliseconds;
 

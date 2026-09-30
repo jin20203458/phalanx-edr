@@ -7,6 +7,7 @@ public record GeminiRequest(
     [property: JsonPropertyName("contents")] List<Content> Contents,
     [property: JsonPropertyName("systemInstruction")] Content? SystemInstruction = null,
     [property: JsonPropertyName("generationConfig")] GenerationConfig? GenerationConfig = null,
+    [property: JsonPropertyName("safetySettings")] List<SafetySetting>? SafetySettings = null,
     [property: JsonPropertyName("tools")] List<object>? Tools = null
 );
 
@@ -33,6 +34,20 @@ public record FunctionResponseDto(
 );
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BlockThreshold
+{
+    BLOCK_NONE,
+    BLOCK_ONLY_HIGH,
+    BLOCK_MEDIUM_AND_ABOVE,
+    BLOCK_LOW_AND_ABOVE
+}
+
+public record SafetySetting(
+    [property: JsonPropertyName("category")] string Category,
+    [property: JsonPropertyName("threshold")] BlockThreshold Threshold
+);
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ThinkingLevel
 {
     minimal,
@@ -55,7 +70,12 @@ public record GenerationConfig(
 
 public record GeminiResponse(
     [property: JsonPropertyName("candidates")] List<Candidate>? Candidates,
-    [property: JsonPropertyName("usageMetadata")] UsageMetadata? UsageMetadata
+    [property: JsonPropertyName("promptFeedback")] PromptFeedback? PromptFeedback = null,
+    [property: JsonPropertyName("usageMetadata")] UsageMetadata? UsageMetadata = null
+);
+
+public record PromptFeedback(
+    [property: JsonPropertyName("blockReason")] string? BlockReason = null
 );
 
 public record Candidate(

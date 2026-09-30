@@ -28,6 +28,14 @@ public class GeminiRestClient
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    private static readonly List<SafetySetting> DefaultSafetySettings = new()
+    {
+        new("HARM_CATEGORY_HARASSMENT", BlockThreshold.BLOCK_NONE),
+        new("HARM_CATEGORY_HATE_SPEECH", BlockThreshold.BLOCK_NONE),
+        new("HARM_CATEGORY_SEXUALLY_EXPLICIT", BlockThreshold.BLOCK_NONE),
+        new("HARM_CATEGORY_DANGEROUS_CONTENT", BlockThreshold.BLOCK_NONE)
+    };
+
     /// <summary>
     /// Google AI Studio API Key 기반 생성자
     /// </summary>
@@ -213,17 +221,24 @@ public class GeminiRestClient
                 MaxOutputTokens: 4096,
                 ResponseMimeType: "application/json",
                 ThinkingConfig: new ThinkingConfig(thinkingLevel)
-            )
+            ),
+            SafetySettings: DefaultSafetySettings
         );
 
         var (geminiResponse, _) = await SendRequestRawAsync(requestBody, cancellationToken, timeoutMs);
 
         if (geminiResponse.Candidates == null || geminiResponse.Candidates.Count == 0)
         {
-            throw new InvalidOperationException("Gemini API가 빈 응답(Candidates 0건)을 반환했습니다.");
+            string reason = geminiResponse.PromptFeedback?.BlockReason ?? "빈 응답(Candidates 0건)";
+            throw new InvalidOperationException($"Gemini API가 응답을 반환하지 않았습니다. (이유: {reason})");
         }
 
         var candidate = geminiResponse.Candidates[0];
+        if (candidate.FinishReason == "SAFETY")
+        {
+            throw new InvalidOperationException("Gemini API가 안전 필터(SAFETY)에 의해 응답 생성을 차단했습니다.");
+        }
+
         if (candidate.Content?.Parts == null || candidate.Content.Parts.Count == 0)
         {
             throw new InvalidOperationException("Gemini API 응답 내부에 유효한 Part가 없습니다.");

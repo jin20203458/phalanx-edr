@@ -200,7 +200,8 @@ public class GeminiRestClient
         List<Content> contents,
         string? systemInstruction = null,
         CancellationToken cancellationToken = default,
-        int timeoutMs = 25000)
+        int timeoutMs = 25000,
+        ThinkingLevel thinkingLevel = ThinkingLevel.low)
     {
         var requestBody = new GeminiRequest(
             Contents: contents,
@@ -211,7 +212,7 @@ public class GeminiRestClient
                 Temperature: null,
                 MaxOutputTokens: 4096,
                 ResponseMimeType: "application/json",
-                ThinkingConfig: new ThinkingConfig(ThinkingLevel.low)
+                ThinkingConfig: new ThinkingConfig(thinkingLevel)
             )
         );
 
@@ -243,12 +244,13 @@ public class GeminiRestClient
         string userPrompt,
         string? systemInstruction = null,
         CancellationToken cancellationToken = default,
-        int timeoutMs = 25000)
+        int timeoutMs = 25000,
+        ThinkingLevel thinkingLevel = ThinkingLevel.low)
     {
         var contents = new List<Content>
         {
             new Content("user", new List<Part> { new Part(userPrompt) })
         };
-        return GenerateContentAsync(contents, systemInstruction, cancellationToken, timeoutMs);
+        return GenerateContentAsync(contents, systemInstruction, cancellationToken, timeoutMs, thinkingLevel);
     }
 }

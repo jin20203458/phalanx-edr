@@ -1,4 +1,5 @@
 # build_and_run.ps1 - 큐 비교 벤치마크 빌드 및 실행 스크립트
+Set-Location $PSScriptRoot
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vcvars = $null
 
@@ -16,7 +17,11 @@ if (-not $vcvars) {
     $vcvars = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
 }
 
-$boostInclude = "C:\Users\user\Documents\GitHub\MundusVivens.GameServer.Cpp\out\build\windows-default\vcpkg_installed\x64-windows\include"
+$boostInclude = Join-Path $PSScriptRoot "..\..\out\build\windows-default\vcpkg_installed\x64-windows\include"
+if (-not (Test-Path $boostInclude)) {
+    # 폴백: vcpkg 전역 설치 경로 탐색
+    $boostInclude = "$env:USERPROFILE\vcpkg\installed\x64-windows\include"
+}
 
 Write-Host ">>> MSVC 툴체인 로드 및 벤치마크 바이너리 컴파일 중..." -ForegroundColor Cyan
 

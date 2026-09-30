@@ -193,7 +193,7 @@ public class AutonomousHunterAgent
             </final_instruction>
             """;
 
-        const int MaxSteps = 3;
+        const int MaxSteps = 5;
         var conversationHistory = new List<Content>
         {
             new Content("user", new List<Part> { new Part(userPrompt) })
@@ -327,7 +327,7 @@ public class AutonomousHunterAgent
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
-                Thought = "멀티턴 ReAct 루프 최대 허용 단계(MaxSteps=3)에 도달하여 수사를 안전 종료합니다.",
+                Thought = "멀티턴 ReAct 루프 최대 허용 단계(MaxSteps=5)에 도달하여 수사를 안전 종료합니다.",
                 ActionTool = "None",
                 ActionArgsJson = "{}",
                 Observation = "Fail-Secure 정책 집행: 회색지대 의심 프로세스 사살(ACTION_KILL) 권고"
@@ -360,7 +360,7 @@ public class AutonomousHunterAgent
                            extractedIp != null ||
                            decodedScript?.Contains("http") == true ||
                            targetNode.CommandLine.Contains("-enc") ||
-                           !reachedFinal; // Fail-Secure: 3턴 내 결론 미도출 시 안전을 위해 사살 격리
+                           !reachedFinal; // Fail-Secure: 5턴 내 결론 미도출 시 안전을 위해 사살 격리
 
         var verdictAction = isMalicious ? MitigationCommand.Types.ActionType.ActionKill : MitigationCommand.Types.ActionType.ActionResume;
         double finalConfidence = isMalicious ? Math.Max(threatScore, 0.99) : threatScore;

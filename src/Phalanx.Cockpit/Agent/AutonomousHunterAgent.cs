@@ -202,7 +202,7 @@ public class AutonomousHunterAgent
 
         while (step <= MaxSteps)
         {
-            string rawResponse = await _geminiClient!.GenerateContentAsync(conversationHistory, systemInstruction, cts.Token, timeoutMs: 40000);
+            string rawResponse = await _geminiClient!.GenerateContentAsync(conversationHistory, systemInstruction, cts.Token, timeoutMs: 15000);
             var decision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(rawResponse);
 
             if (decision == null)

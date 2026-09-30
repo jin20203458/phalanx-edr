@@ -703,6 +703,69 @@ public class AutonomousHunterAgentTests
         }
         _output.WriteLine("=========================================================================\n");
     }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task TestLive_InspectScenario9_CertUtilTraces()
+    {
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var tools = new IInvestigationTool[]
+        {
+            new DecodePayloadTool(),
+            new ProcessMemoryScanTool(),
+            new ThreatReputationTool(),
+            new MitreClassifierTool(),
+            new SystemFirewallTool()
+        };
+
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+
+        treeManager.ApplySnapshotBatch(new[]
+        {
+            new ProcessEvent
+            {
+                ProcessId = 3801,
+                ImageName = "explorer.exe",
+                Lifecycle = ProcessLifecycle.LifecycleSnapshot
+            }
+        });
+
+        treeManager.ApplyDeltaEvent(new ProcessEvent
+        {
+            ProcessId = 3802,
+            ParentProcessId = 3801,
+            ImageName = "certutil.exe",
+            CommandLine = "certutil.exe -verify -urlcache C:\\Certs\\corp_root_ca.cer",
+            IsSuspended = true,
+            Lifecycle = ProcessLifecycle.LifecycleSuspended
+        });
+
+        var targetNode = treeManager.FindActiveNodeByPid(3802);
+        Assert.NotNull(targetNode);
+
+        var res = await agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask);
+
+        _output.WriteLine("=========================================================================");
+        _output.WriteLine("   시나리오 9 (CertUtil 사내 루트 인증서 검증) 세부 수사 로그 실사       ");
+        _output.WriteLine("=========================================================================");
+        _output.WriteLine($"최종 판결       : {res.VerdictAction}");
+        _output.WriteLine($"확신도         : {res.Confidence:P1}");
+        _output.WriteLine($"제목           : {res.SummaryTitle}");
+        _output.WriteLine($"전체 서사       :\n{res.Narrative}");
+        _output.WriteLine($"차단된 IP      : {res.BlockedIp}");
+        _output.WriteLine($"MITRE 전술     : {string.Join(", ", res.MitreTactics)}");
+        _output.WriteLine("-------------------------------------------------------------------------");
+        _output.WriteLine("단계별 ReAct 트레이스 (Thought / Action / Observation):");
+        foreach (var trace in res.Traces)
+        {
+            _output.WriteLine($"\n[Step {trace.StepNumber}] 도구: {trace.ActionTool}");
+            _output.WriteLine($"  ▶ Thought    : {trace.Thought}");
+            _output.WriteLine($"  ▶ Args       : {trace.ActionArgsJson}");
+            _output.WriteLine($"  ▶ Observation: {trace.Observation}");
+        }
+        _output.WriteLine("=========================================================================\n");
+    }
 }
 
 

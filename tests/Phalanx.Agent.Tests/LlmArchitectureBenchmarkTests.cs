@@ -80,7 +80,7 @@ public class LlmArchitectureBenchmarkTests
         Assert.NotNull(client);
 
         _output.WriteLine("=========================================================================================");
-        _output.WriteLine("       PHALANX EDR: 3-WAY LLM ARCHITECTURE BENCHMARK (10 ITERATIONS PER METHOD)          ");
+        _output.WriteLine($"       PHALANX EDR: 3-WAY LLM ARCHITECTURE BENCHMARK (MODEL: {client.ModelName})");
         _output.WriteLine("=========================================================================================");
 
         // 1. 방식 1: Current JSON Mode

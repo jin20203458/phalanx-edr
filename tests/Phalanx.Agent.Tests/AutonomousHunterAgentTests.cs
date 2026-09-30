@@ -296,11 +296,12 @@ public class AutonomousHunterAgentTests
     [Fact]
     public async Task TestLiveGoogleVertexAiFromMvConfig()
     {
-        var client = await GeminiRestClient.TryCreateFromMundusVivensConfigAsync();
+        var client = await GeminiRestClient.TryCreateFromMundusVivensConfigAsync(modelName: "gemini-3.8-flash");
         Assert.NotNull(client);
 
         string prompt = "Windows EDR 보안 분석 테스트입니다. 'powershell.exe -enc dGVzdA==' 명령줄을 분석하고 간결하게 1줄로 답변하세요.";
         string response = await client.GenerateContentAsync(prompt);
+        _output.WriteLine($"[Gemini 3.8 Flash Response]: {response}");
 
         Assert.False(string.IsNullOrWhiteSpace(response));
     }

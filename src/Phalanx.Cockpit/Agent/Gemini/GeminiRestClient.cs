@@ -19,6 +19,7 @@ public class GeminiRestClient
     private readonly string? _projectId;
     private readonly string _location;
     private readonly string _modelName;
+    public string ModelName => _modelName;
     private readonly Func<CancellationToken, Task<string>>? _tokenProvider;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -30,7 +31,7 @@ public class GeminiRestClient
     /// <summary>
     /// Google AI Studio API Key 기반 생성자
     /// </summary>
-    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-2.0-flash")
+    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-3.8-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
@@ -46,7 +47,7 @@ public class GeminiRestClient
         Func<CancellationToken, Task<string>> tokenProvider,
         string projectId,
         string location = "global",
-        string modelName = "gemini-2.5-flash")
+        string modelName = "gemini-3.8-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
@@ -60,6 +61,7 @@ public class GeminiRestClient
     /// </summary>
     public static async Task<GeminiRestClient?> TryCreateFromMundusVivensConfigAsync(
         HttpClient? httpClient = null,
+        string? modelName = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -75,7 +77,7 @@ public class GeminiRestClient
 
             string projectId = "grc0-494913";
             string location = "global";
-            string model = "gemini-2.5-flash";
+            string model = modelName ?? "gemini-3.8-flash";
 
             if (File.Exists(appSettingsPath))
             {
@@ -122,12 +124,7 @@ public class GeminiRestClient
         CancellationToken cancellationToken = default,
         int timeoutMs = 15000)
     {
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(timeoutMs));
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
         string url;
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "");
-
         if (_tokenProvider != null && !string.IsNullOrWhiteSpace(_projectId))
         {
             // Vertex AI 엔드포인트
@@ -136,9 +133,6 @@ public class GeminiRestClient
                 : $"{_location}-aiplatform.googleapis.com";
             string loc = string.IsNullOrWhiteSpace(_location) ? "global" : _location;
             url = $"https://{hostName}/v1beta1/projects/{_projectId}/locations/{loc}/publishers/google/models/{_modelName}:generateContent";
-
-            string token = await _tokenProvider(linkedCts.Token);
-            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         }
         else
         {
@@ -147,24 +141,56 @@ public class GeminiRestClient
         }
 
         string jsonPayload = JsonSerializer.Serialize(requestBody, JsonOptions);
-        httpRequest.RequestUri = new Uri(url);
-        httpRequest.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+        int maxRetries = 2;
 
-        using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token);
-        string responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
-
-        if (!response.IsSuccessStatusCode)
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
-            throw new HttpRequestException($"Gemini API HTTP {(int)response.StatusCode} 에러: {responseJson}");
+            using var attemptTimeoutCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(timeoutMs));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, attemptTimeoutCts.Token);
+
+            try
+            {
+                using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
+                if (_tokenProvider != null && !string.IsNullOrWhiteSpace(_projectId))
+                {
+                    string token = await _tokenProvider(linkedCts.Token);
+                    httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                }
+
+                httpRequest.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+                using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token);
+                string responseJson = await response.Content.ReadAsStringAsync(linkedCts.Token);
+
+                if ((int)response.StatusCode == 429 && attempt < maxRetries)
+                {
+                    // Quota cooldown 지수 백오프
+                    await Task.Delay(2500 * (attempt + 1), cancellationToken);
+                    continue;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new HttpRequestException($"Gemini API HTTP {(int)response.StatusCode} 에러: {responseJson}");
+                }
+
+                var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseJson, JsonOptions);
+                if (geminiResponse == null)
+                {
+                    throw new InvalidOperationException($"Gemini API 응답 역직렬화 실패: {responseJson}");
+                }
+
+                return (geminiResponse, responseJson);
+            }
+            catch (OperationCanceledException) when (attempt < maxRetries && !cancellationToken.IsCancellationRequested)
+            {
+                // 타임아웃 발생 시 1회 재시도
+                await Task.Delay(1000, cancellationToken);
+                continue;
+            }
         }
 
-        var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseJson, JsonOptions);
-        if (geminiResponse == null)
-        {
-            throw new InvalidOperationException($"Gemini API 응답 역직렬화 실패: {responseJson}");
-        }
-
-        return (geminiResponse, responseJson);
+        throw new HttpRequestException("Gemini API 호출 최대 재시도 횟수 초과.");
     }
 
     /// <summary>
@@ -174,7 +200,7 @@ public class GeminiRestClient
         string userPrompt,
         string? systemInstruction = null,
         CancellationToken cancellationToken = default,
-        int timeoutMs = 10000)
+        int timeoutMs = 25000)
     {
         var requestBody = new GeminiRequest(
             Contents: new List<Content>

@@ -69,17 +69,6 @@ public class AutonomousHunterAgent
         var sw = Stopwatch.StartNew();
         string incidentId = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
 
-        // [Step 0] 안전 워치독 타임아웃 1회성 50초 연장 티켓 확보 (C++ 센서 선제 전송)
-        if (commandSender != null)
-        {
-            await commandSender(new MitigationCommand
-            {
-                Action = MitigationCommand.Types.ActionType.ActionExtendTimeout,
-                TargetPid = targetNode.ProcessId,
-                Reason = "AI 자율 수사 개시: 심층 조사를 위한 1회성 타임아웃 연장 (50초)"
-            });
-        }
-
         // [모드 A: 실제 Gemini REST 호출] 클라이언트(API Key 또는 Vertex AI)가 활성화된 경우
         if (_geminiClient != null)
         {
@@ -93,7 +82,7 @@ public class AutonomousHunterAgent
             }
         }
 
-        // [모드 B: 오프라인 초고속 결정론적 ReAct 엔진 Fallback] (API 키 부재 / 네트워크 단절 / 단위 테스트)
+        // [모드 B: 오프라인 초고속 결정론적 ReAct 엔진 Fallback] (기본 10초 워치독 내 23ms 즉각 완결, 타임아웃 연장 불필요)
         return await InvestigateOfflineDeterministicAsync(targetNode, incidentId, sw, commandSender, cancellationToken);
     }
 
@@ -107,6 +96,19 @@ public class AutonomousHunterAgent
         Func<MitigationCommand, Task>? commandSender,
         CancellationToken cancellationToken)
     {
+        // [Step 0: LLM 심층 수사 진입 시에만 1회성 50초 연장 티켓 확보]
+        // 외부 LLM API 멀티턴 호출은 네트워크 지연 및 사고 시간이 발생하므로 C++ 센서로 선제 전송하여 60초 예산을 확보합니다.
+        // (오프라인 로컬 엔진의 경우 23ms에 완결되므로 불필요한 연장을 보내지 않아, 비정상 크래시 시 10초 데드락 보호를 유지함)
+        if (commandSender != null)
+        {
+            await commandSender(new MitigationCommand
+            {
+                Action = MitigationCommand.Types.ActionType.ActionExtendTimeout,
+                TargetPid = targetNode.ProcessId,
+                Reason = "AI 자율 수사 개시: LLM 심층 조사를 위한 1회성 타임아웃 연장 (50초)"
+            });
+        }
+
         // SLA 레이스 컨디션 차단: C++ 센서 기본 워치독(10초) + 타임아웃 1회 연장 티켓(50초) = 누적 60초까지 감시하므로,
         // 워치독 만료 10초 전 안전 마진을 두어 50초(50,000ms) 내에 멀티턴 수사를 완결하도록 제한
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

@@ -84,15 +84,12 @@ public class AutonomousHunterAgentTests
         );
 
         // 5. 검증:
-        // A) 타임아웃 50초 연장 명령(ACTION_EXTEND_TIMEOUT) 우선 발행 확인
-        Assert.True(dispatchedCommands.Count >= 2);
-        Assert.Equal(MitigationCommand.Types.ActionType.ActionExtendTimeout, dispatchedCommands[0].Action);
+        // A) 오프라인 결정론적 모드에서는 불필요한 타임아웃 연장(ACTION_EXTEND_TIMEOUT) 없이 기본 10초 내 즉각 사살(ACTION_KILL) 1건만 하달 확인
+        Assert.Single(dispatchedCommands);
+        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, dispatchedCommands[0].Action);
         Assert.Equal((uint)8492, dispatchedCommands[0].TargetPid);
-
-        // B) 최종 판결이 사형(ACTION_KILL)으로 도출되었는지 확인
-        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, dispatchedCommands[^1].Action);
-        Assert.Equal((uint)8492, dispatchedCommands[^1].TargetPid);
         Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
+        Assert.DoesNotContain(dispatchedCommands, c => c.Action == MitigationCommand.Types.ActionType.ActionExtendTimeout);
 
         // C) 3초 이내 초고속 자율 수사 완료 검증 (< 3000ms)
         Assert.True(result.Elapsed.TotalSeconds < 3.0, $"수사 시간이 3초를 초과함: {result.Elapsed.TotalMilliseconds}ms");
@@ -258,6 +255,10 @@ public class AutonomousHunterAgentTests
 
         // 3. 검증
         Assert.Equal(2, callCount); // 2턴 왕복 검증
+        Assert.True(dispatchedCommands.Count >= 2);
+        Assert.Equal(MitigationCommand.Types.ActionType.ActionExtendTimeout, dispatchedCommands[0].Action);
+        Assert.Equal((uint)8492, dispatchedCommands[0].TargetPid);
+        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, dispatchedCommands[^1].Action);
         Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
         Assert.True(result.Confidence >= 0.95);
         Assert.Contains("Gemini AI", result.SummaryTitle);
@@ -402,6 +403,7 @@ public class AutonomousHunterAgentTests
         // 결과 검증
         Assert.NotNull(result);
         Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
+        Assert.Contains(dispatchedCommands, c => c.Action == MitigationCommand.Types.ActionType.ActionExtendTimeout);
         Assert.False(string.IsNullOrWhiteSpace(result.Narrative));
         Assert.False(string.IsNullOrWhiteSpace(result.SummaryTitle));
         Assert.True(result.Traces.Count >= 2, $"멀티턴 단계 부족: {result.Traces.Count}");

@@ -618,4 +618,33 @@ public class AutonomousHunterAgentTests
             return Task.FromResult(_handler(request));
         }
     }
+
+    [Fact]
+    public void TestLlmJsonParserWithNestedBracesInStringAndMarkdown()
+    {
+        // LLM이 마크다운 백틱, 앞뒤 잡담, 문자열 내부 중괄호 및 이스케이프를 출력한 극단적 엣지 케이스
+        string rawLlmResponse = """
+            네, 분석 결과 JSON을 제출합니다:
+            ```json
+            {
+              "thought": "문자열 내부에 중괄호 { nested: true, key: \"value\" } 가 포함되어 있으며 이스케이프 \\\" 도 존재합니다.",
+              "action_tool": "DecodePayloadTool",
+              "action_args": {
+                "encodedCommand": "test-command"
+              },
+              "is_final_verdict": false,
+              "confidence_score": 0.95
+            }
+            ```
+            추가 조사가 필요합니다.
+            """;
+
+        var decision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(rawLlmResponse);
+
+        Assert.NotNull(decision);
+        Assert.Equal("DecodePayloadTool", decision.ActionTool);
+        Assert.False(decision.IsFinalVerdict);
+        Assert.Equal(0.95, decision.ConfidenceScore);
+        Assert.Contains("{ nested: true", decision.Thought);
+    }
 }

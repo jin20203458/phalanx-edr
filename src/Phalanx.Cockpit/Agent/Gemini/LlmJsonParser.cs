@@ -14,62 +14,56 @@ public static class LlmJsonParser
         ReadCommentHandling = JsonCommentHandling.Skip
     };
 
-    public static string ExtractJson(string rawText)
+    public static string? ExtractJson(string rawText)
     {
-        if (string.IsNullOrWhiteSpace(rawText))
-        {
-            return string.Empty;
-        }
+        if (string.IsNullOrWhiteSpace(rawText)) return null;
 
-        string trimmed = rawText.Trim();
+        int startIndex = rawText.IndexOf('{');
+        if (startIndex < 0) return null; // JSON 객체가 아예 없음
 
-        // 1. 마크다운 코드블록 (```json ... ```) 제거
-        if (trimmed.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-        {
-            trimmed = trimmed[7..].Trim();
-        }
-        else if (trimmed.StartsWith("```"))
-        {
-            trimmed = trimmed[3..].Trim();
-        }
+        int openCount = 0;
+        int endIndex = -1;
+        bool inString = false;
+        bool isEscaped = false;
 
-        if (trimmed.EndsWith("```"))
+        // MundusVivens & GRC 표준: 문자열 내부("...") 및 이스케이프(\")를 완벽히 추적하여 문자열 내 중괄호 오작동 방지
+        for (int i = startIndex; i < rawText.Length; i++)
         {
-            trimmed = trimmed[..^3].Trim();
-        }
+            char c = rawText[i];
 
-        // 2. 균형 잡힌 중괄호({ ... }) 추출
-        int startIdx = trimmed.IndexOf('{');
-        if (startIdx >= 0)
-        {
-            int depth = 0;
-            int endIdx = -1;
-            for (int i = startIdx; i < trimmed.Length; i++)
+            if (inString)
             {
-                if (trimmed[i] == '{') depth++;
-                else if (trimmed[i] == '}')
+                if (c == '\\') isEscaped = !isEscaped;
+                else if (c == '"' && !isEscaped) { inString = false; isEscaped = false; }
+                else isEscaped = false;
+            }
+            else
+            {
+                if (c == '"') inString = true;
+                else if (c == '{') openCount++;
+                else if (c == '}')
                 {
-                    depth--;
-                    if (depth == 0)
+                    openCount--;
+                    if (openCount == 0)
                     {
-                        endIdx = i;
+                        endIndex = i;
                         break;
                     }
                 }
             }
-
-            if (endIdx > startIdx)
-            {
-                return trimmed[startIdx..(endIdx + 1)];
-            }
         }
 
-        return trimmed;
+        if (endIndex > startIndex)
+        {
+            return rawText.Substring(startIndex, endIndex - startIndex + 1);
+        }
+
+        return null; // 괄호 짝이 맞지 않아 추출 실패
     }
 
     public static T? DeserializeSafe<T>(string rawText, JsonSerializerOptions? options = null)
     {
-        string json = ExtractJson(rawText);
+        string? json = ExtractJson(rawText);
         if (string.IsNullOrWhiteSpace(json)) return default;
 
         try

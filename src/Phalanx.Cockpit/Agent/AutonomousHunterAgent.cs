@@ -23,6 +23,9 @@ public class AutonomousHunterAgent
     private readonly Dictionary<string, IInvestigationTool> _tools = new(StringComparer.OrdinalIgnoreCase);
     private readonly GeminiRestClient? _geminiClient;
 
+    public event Action<ProcessNodeModel, string>? OnInvestigationStarted;
+    public event Action<InvestigationResult>? OnInvestigationCompleted;
+
     public AutonomousHunterAgent(
         ProcessTreeProjectionManager treeManager,
         ForensicArchiveManager archiveManager,
@@ -42,6 +45,10 @@ public class AutonomousHunterAgent
         if (geminiClient != null)
         {
             _geminiClient = geminiClient;
+        }
+        else if (Environment.GetEnvironmentVariable("PHALANX_OFFLINE_TEST") == "1")
+        {
+            _geminiClient = null;
         }
         else
         {
@@ -70,13 +77,18 @@ public class AutonomousHunterAgent
     {
         var sw = Stopwatch.StartNew();
         string incidentId = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+        OnInvestigationStarted?.Invoke(targetNode, incidentId);
+
+        InvestigationResult result;
 
         // [모드 A: 실제 Gemini REST 호출] 클라이언트(API Key 또는 Vertex AI)가 활성화된 경우
         if (_geminiClient != null)
         {
             try
             {
-                return await InvestigateWithGeminiAsync(targetNode, incidentId, sw, commandSender, cancellationToken);
+                result = await InvestigateWithGeminiAsync(targetNode, incidentId, sw, commandSender, cancellationToken);
+                OnInvestigationCompleted?.Invoke(result);
+                return result;
             }
             catch (Exception ex)
             {
@@ -85,7 +97,9 @@ public class AutonomousHunterAgent
         }
 
         // [모드 B: 오프라인 초고속 결정론적 ReAct 엔진 Fallback] (기본 10초 워치독 내 23ms 즉각 완결, 타임아웃 연장 불필요)
-        return await InvestigateOfflineDeterministicAsync(targetNode, incidentId, sw, commandSender, cancellationToken);
+        result = await InvestigateOfflineDeterministicAsync(targetNode, incidentId, sw, commandSender, cancellationToken);
+        OnInvestigationCompleted?.Invoke(result);
+        return result;
     }
 
     /// <summary>
@@ -152,6 +166,7 @@ public class AutonomousHunterAgent
               summary_title?: string;
               narrative?: string;
               mitre_tactics?: string[];
+              remediation_steps?: string[];
             }
             </output_format>
 
@@ -163,7 +178,7 @@ public class AutonomousHunterAgent
               "is_final_verdict": false
             }
             </example>
-            <example type="verdict">
+            <example type="verdict_kill">
             {
               "thought": "해독된 스크립트에서 추출된 IP(185.220.101.5)의 위협 평판이 98점으로 확인되어 악성 C2 통신으로 확증합니다.",
               "action_tool": "None",
@@ -173,10 +188,41 @@ public class AutonomousHunterAgent
               "confidence_score": 0.99,
               "summary_title": "악성 오피스 매크로를 통한 C2 다운로더 침투 탐지",
               "narrative": "winword.exe가 기동한 의심 파워셸을 24μs 만에 선제 동결하였으며, Base64 해독 및 위협 평판 조회 결과 해외 악성 C2와의 통신 시도가 확증되어 즉각 사살(ACTION_KILL)을 집행했습니다.",
-              "mitre_tactics": ["T1566.001", "T1059.001", "T1071.001"]
+              "mitre_tactics": ["T1566.001", "T1059.001", "T1071.001"],
+              "remediation_steps": ["엔드포인트 네트워크 격리", "악성 C2 IP 방화벽 차단", "침해 계정 자격증명 초기화"]
+            }
+            </example>
+            <example type="verdict_resume">
+            {
+              "thought": "해독된 명령줄이 사내 백업 및 인벤토리 점검 정상 스크립트이며 외부 악성 통신이나 파괴적 행위가 없어 정상 프로세스로 판정합니다.",
+              "action_tool": "None",
+              "action_args": {},
+              "is_final_verdict": true,
+              "verdict_action": "ACTION_RESUME",
+              "confidence_score": 0.98,
+              "summary_title": "사내 정상 인벤토리 수집 스크립트 확인 및 동결 해제",
+              "narrative": "사내 시스템 관리 목적의 정상 스크립트로 확인되어 즉시 동결을 해제하고 정상 실행(ACTION_RESUME)으로 복구했습니다.",
+              "mitre_tactics": [],
+              "remediation_steps": []
             }
             </example>
             """;
+
+        bool isTempExecution = targetNode.ImageName.Contains(@"\Temp\", StringComparison.OrdinalIgnoreCase) ||
+                               targetNode.ImageName.Contains(@"\AppData\Local\Temp", StringComparison.OrdinalIgnoreCase) ||
+                               targetNode.CommandLine.Contains(@"\Temp\", StringComparison.OrdinalIgnoreCase);
+
+        string signatureStatus = targetNode.ImageName.Contains(@"\Windows\System32", StringComparison.OrdinalIgnoreCase) ||
+                                 targetNode.ImageName.Contains(@"\Windows\SysWOW64", StringComparison.OrdinalIgnoreCase)
+                                     ? "Microsoft Windows Signed (System32)"
+                                     : "Unsigned or External Binary";
+
+        string integrityLevel = targetNode.TokenElevationType switch
+        {
+            2 => "High (Administrator)",
+            3 => "Low (Restricted)",
+            _ => "Medium (Standard User)"
+        };
 
         string userPrompt = $"""
             <target_context>
@@ -186,6 +232,9 @@ public class AutonomousHunterAgent
             - ParentProcess: {rootCause}
             - AncestryChain: {string.Join(" -> ", ancestry.Select(a => $"{a.ImageName}(PID:{a.ProcessId})"))}
             - Status: SUSPENDED (24μs 원자적 동결 완료, 메모리 보존 상태)
+            - IsTempExecution: {isTempExecution}
+            - SignatureStatus: {signatureStatus}
+            - IntegrityLevel: {integrityLevel}
             </target_context>
 
             <final_instruction>
@@ -206,7 +255,7 @@ public class AutonomousHunterAgent
 
         while (step <= MaxSteps)
         {
-            string rawResponse = await _geminiClient!.GenerateContentAsync(conversationHistory, systemInstruction, cts.Token, timeoutMs: 15000);
+            string rawResponse = await _geminiClient!.GenerateContentAsync(conversationHistory, systemInstruction, cts.Token, timeoutMs: 30000);
             var decision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(rawResponse);
 
             if (decision == null)
@@ -310,10 +359,6 @@ public class AutonomousHunterAgent
                 <tool_observation tool="{actionTool}">
                 {observationOutput}
                 </tool_observation>
-
-                <final_instruction>
-                위 <tool_observation>의 실행 결과를 면밀히 검토하여, 추가 조사가 필요하면 다음 도구를 호출하고, 위협 여부가 충분히 입증되었다면 is_final_verdict: true와 함께 최종 판결(ACTION_KILL 또는 ACTION_RESUME)을 제출하십시오.
-                </final_instruction>
                 """;
             conversationHistory.Add(new Content("user", new List<Part> { new Part(observationFeedback) }));
         }
@@ -418,6 +463,10 @@ public class AutonomousHunterAgent
         sw.Stop();
 
         // 4. [LiteDB 영구 저장] 확신도 및 차단 IP 무결성 보장
+        var remediationSteps = latestDecision?.RemediationSteps ?? (isMalicious
+            ? new List<string> { "엔드포인트 네트워크 격리", "악성 C2 IP 방화벽 차단", "침해 계정 자격증명 초기화" }
+            : new List<string>());
+
         var incidentRecord = new IncidentRecord
         {
             IncidentId = incidentId,
@@ -433,7 +482,8 @@ public class AutonomousHunterAgent
             BlockedIp = blockedIp, // 정상 스크립트는 차단 IP 없음
             RootCauseProcess = rootCause,
             TerminatedProcesses = isMalicious ? new() { $"{targetNode.ImageName} (PID: {targetNode.ProcessId})" } : new(),
-            RemediationStatus = isMalicious ? "SECURED" : "RESTORED"
+            RemediationStatus = isMalicious ? "SECURED" : "RESTORED",
+            RemediationSteps = remediationSteps
         };
 
         _archiveManager.SaveIncident(incidentRecord, traces);
@@ -448,7 +498,8 @@ public class AutonomousHunterAgent
             blockedIp, // 정상 스크립트는 공백 전달
             traces,
             sw.Elapsed,
-            incidentRecord
+            incidentRecord,
+            remediationSteps
         );
     }
 
@@ -499,6 +550,67 @@ public class AutonomousHunterAgent
                 {
                     extractedIp = ipList[0];
                 }
+            }
+
+            // [FSM 상태 전이: 1ms 조기 탈출 (Early-Exit)]
+            // 사내 정상 관리/백업 작업으로 확인되고 악성 C2 및 파괴 명령이 없는 경우 즉각 정상 복구 (ACTION_RESUME)
+            if (!IsRansomwareDestructiveCommand(cmd, targetNode.ImageName) &&
+                !HasInlineC2Pattern(decodedScript, cmd) &&
+                IsKnownInternalOrTrusted(decodedScript, cmd, extractedIp))
+            {
+                verdictAction = MitigationCommand.Types.ActionType.ActionResume;
+                summaryTitle = "사내 정상 관리 및 백업 스크립트 확인 (조기 복구)";
+                narrative = $"{DateTime.UtcNow:HH시 mm분}, 의뢰된 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})의 명령줄을 해독한 결과, " +
+                            $"외부 C2 통신 및 파괴 행위가 없는 사내 정상 관리/백업 작업으로 확인되었습니다. " +
+                            $"오프라인 FSM 엔진에 의해 1ms 이내 조기 정상 복구(ACTION_RESUME)를 완료했습니다.";
+
+                if (commandSender != null)
+                {
+                    await commandSender(new MitigationCommand
+                    {
+                        Action = verdictAction,
+                        TargetPid = targetNode.ProcessId,
+                        TargetIp = string.Empty,
+                        Reason = summaryTitle
+                    });
+                }
+
+                sw.Stop();
+
+                var earlyRecord = new IncidentRecord
+                {
+                    IncidentId = incidentId,
+                    Timestamp = DateTime.UtcNow,
+                    TargetPid = targetNode.ProcessId,
+                    TargetImage = targetNode.ImageName,
+                    CommandLine = targetNode.CommandLine,
+                    ConfidenceScore = 0.98,
+                    VerdictAction = "ACTION_RESUME",
+                    SummaryTitle = summaryTitle,
+                    Narrative = narrative,
+                    MitreTactics = new(),
+                    BlockedIp = string.Empty,
+                    RootCauseProcess = rootCause,
+                    TerminatedProcesses = new(),
+                    RemediationStatus = "RESTORED",
+                    RemediationSteps = new()
+                };
+
+                _archiveManager.SaveIncident(earlyRecord, traces);
+
+                return new InvestigationResult(
+                    incidentId,
+                    verdictAction,
+                    earlyRecord.ConfidenceScore,
+                    summaryTitle,
+                    narrative,
+                    earlyRecord.MitreTactics,
+                    string.Empty,
+                    traces,
+                    sw.Elapsed,
+                    earlyRecord,
+                    new()
+                );
             }
         }
 
@@ -591,8 +703,46 @@ public class AutonomousHunterAgent
             });
         }
 
-        // --- 최종 판결(Verdict) 및 서사(Narrative) 도출 ---
-        bool isMalicious = threatScore >= 0.80 || combinedBehavior.Contains("-enc") || combinedBehavior.Contains("vssadmin");
+        // --- 최종 판결(Verdict) 및 다차원 누적 위험도(Risk Score) FSM 평가 ---
+        int riskScore = 0;
+
+        // 1. 비정상 부모 족보 분석 (+30)
+        if (IsSuspiciousParent(rootCause))
+        {
+            riskScore += 30;
+        }
+
+        // 2. 인라인 C2 다운로드 / 명령 실행 패턴 (+35)
+        if (HasInlineC2Pattern(decodedScript, targetNode.CommandLine))
+        {
+            riskScore += 35;
+        }
+
+        // 3. Unbacked 실행 메모리 주입 또는 악성 위협 평판 (+40)
+        bool hasUnbackedMemory = traces.Any(t => t.ActionTool == "ProcessMemoryScanTool" && (t.Observation.Contains("PAGE_EXECUTE") || t.Observation.Contains("Unbacked")));
+        if (hasUnbackedMemory || threatScore >= 0.85)
+        {
+            riskScore += 40;
+        }
+
+        // 4. 랜섬웨어 파괴 명령 패턴: 시스템 복구 무력화 (+80 즉각 사살 트리거)
+        if (IsRansomwareDestructiveCommand(targetNode.CommandLine, targetNode.ImageName))
+        {
+            riskScore += 80;
+        }
+
+        // 5. 사내 정상 인프라 / 내부 도메인 / 화이트리스트 (-50)
+        if (IsKnownInternalOrTrusted(decodedScript, targetNode.CommandLine, extractedIp))
+        {
+            riskScore -= 50;
+        }
+
+        // 최종 판정: 누적 80점 이상 시 사살 (경계값 80점 포함)
+        bool isMalicious = riskScore >= 80;
+
+        var remediationSteps = isMalicious
+            ? new List<string> { "엔드포인트 네트워크 격리", "악성 C2 IP 방화벽 차단", "침해 계정 자격증명 초기화" }
+            : new List<string>();
 
         if (isMalicious)
         {
@@ -601,7 +751,7 @@ public class AutonomousHunterAgent
             narrative = $"{DateTime.UtcNow:HH시 mm분}, 시스템에서 실행된 '{rootCause}' 프로세스가 비정상 자식 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 은밀히 기동했습니다. " +
                         $"Phalanx 센서가 24μs 만에 원자적으로 동결 집행하였으며, AI 에이전트의 심층 족보 역추적 및 메모리/페이로드 분석 결과 " +
                         $"{(extractedIp != null ? $"해외 악성 C2({extractedIp})" : "원격 C2 인프라")}와의 통신 및 파일리스 공격 시도가 확인되었습니다. " +
-                        $"위협 확신도 {Math.Max(threatScore, 0.98):P0}로 즉각 사살(ACTION_KILL)을 하달하고 격리 조치를 완결했습니다.";
+                        $"누적 위험도 {riskScore}점(임계치 80점 이상)으로 즉각 사살(ACTION_KILL)을 하달하고 격리 조치를 완결했습니다.";
 
             if (mitreList.Count == 0)
             {
@@ -614,7 +764,7 @@ public class AutonomousHunterAgent
             summaryTitle = "정상 관리 도구 동작 확인 (오탐 방지 및 동결 해제)";
             narrative = $"{DateTime.UtcNow:HH시 mm분}, 동결 수사 의뢰된 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 심층 분석한 결과, " +
                         $"외부 악성 통신 및 파괴적 페이로드가 발견되지 않은 신뢰된 작업으로 확인되었습니다. " +
-                        $"위협 확신도 {threatScore:P0}로 무해 판정을 도출하고 안전하게 정상 복구(ACTION_RESUME) 조치를 완료했습니다.";
+                        $"누적 위험도 {riskScore}점(임계치 80점 미만)으로 무해 판정을 도출하고 안전하게 정상 복구(ACTION_RESUME) 조치를 완료했습니다.";
         }
 
         // [최종 명령 C++ 전송]
@@ -647,7 +797,8 @@ public class AutonomousHunterAgent
             BlockedIp = extractedIp ?? string.Empty,
             RootCauseProcess = rootCause,
             TerminatedProcesses = isMalicious ? new() { $"{targetNode.ImageName} (PID: {targetNode.ProcessId})" } : new(),
-            RemediationStatus = isMalicious ? "SECURED" : "RESTORED"
+            RemediationStatus = isMalicious ? "SECURED" : "RESTORED",
+            RemediationSteps = remediationSteps
         };
 
         _archiveManager.SaveIncident(incidentRecord, traces);
@@ -662,7 +813,71 @@ public class AutonomousHunterAgent
             extractedIp,
             traces,
             sw.Elapsed,
-            incidentRecord
+            incidentRecord,
+            remediationSteps
         );
     }
+
+    #region FSM & Multi-dimensional Risk Scoring Helpers
+    private static bool IsSuspiciousParent(string rootCause)
+    {
+        string rc = rootCause.ToLowerInvariant();
+        return rc.Contains("winword") || rc.Contains("excel") || rc.Contains("powerpnt") ||
+               rc.Contains("outlook") || rc.Contains("acrord32") || rc.Contains("acrobat") ||
+               rc.Contains("hwp") || rc.Contains("chrome") || rc.Contains("msedge");
+    }
+
+    private static bool HasInlineC2Pattern(string? decodedScript, string commandLine)
+    {
+        string target = $"{commandLine} {decodedScript}".ToLowerInvariant();
+        return target.Contains("downloadstring") ||
+               target.Contains("downloadfile") ||
+               target.Contains("net.webclient") ||
+               target.Contains("invoke-webrequest") ||
+               target.Contains("curl") ||
+               target.Contains("wget") ||
+               target.Contains("http://") ||
+               target.Contains("https://") ||
+               target.Contains("iex ") ||
+               target.Contains("iex(") ||
+               target.Contains("invoke-expression");
+    }
+
+    private static bool IsRansomwareDestructiveCommand(string commandLine, string imageName)
+    {
+        string target = $"{imageName} {commandLine}".ToLowerInvariant();
+        if (target.Contains("vssadmin") && target.Contains("delete") && target.Contains("shadows")) return true;
+        if (target.Contains("bcdedit") && (target.Contains("recoveryenabled") || target.Contains("ignoreallfailures"))) return true;
+        if (target.Contains("wbadmin") && (target.Contains("delete catalog") || target.Contains("systemstatebackup"))) return true;
+        return false;
+    }
+
+    private static bool IsKnownInternalOrTrusted(string? decodedScript, string commandLine, string? extractedIp)
+    {
+        string target = $"{commandLine} {decodedScript}".ToLowerInvariant();
+
+        bool hasInternalDomain = target.Contains(".corp.local") ||
+                                target.Contains(".internal") ||
+                                target.Contains(".local") ||
+                                target.Contains("localhost") ||
+                                target.Contains("127.0.0.1");
+
+        bool hasInternalCmd = target.Contains("get-service") ||
+                              target.Contains("restart-service") ||
+                              target.Contains("get-wmiobject") ||
+                              target.Contains("get-process") ||
+                              target.Contains("backup") ||
+                              target.Contains("inventory");
+
+        if (hasInternalDomain || hasInternalCmd)
+        {
+            if (extractedIp == null || extractedIp.StartsWith("10.") || extractedIp.StartsWith("192.168.") || extractedIp.StartsWith("127."))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    #endregion
 }

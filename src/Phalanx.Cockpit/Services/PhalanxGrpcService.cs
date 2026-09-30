@@ -14,16 +14,26 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
 {
     private readonly ProcessTreeProjectionManager _treeManager;
     private readonly AutonomousHunterAgent _agent;
+    private readonly CockpitUiBridge? _uiBridge;
     private IServerStreamWriter<MitigationCommand>? _responseStream;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     public event Action<TelemetryBatch>? OnBatchReceived;
     public event Action<MitigationCommand>? OnCommandSent;
 
-    public PhalanxGrpcService(ProcessTreeProjectionManager treeManager, AutonomousHunterAgent agent)
+    public PhalanxGrpcService(
+        ProcessTreeProjectionManager treeManager,
+        AutonomousHunterAgent agent,
+        CockpitUiBridge? uiBridge = null)
     {
         _treeManager = treeManager;
         _agent = agent;
+        _uiBridge = uiBridge;
+
+        if (_uiBridge != null)
+        {
+            _uiBridge.ManualCommandSender = SendCommandAsync;
+        }
     }
 
     public override async Task StreamTelemetry(
@@ -33,6 +43,7 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
     {
         _responseStream = responseStream;
         Console.WriteLine("⚡ [gRPC Server] C++ 센서 클라이언트 연결됨.");
+        _uiBridge?.NotifySensorConnected(true);
 
         try
         {
@@ -72,6 +83,8 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
                         }
                     }
                 }
+
+                _uiBridge?.NotifyProcessCount(_treeManager.ActiveCount);
             }
         }
         catch (OperationCanceledException)
@@ -85,6 +98,7 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
         finally
         {
             _responseStream = null;
+            _uiBridge?.NotifySensorConnected(false);
             Console.WriteLine("🔌 [gRPC Server] C++ 센서 클라이언트 연결 종료.");
         }
     }
@@ -106,6 +120,7 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
             {
                 await _responseStream.WriteAsync(command);
                 OnCommandSent?.Invoke(command);
+                _uiBridge?.NotifyCommandDispatched(command);
                 Console.WriteLine($"🛡️ [gRPC 완화 명령 하달] 조치: {command.Action} | 타깃 PID: {command.TargetPid} | 사유: {command.Reason}");
             }
         }

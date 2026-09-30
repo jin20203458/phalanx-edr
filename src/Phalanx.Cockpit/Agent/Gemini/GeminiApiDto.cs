@@ -103,6 +103,7 @@ public record AiInvestigationDecision(
     [property: JsonPropertyName("confidence_score")] double ConfidenceScore,
     [property: JsonPropertyName("summary_title")] string? SummaryTitle,
     [property: JsonPropertyName("narrative")] string? Narrative,
-    [property: JsonPropertyName("mitre_tactics")] List<string>? MitreTactics
+    [property: JsonPropertyName("mitre_tactics")] List<string>? MitreTactics,
+    [property: JsonPropertyName("remediation_steps")] List<string>? RemediationSteps = null
 );
 #endregion

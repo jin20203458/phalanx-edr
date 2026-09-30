@@ -41,14 +41,30 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 3. C++ gRPC 스트리밍 루프백 IPC 검증
-Write-Host "`n[3/3] C++ gRPC 양방향 스트리밍 IPC 파이프라인 검증..." -ForegroundColor Yellow
+Write-Host "`n[3/5] C++ gRPC 양방향 스트리밍 IPC 파이프라인 검증..." -ForegroundColor Yellow
 & .\out\build\windows-default\tests\IpcE2ETest\IpcE2ETest.exe
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ IpcE2ETest.exe 검증 실패! (Exit Code: $LASTEXITCODE)" -ForegroundColor Red
     exit $LASTEXITCODE
 }
 
+# 4. Phase 3.5 실제 OS 프로세스 및 Kestrel gRPC 소켓 인프로세스 검증
+Write-Host "`n[4/5] Phase 3.5 실제 OS 프로세스 기동 ➔ 24μs 동결 ➔ HTTP/2 gRPC ➔ AI 수사 ➔ 사살 폐루프 실측 검증..." -ForegroundColor Yellow
+dotnet test tests/Phalanx.Agent.Tests/ --filter "FullyQualifiedName~LiveFullChainE2ETests" --logger "console;verbosity=$verb"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ LiveFullChainE2ETests 검증 실패! (Exit Code: $LASTEXITCODE)" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+# 5. C++ Native Binary ➔ C# Cockpit ➔ C++ Native Binary 크로스 랭귀지 풀체인 E2E 실측 검증
+Write-Host "`n[5/5] C++ Native Binary ➔ C# Cockpit ➔ C++ Native Binary 크로스 랭귀지 풀체인 E2E 실측 검증..." -ForegroundColor Yellow
+& powershell -ExecutionPolicy Bypass -File .\scripts\run_cross_e2e_test.ps1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ run_cross_e2e_test.ps1 검증 실패! (Exit Code: $LASTEXITCODE)" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
 Write-Host "`n================================================================================" -ForegroundColor Green
-Write-Host "🎉 Phalanx 3대 시나리오 풀체인 E2E 통합 시스템 테스트 전원 통과! (Exit Code 0) " -ForegroundColor Green
+Write-Host "🎉 Phalanx 풀체인 Live E2E 통합 시스템 테스트 전원 통과! (Exit Code 0)         " -ForegroundColor Green
 Write-Host "================================================================================" -ForegroundColor Green
 exit 0

@@ -130,6 +130,11 @@ bool GrpcStreamClient::Start() {
                                     impl_->custom_command_handler(cmd);
                                 }
 
+                                // 종료 명령(PHALANX_SENSOR_SHUTDOWN) 또는 무효 PID(0)인 경우 액추에이터 사살 호출 바이패스
+                                if (cmd.reason() == "PHALANX_SENSOR_SHUTDOWN" || cmd.target_pid() == 0) {
+                                    continue;
+                                }
+
                                 if (impl_->actuator) {
                                     switch (cmd.action()) {
                                         case phalanx::MitigationCommand::ACTION_KILL:

@@ -13,5 +13,6 @@ public record InvestigationResult(
     string? BlockedIp,
     List<ReActTraceRecord> Traces,
     TimeSpan Elapsed,
-    IncidentRecord Record
+    IncidentRecord Record,
+    List<string>? RemediationSteps = null
 );

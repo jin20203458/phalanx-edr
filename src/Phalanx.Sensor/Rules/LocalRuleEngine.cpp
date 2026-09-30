@@ -115,7 +115,10 @@ RuleVerdict LocalRuleEngine::Evaluate(const phalanx::ProcessEvent& event, const 
                 EqualsIgnoreCase(parent_base, "powerpnt.exe") ||
                 EqualsIgnoreCase(parent_base, "outlook.exe") ||
                 EqualsIgnoreCase(parent_base, "msedge.exe") ||
-                EqualsIgnoreCase(parent_base, "chrome.exe");
+                EqualsIgnoreCase(parent_base, "chrome.exe") ||
+                EqualsIgnoreCase(parent_base, "acrord32.exe") ||
+                EqualsIgnoreCase(parent_base, "acrobat.exe") ||
+                EqualsIgnoreCase(parent_base, "hwp.exe");
 
             if (is_office_browser_parent) {
                 verdict.action = RuleAction::SUSPEND;

@@ -1,8 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/Phalanx.Cockpit/Phalanx.Cockpit.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/Phalanx.Agent.Tests/Phalanx.Agent.Tests.csproj" />
-  </Folder>
-</Solution>

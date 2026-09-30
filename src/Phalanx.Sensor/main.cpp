@@ -130,10 +130,19 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // 세션 로컬 명명 이벤트 (WPF 관제 콕핏과의 동기화 및 안전 종료 시그널용)
+    HANDLE hShutdownEvent = ::CreateEventW(NULL, TRUE, FALSE, L"Local\\PhalanxSensorShutdownEvent");
+
     // 7. gRPC 양방향 스트리밍 IPC 파이프라인 초기화
     std::unique_ptr<Phalanx::Ipc::GrpcStreamClient> grpc_client;
     if (!standalone) {
         grpc_client = std::make_unique<Phalanx::Ipc::GrpcStreamClient>(endpoint, queue, actuator, process_tree);
+        grpc_client->SetCustomCommandHandler([](const phalanx::MitigationCommand& cmd) {
+            if (cmd.reason() == "PHALANX_SENSOR_SHUTDOWN" || cmd.target_pid() == 0) {
+                std::cout << "\n🛑 [Shutdown] 원격 관제 콘솔로부터 센서 종료 명령 수신. 안전 종료를 시작합니다..." << std::endl;
+                g_shutdown_requested.store(true, std::memory_order_release);
+            }
+        });
         grpc_client->Start();
         std::cout << "🌐 [IPC] gRPC 스트리밍 클라이언트 시작됨. 대상: " << endpoint << std::endl;
     } else {
@@ -144,7 +153,16 @@ int main(int argc, char* argv[]) {
 
     // 8. 메인 루프 (종료 신호 감지 대기)
     while (!g_shutdown_requested.load(std::memory_order_relaxed)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (hShutdownEvent != NULL && ::WaitForSingleObject(hShutdownEvent, 0) == WAIT_OBJECT_0) {
+            std::cout << "\n🛑 [Shutdown] Win32 로컬 명명 이벤트 시그널 감지. 안전 종료를 시작합니다..." << std::endl;
+            g_shutdown_requested.store(true, std::memory_order_release);
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    if (hShutdownEvent != NULL) {
+        ::CloseHandle(hShutdownEvent);
     }
 
     // 9. 정상 종료 및 리소스 해제 (Graceful Teardown)

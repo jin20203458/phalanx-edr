@@ -39,7 +39,7 @@ public class GeminiRestClient
     /// <summary>
     /// Google AI Studio API Key 기반 생성자
     /// </summary>
-    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-3.8-flash")
+    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-3.7-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
@@ -55,7 +55,7 @@ public class GeminiRestClient
         Func<CancellationToken, Task<string>> tokenProvider,
         string projectId,
         string location = "global",
-        string modelName = "gemini-3.8-flash")
+        string modelName = "gemini-3.7-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
@@ -84,7 +84,7 @@ public class GeminiRestClient
 
             string projectId = "grc0-494913";
             string location = "global";
-            string model = modelName ?? "gemini-3.8-flash";
+            string model = modelName ?? "gemini-3.7-flash";
 
             if (File.Exists(appSettingsPath))
             {

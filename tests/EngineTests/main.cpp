@@ -294,6 +294,27 @@ void TestLocalRuleEngineAtomicSuspendSafeFixture() {
     actuator->ResumeProcess(target_pid);
     actuator->TerminateTargetProcess(target_pid, 0, "Test teardown");
 
+    // 추가 취약 부모 프로세스(AcroRd32.exe, hwp.exe) 동결 검증
+    tree.OnProcessStart(8889, 1000, "C:\\Program Files\\Adobe\\Acrobat Reader DC\\Reader\\AcroRd32.exe");
+    phalanx::ProcessEvent acro_ev;
+    acro_ev.set_process_id(9993);
+    acro_ev.set_parent_process_id(8889);
+    acro_ev.set_image_name("cmd.exe");
+    acro_ev.set_command_line("cmd.exe /c powershell -enc SQBFAFgA");
+    auto acro_verdict = engine.Evaluate(acro_ev, tree);
+    assert(acro_verdict.action == Rules::RuleAction::SUSPEND);
+    assert(acro_verdict.rule_name == "SUSPEND_OFFICE_LOLBAS_SPAWN");
+
+    tree.OnProcessStart(8890, 1000, "C:\\Hnc\\Office\\Hwp.exe");
+    phalanx::ProcessEvent hwp_ev;
+    hwp_ev.set_process_id(9994);
+    hwp_ev.set_parent_process_id(8890);
+    hwp_ev.set_image_name("powershell.exe");
+    hwp_ev.set_command_line("powershell.exe -w hidden");
+    auto hwp_verdict = engine.Evaluate(hwp_ev, tree);
+    assert(hwp_verdict.action == Rules::RuleAction::SUSPEND);
+    assert(hwp_verdict.rule_name == "SUSPEND_OFFICE_LOLBAS_SPAWN");
+
     std::cout << "✅ [테스트 5] 원자적 동결 (Atomic Suspend) 안전 픽스처 검증 통과!" << std::endl;
 }
 

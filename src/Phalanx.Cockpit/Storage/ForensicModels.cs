@@ -41,5 +41,7 @@ public class ReActTraceRecord
     public string ActionTool { get; set; } = string.Empty;
     public string ActionArgsJson { get; set; } = string.Empty;
     public string Observation { get; set; } = string.Empty;
+    public double ElapsedMs { get; set; }
+    public string RawLlmResponse { get; set; } = string.Empty;
     public DateTime StepTimestamp { get; set; } = DateTime.UtcNow;
 }

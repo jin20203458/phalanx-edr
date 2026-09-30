@@ -401,11 +401,39 @@ public class AutonomousHunterAgentTests
         _output.WriteLine($"[NARRATIVE]\n{result.Narrative}");
         foreach (var trace in result.Traces)
         {
-            _output.WriteLine($"[STEP {trace.StepNumber}] Tool: {trace.ActionTool}");
+            _output.WriteLine($"[STEP {trace.StepNumber}] Tool: {trace.ActionTool} | Latency: {trace.ElapsedMs:F1}ms");
             _output.WriteLine($"  Thought: {trace.Thought}");
             _output.WriteLine($"  Args: {trace.ActionArgsJson}");
             _output.WriteLine($"  Observation: {trace.Observation}");
         }
+
+        var auditPayload = new
+        {
+            IncidentId = result.IncidentId,
+            TargetPid = targetNode.ProcessId,
+            ParentPid = 3104,
+            CommandLine = targetNode.CommandLine,
+            TotalElapsedMs = result.Elapsed.TotalMilliseconds,
+            Verdict = result.VerdictAction.ToString(),
+            Confidence = result.Confidence,
+            Title = result.SummaryTitle,
+            Narrative = result.Narrative,
+            MitreTactics = result.MitreTactics,
+            RemediationSteps = result.RemediationSteps,
+            Steps = result.Traces.Select(t => new
+            {
+                StepNumber = t.StepNumber,
+                ElapsedMs = t.ElapsedMs,
+                Tool = t.ActionTool,
+                Thought = t.Thought,
+                Args = t.ActionArgsJson,
+                Observation = t.Observation,
+                RawResponse = t.RawLlmResponse
+            }).ToList()
+        };
+
+        string auditPath = Path.Combine(AppContext.BaseDirectory, "live_llm_context_audit.json");
+        File.WriteAllText(auditPath, JsonSerializer.Serialize(auditPayload, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private class MockHttpMessageHandler : HttpMessageHandler

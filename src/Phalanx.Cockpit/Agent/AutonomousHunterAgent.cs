@@ -255,7 +255,11 @@ public class AutonomousHunterAgent
 
         while (step <= MaxSteps)
         {
+            var stepSw = Stopwatch.StartNew();
             string rawResponse = await _geminiClient!.GenerateContentAsync(conversationHistory, systemInstruction, cts.Token, timeoutMs: 30000);
+            stepSw.Stop();
+            double turnElapsedMs = stepSw.Elapsed.TotalMilliseconds;
+
             var decision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(rawResponse);
 
             if (decision == null)
@@ -281,7 +285,9 @@ public class AutonomousHunterAgent
                     Thought = currentThought,
                     ActionTool = "None",
                     ActionArgsJson = "{}",
-                    Observation = $"최종 판결 도출: {decision.VerdictAction} (확신도 {decision.ConfidenceScore:P0})"
+                    Observation = $"최종 판결 도출: {decision.VerdictAction} (확신도 {decision.ConfidenceScore:P0})",
+                    ElapsedMs = turnElapsedMs,
+                    RawLlmResponse = rawResponse
                 });
                 break;
             }
@@ -351,7 +357,9 @@ public class AutonomousHunterAgent
                 Thought = currentThought,
                 ActionTool = actionTool,
                 ActionArgsJson = JsonSerializer.Serialize(caseInsensitiveArgs),
-                Observation = observationOutput
+                Observation = observationOutput,
+                ElapsedMs = turnElapsedMs,
+                RawLlmResponse = rawResponse
             });
 
             // 모델에게 도구 실행 결과(<tool_observation>) 피드백 전송

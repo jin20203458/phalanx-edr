@@ -122,7 +122,7 @@ public class GeminiRestClient
     public async Task<(GeminiResponse Response, string RawJson)> SendRequestRawAsync(
         GeminiRequest requestBody,
         CancellationToken cancellationToken = default,
-        int timeoutMs = 15000)
+        int timeoutMs = 25000)
     {
         string url;
         if (_tokenProvider != null && !string.IsNullOrWhiteSpace(_projectId))
@@ -194,19 +194,16 @@ public class GeminiRestClient
     }
 
     /// <summary>
-    /// Gemini 모델에 프롬프트를 전송하고 텍스트/JSON 응답을 수신합니다.
+    /// 멀티턴 대화 히스토리(List<Content>)를 전송하여 연속 추론을 수행합니다.
     /// </summary>
     public async Task<string> GenerateContentAsync(
-        string userPrompt,
+        List<Content> contents,
         string? systemInstruction = null,
         CancellationToken cancellationToken = default,
         int timeoutMs = 25000)
     {
         var requestBody = new GeminiRequest(
-            Contents: new List<Content>
-            {
-                new Content("user", new List<Part> { new Part(userPrompt) })
-            },
+            Contents: contents,
             SystemInstruction: !string.IsNullOrWhiteSpace(systemInstruction)
                 ? new Content("system", new List<Part> { new Part(systemInstruction) })
                 : null,
@@ -236,5 +233,21 @@ public class GeminiRestClient
 
         string fullText = string.Join("\n", textParts);
         return fullText;
+    }
+
+    /// <summary>
+    /// 단일 프롬프트를 전송하고 텍스트/JSON 응답을 수신합니다.
+    /// </summary>
+    public Task<string> GenerateContentAsync(
+        string userPrompt,
+        string? systemInstruction = null,
+        CancellationToken cancellationToken = default,
+        int timeoutMs = 25000)
+    {
+        var contents = new List<Content>
+        {
+            new Content("user", new List<Part> { new Part(userPrompt) })
+        };
+        return GenerateContentAsync(contents, systemInstruction, cancellationToken, timeoutMs);
     }
 }

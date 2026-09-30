@@ -69,14 +69,14 @@ public class AutonomousHunterAgent
         var sw = Stopwatch.StartNew();
         string incidentId = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
 
-        // [Step 0] 안전 워치독 타임아웃 1회성 10초 연장 티켓 확보 (C++ 센서 선제 전송)
+        // [Step 0] 안전 워치독 타임아웃 1회성 30초 연장 티켓 확보 (C++ 센서 선제 전송)
         if (commandSender != null)
         {
             await commandSender(new MitigationCommand
             {
                 Action = MitigationCommand.Types.ActionType.ActionExtendTimeout,
                 TargetPid = targetNode.ProcessId,
-                Reason = "AI 자율 수사 개시: 심층 조사를 위한 1회성 타임아웃 연장"
+                Reason = "AI 자율 수사 개시: 심층 조사를 위한 1회성 타임아웃 연장 (30초)"
             });
         }
 
@@ -98,7 +98,7 @@ public class AutonomousHunterAgent
     }
 
     /// <summary>
-    /// 실제 Gemini 2.0 Flash LLM과의 실시간 상호작용을 통한 심층 ReAct 수사 파이프라인
+    /// 실제 Gemini LLM과의 실시간 멀티턴 상호작용(ReAct Loop)을 통한 심층 수사 파이프라인
     /// </summary>
     private async Task<InvestigationResult> InvestigateWithGeminiAsync(
         ProcessNodeModel targetNode,
@@ -107,6 +107,10 @@ public class AutonomousHunterAgent
         Func<MitigationCommand, Task>? commandSender,
         CancellationToken cancellationToken)
     {
+        // SLA 레이스 컨디션 차단: C++ 워치독 30초보다 먼저 안전하게 결론 도출하도록 25초 제한
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromMilliseconds(25000));
+
         var traces = new List<ReActTraceRecord>();
         var ancestry = _treeManager.GetAncestry(targetNode.ProcessId, maxDepth: 5, includeSelf: true);
         string rootCause = ancestry.Count > 1 ? $"{ancestry[1].ImageName} (PID: {ancestry[1].ProcessId})" : $"{targetNode.ImageName} (PID: {targetNode.ProcessId})";
@@ -122,13 +126,19 @@ public class AutonomousHunterAgent
             4. MitreClassifierTool: 관찰된 행위를 MITRE ATT&CK Matrix TTP로 매핑 (인자: observedBehavior)
             5. SystemFirewallTool: 악성 C2 통신 IP 윈도우 방화벽 인/아웃바운드 차단 (인자: maliciousIp)
 
+            [ReAct 멀티턴 에이전트 행동 규칙]
+            - 초기 단계에서는 증거가 불충분하므로 즉시 최종 판결을 내리지 말고 적절한 도구를 호출하십시오.
+            - 도구를 호출할 때에는 반드시 "is_final_verdict": false 로 설정하고, "action_tool"과 "action_args"를 명시하십시오.
+            - 도구 실행 결과([Observation])가 제공되면, 이를 바탕으로 다음 도구를 호출하거나 증거가 충분할 경우 최종 판결을 내리십시오.
+            - 최종 판결 시에는 반드시 "is_final_verdict": true 로 설정하고, "action_tool": "None", "verdict_action"("ACTION_KILL" 또는 "ACTION_RESUME"), "confidence_score", "summary_title", "narrative", "mitre_tactics"를 모두 작성하십시오.
+
             반드시 아래 JSON 스키마 형식으로만 응답하십시오:
             {
-              "thought": "프로세스 족보 및 인자를 관찰한 심층 분석 및 다음 행동 이유",
-              "action_tool": "호출할 도구 이름 (예: DecodePayloadTool, ProcessMemoryScanTool 등 또는 최종판결 시 'None')",
+              "thought": "프로세스 족보 및 도구 관찰 결과를 분석한 심층 추론 및 다음 행동 이유",
+              "action_tool": "호출할 도구 이름 (예: DecodePayloadTool, ProcessMemoryScanTool 등) 또는 최종 판결 시 'None'",
               "action_args": { "인자명": "값" },
               "is_final_verdict": true 또는 false,
-              "verdict_action": "ACTION_KILL" 또는 "ACTION_RESUME",
+              "verdict_action": "ACTION_KILL" 또는 "ACTION_RESUME" (최종 판결 시 필수),
               "confidence_score": 0.98,
               "summary_title": "침해사고 한 줄 요약",
               "narrative": "사건 발단부터 동결, 도구 조사 결과, 최종 사살/해제에 이르는 한국어 공식 침해사고 서사",
@@ -145,32 +155,54 @@ public class AutonomousHunterAgent
             - 전체 족보 체인: {string.Join(" -> ", ancestry.Select(a => $"{a.ImageName}(PID:{a.ProcessId})"))}
             - 상태: 동결됨(SUSPENDED, 24μs 원자적 동결 완료)
             
-            타깃 프로세스의 위험성을 평가하고, 첫 번째로 실행할 OS 조사 도구 또는 즉각 판결을 JSON으로 제출하십시오.
+            타깃 프로세스의 위험성을 평가하고, 첫 번째로 실행할 OS 조사 도구를 JSON 형식으로 요청하십시오. (초기 단계에서는 is_final_verdict: false 로 도구를 호출해야 합니다)
             """;
 
-        // 1차 Gemini 추론 호출
-        string rawResponse = await _geminiClient!.GenerateContentAsync(userPrompt, systemInstruction, cancellationToken);
-        var decision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(rawResponse);
-
-        if (decision == null)
+        const int MaxSteps = 3;
+        var conversationHistory = new List<Content>
         {
-            throw new InvalidOperationException("Gemini 응답을 AiInvestigationDecision으로 역직렬화할 수 없습니다.");
-        }
+            new Content("user", new List<Part> { new Part(userPrompt) })
+        };
 
+        AiInvestigationDecision? latestDecision = null;
         string? extractedIp = null;
-        var mitreList = decision.MitreTactics ?? new List<string>();
-        double threatScore = decision.ConfidenceScore;
         string? decodedScript = null;
-
-        // 도구 실행 단계
         int step = 1;
-        string currentThought = decision.Thought;
-        string actionTool = decision.ActionTool;
-        var actionArgs = decision.ActionArgs ?? new Dictionary<string, object>();
 
-        // 도구가 지정된 경우 실행
-        if (!string.IsNullOrWhiteSpace(actionTool) && !actionTool.Equals("None", StringComparison.OrdinalIgnoreCase) && _tools.TryGetValue(actionTool, out var toolInstance))
+        while (step <= MaxSteps)
         {
+            string rawResponse = await _geminiClient!.GenerateContentAsync(conversationHistory, systemInstruction, cts.Token, timeoutMs: 25000);
+            var decision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(rawResponse);
+
+            if (decision == null)
+            {
+                throw new InvalidOperationException($"Gemini 응답을 AiInvestigationDecision으로 역직렬화할 수 없습니다: {rawResponse}");
+            }
+
+            latestDecision = decision;
+            string currentThought = decision.Thought ?? string.Empty;
+            string actionTool = decision.ActionTool ?? "None";
+            var actionArgs = decision.ActionArgs ?? new Dictionary<string, object>();
+
+            // LLM 응답을 히스토리에 기록
+            conversationHistory.Add(new Content("model", new List<Part> { new Part(rawResponse) }));
+
+            // 최종 판결 도달 시 루프 탈출
+            if (decision.IsFinalVerdict || actionTool.Equals("None", StringComparison.OrdinalIgnoreCase))
+            {
+                traces.Add(new ReActTraceRecord
+                {
+                    IncidentId = incidentId,
+                    StepNumber = step++,
+                    Thought = currentThought,
+                    ActionTool = "None",
+                    ActionArgsJson = "{}",
+                    Observation = $"최종 판결 도출: {decision.VerdictAction} (확신도 {decision.ConfidenceScore:P0})"
+                });
+                break;
+            }
+
+            // 도구 인자 정규화
             var caseInsensitiveArgs = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             foreach (var kvp in actionArgs)
             {
@@ -191,17 +223,43 @@ public class AutonomousHunterAgent
                 }
             }
 
-            // 인자 보정 (PID 등 기본값 보완)
-            if (actionTool.Equals("ProcessMemoryScanTool", StringComparison.OrdinalIgnoreCase) && !caseInsensitiveArgs.ContainsKey("targetPid"))
+            string observationOutput;
+
+            if (_tools.TryGetValue(actionTool, out var toolInstance))
             {
-                caseInsensitiveArgs["targetPid"] = targetNode.ProcessId;
+                if (actionTool.Equals("ProcessMemoryScanTool", StringComparison.OrdinalIgnoreCase) && !caseInsensitiveArgs.ContainsKey("targetPid"))
+                {
+                    caseInsensitiveArgs["targetPid"] = targetNode.ProcessId;
+                }
+                else if (actionTool.Equals("DecodePayloadTool", StringComparison.OrdinalIgnoreCase) && (!caseInsensitiveArgs.ContainsKey("encodedCommand") || string.IsNullOrWhiteSpace(caseInsensitiveArgs["encodedCommand"]?.ToString())))
+                {
+                    caseInsensitiveArgs["encodedCommand"] = targetNode.CommandLine;
+                }
+
+                try
+                {
+                    var toolRes = await toolInstance.ExecuteAsync(caseInsensitiveArgs);
+                    observationOutput = toolRes.Output;
+
+                    if (toolRes.Data != null)
+                    {
+                        if (toolRes.Data.TryGetValue("DecodedPayload", out var dp) && dp is string s) decodedScript = s;
+                        if (toolRes.Data.TryGetValue("ExtractedIps", out var ips) && ips is List<string> ipList && ipList.Count > 0)
+                        {
+                            extractedIp ??= ipList[0];
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    observationOutput = $"[도구 실행 예외 발생]: {ex.Message}";
+                }
             }
-            else if (actionTool.Equals("DecodePayloadTool", StringComparison.OrdinalIgnoreCase) && (!caseInsensitiveArgs.ContainsKey("encodedCommand") || string.IsNullOrWhiteSpace(caseInsensitiveArgs["encodedCommand"]?.ToString())))
+            else
             {
-                caseInsensitiveArgs["encodedCommand"] = targetNode.CommandLine;
+                observationOutput = $"[도구 실행 오류]: 존재하지 않는 도구 '{actionTool}'입니다. 사용 가능한 5대 도구(DecodePayloadTool, ProcessMemoryScanTool, ThreatReputationTool, MitreClassifierTool, SystemFirewallTool) 중 하나를 선택하십시오.";
             }
 
-            var toolRes = await toolInstance.ExecuteAsync(caseInsensitiveArgs);
             traces.Add(new ReActTraceRecord
             {
                 IncidentId = incidentId,
@@ -209,35 +267,39 @@ public class AutonomousHunterAgent
                 Thought = currentThought,
                 ActionTool = actionTool,
                 ActionArgsJson = JsonSerializer.Serialize(caseInsensitiveArgs),
-                Observation = toolRes.Output
+                Observation = observationOutput
             });
 
-            if (toolRes.Data != null)
-            {
-                if (toolRes.Data.TryGetValue("DecodedPayload", out var dp) && dp is string s) decodedScript = s;
-                if (toolRes.Data.TryGetValue("ExtractedIps", out var ips) && ips is List<string> ipList && ipList.Count > 0)
-                {
-                    extractedIp = ipList[0];
-                }
-            }
+            // 모델에게 도구 실행 결과([Observation]) 피드백 전송
+            string observationFeedback = $"""
+                [Observation - 도구 '{actionTool}' 실행 결과]
+                {observationOutput}
+
+                위 관찰 결과를 바탕으로 다음 조치(추가 도구 호출 또는 is_final_verdict: true 최종 판결)를 결정하십시오.
+                """;
+            conversationHistory.Add(new Content("user", new List<Part> { new Part(observationFeedback) }));
         }
-        else
+
+        bool reachedFinal = latestDecision != null && latestDecision.IsFinalVerdict;
+
+        // 루프 소진 시 Fail-Secure 안내 Trace 추가
+        if (!reachedFinal)
         {
             traces.Add(new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
-                Thought = currentThought,
+                Thought = "멀티턴 ReAct 루프 최대 허용 단계(MaxSteps=3)에 도달하여 수사를 안전 종료합니다.",
                 ActionTool = "None",
                 ActionArgsJson = "{}",
-                Observation = "도구 호출 없이 즉각 정밀 분석 판결 단계로 진입함."
+                Observation = "Fail-Secure 정책 집행: 회색지대 의심 프로세스 사살(ACTION_KILL) 권고"
             });
         }
 
         // 보조 도구 체인: IP 식별 시 방화벽 차단 연동
         if (extractedIp != null && _tools.TryGetValue("SystemFirewallTool", out var fwTool))
         {
-            var fwThought = $"[Step {step} 추론] 발견된 외부 C2 통신 IP '{extractedIp}'에 대해 방화벽 차단 룰을 집행합니다.";
+            var fwThought = $"[Step {step} 추론] 식별된 외부 C2 통신 IP '{extractedIp}'에 대해 방화벽 차단 룰을 집행합니다.";
             var fwRes = await fwTool.ExecuteAsync(new() { ["maliciousIp"] = extractedIp });
             traces.Add(new ReActTraceRecord
             {
@@ -250,24 +312,35 @@ public class AutonomousHunterAgent
             });
         }
 
-        // 최종 판결 판정 (LLM 명시 사살 또는 도구 결과로 악성 페이로드/C2 IP 검출 시)
-        bool isMalicious = decision.VerdictAction == "ACTION_KILL" ||
+        // 최종 판결 판정
+        bool isExplicitKill = latestDecision?.VerdictAction == "ACTION_KILL";
+        double threatScore = latestDecision?.ConfidenceScore ?? 0.0;
+        var mitreList = latestDecision?.MitreTactics ?? new List<string>();
+
+        bool isMalicious = isExplicitKill ||
                            threatScore >= 0.80 ||
                            extractedIp != null ||
                            decodedScript?.Contains("http") == true ||
-                           targetNode.CommandLine.Contains("-enc");
+                           targetNode.CommandLine.Contains("-enc") ||
+                           !reachedFinal; // Fail-Secure: 3턴 내 결론 미도출 시 안전을 위해 사살 격리
 
         var verdictAction = isMalicious ? MitigationCommand.Types.ActionType.ActionKill : MitigationCommand.Types.ActionType.ActionResume;
         double finalConfidence = isMalicious ? Math.Max(threatScore, 0.99) : threatScore;
 
         string summaryTitle = isMalicious
-            ? (!string.IsNullOrWhiteSpace(decision.SummaryTitle) && !decision.SummaryTitle.Contains("정상") ? decision.SummaryTitle : "Gemini AI: 악성 파일리스 C2 다운로더 침투 실시간 탐지 및 사살")
-            : (!string.IsNullOrWhiteSpace(decision.SummaryTitle) ? decision.SummaryTitle : "Gemini AI: 정상 프로세스 확인 및 동결 해제");
+            ? (!string.IsNullOrWhiteSpace(latestDecision?.SummaryTitle) && !latestDecision.SummaryTitle.Contains("정상")
+                ? latestDecision.SummaryTitle
+                : (reachedFinal ? "Gemini AI: 악성 위협 실시간 탐지 및 사살" : "Gemini AI: 멀티턴 수사 한도 초과에 따른 Fail-Secure 사살 격리"))
+            : (!string.IsNullOrWhiteSpace(latestDecision?.SummaryTitle)
+                ? latestDecision.SummaryTitle
+                : "Gemini AI: 정상 프로세스 확인 및 동결 해제");
 
         string narrative = isMalicious && extractedIp != null
-            ? $"Gemini 2.0 Flash 실시간 추론: \"{decision.Thought}\"\n" +
+            ? $"Gemini AI 실시간 멀티턴 추론: \"{latestDecision?.Thought}\"\n" +
               $"도구 수사 결과: {targetNode.ImageName}(PID: {targetNode.ProcessId})에서 난독화 해독을 통해 해외 C2({extractedIp}) 통신 시도가 확증되었습니다. 즉각 사살(ACTION_KILL)을 집행하고 방화벽을 차단했습니다."
-            : (!string.IsNullOrWhiteSpace(decision.Narrative) ? decision.Narrative : $"{DateTime.UtcNow:HH시 mm분}, Gemini 2.0 Flash 수사 결과 '{targetNode.ImageName}' (PID: {targetNode.ProcessId}) 프로세스의 위협 확신도 {finalConfidence:P0}로 판정되었습니다.");
+            : (!string.IsNullOrWhiteSpace(latestDecision?.Narrative)
+                ? latestDecision.Narrative
+                : $"{DateTime.UtcNow:HH시 mm분}, Gemini 자율 수사 결과 '{targetNode.ImageName}' (PID: {targetNode.ProcessId}) 프로세스의 위협 확신도 {finalConfidence:P0}로 판정되었습니다.");
 
         if (mitreList.Count == 0 && isMalicious)
         {

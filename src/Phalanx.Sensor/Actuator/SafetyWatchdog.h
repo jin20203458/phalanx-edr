@@ -29,12 +29,12 @@ using AutoResumeCallback = std::function<void(uint32_t pid, const std::vector<DW
  * @brief SuspendThread(스레드 동결) 안전 감시를 위한 비동기 세이프티 워치독.
  *
  * 타깃 프로세스가 OS 로더 락(LdrpLoaderLock)이나 크리티컬 섹션을 쥔 상태에서 비동기 동결될 경우
- * 발생할 수 있는 시스템 데드락을 방지합니다. 제한 시간(기본 10초) 내에 C# 코어로부터
+ * 발생할 수 있는 시스템 데드락을 방지합니다. 제한 시간(기본 30초) 내에 C# 코어로부터
  * 추가 명령(Kill/Resume)이 도착하지 않으면 자동으로 ResumeThread를 수행합니다.
  */
 class SafetyWatchdog {
 public:
-    explicit SafetyWatchdog(std::chrono::milliseconds default_timeout = std::chrono::milliseconds(10000));
+    explicit SafetyWatchdog(std::chrono::milliseconds default_timeout = std::chrono::milliseconds(30000));
     ~SafetyWatchdog();
 
     SafetyWatchdog(const SafetyWatchdog&) = delete;
@@ -52,7 +52,7 @@ public:
     /**
      * @brief AI 심층 수사 진입 시 조기 동결 해제를 방지하기 위해 만료 시한을 1회 연장 (최대 1회 한도)
      */
-    bool ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by = std::chrono::milliseconds(10000));
+    bool ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by = std::chrono::milliseconds(30000));
 
     /**
      * @brief 프로세스 종료(Kill) 또는 명시적 동결 해제 시 감시 목록에서 등록 제거

@@ -123,22 +123,18 @@ public class AutonomousHunterAgentTests
     [Fact]
     public async Task TestGeminiLiveModeWithMockHttp()
     {
-        // 1. 모의 Gemini 2.0 Flash REST 응답 구성
-        string decisionJson = """
+        // 1. 모의 Gemini REST 멀티턴 2단계 응답 구성
+        // Turn 1: 1차 분석 및 DecodePayloadTool 도구 호출 요청
+        string turn1DecisionJson = """
         {
-          "thought": "오피스 매크로 winword.exe가 powershell.exe를 기동하여 인라인 다운로더를 실행하고 있으므로 DecodePayloadTool을 호출하여 C2를 해독해야 합니다.",
+          "thought": "오피스 매크로 winword.exe가 powershell.exe를 기동하여 난독화 인라인 다운로더를 실행하고 있으므로 DecodePayloadTool을 호출하여 C2 페이로드를 해독해야 합니다.",
           "action_tool": "DecodePayloadTool",
           "action_args": {},
-          "is_final_verdict": true,
-          "verdict_action": "ACTION_KILL",
-          "confidence_score": 0.99,
-          "summary_title": "Gemini 2.0 Flash: 파일리스 C2 다운로더 침투 실시간 탐지",
-          "narrative": "Gemini 2.0 Flash 실시간 수사 결과, winword.exe에 의해 기동된 powershell.exe 프로세스가 악성 C2와 통신하려는 시도가 확증되었습니다. 즉각 사살(ACTION_KILL)을 집행합니다.",
-          "mitre_tactics": ["T1566.001", "T1059.001"]
+          "is_final_verdict": false
         }
         """;
 
-        string geminiResponseJson = $$"""
+        string turn1GeminiResponseJson = $$"""
         {
           "candidates": [
             {
@@ -146,28 +142,61 @@ public class AutonomousHunterAgentTests
                 "role": "model",
                 "parts": [
                   {
-                    "text": {{JsonSerializer.Serialize(decisionJson)}}
+                    "text": {{JsonSerializer.Serialize(turn1DecisionJson)}}
                   }
                 ]
               },
               "finishReason": "STOP"
             }
-          ],
-          "usageMetadata": {
-            "promptTokenCount": 120,
-            "candidatesTokenCount": 85,
-            "totalTokenCount": 205
-          }
+          ]
         }
         """;
 
+        // Turn 2: 도구 관찰 결과(Observation) 평가 후 사형(ACTION_KILL) 최종 판결
+        string turn2DecisionJson = """
+        {
+          "thought": "DecodePayloadTool 관찰 결과, 난독화 해독된 스크립트에서 외부 악성 C2 IP(185.220.101.5) 통신이 확증되었습니다. 따라서 즉각 사살(ACTION_KILL)을 최종 판결합니다.",
+          "action_tool": "None",
+          "action_args": {},
+          "is_final_verdict": true,
+          "verdict_action": "ACTION_KILL",
+          "confidence_score": 0.99,
+          "summary_title": "Gemini AI: 파일리스 C2 다운로더 침투 실시간 탐지",
+          "narrative": "Gemini AI 실시간 멀티턴 수사 결과, winword.exe에 의해 기동된 powershell.exe 프로세스가 악성 C2와 통신하려는 시도가 확증되었습니다. 즉각 사살(ACTION_KILL)을 집행합니다.",
+          "mitre_tactics": ["T1566.001", "T1059.001"]
+        }
+        """;
+
+        string turn2GeminiResponseJson = $$"""
+        {
+          "candidates": [
+            {
+              "content": {
+                "role": "model",
+                "parts": [
+                  {
+                    "text": {{JsonSerializer.Serialize(turn2DecisionJson)}}
+                  }
+                ]
+              },
+              "finishReason": "STOP"
+            }
+          ]
+        }
+        """;
+
+        int callCount = 0;
         var mockHandler = new MockHttpMessageHandler(req =>
         {
             Assert.Contains("generativelanguage.googleapis.com", req.RequestUri?.Host);
             Assert.Contains("key=test-api-key", req.RequestUri?.Query);
+
+            int currentCall = Interlocked.Increment(ref callCount);
+            string responseBody = currentCall == 1 ? turn1GeminiResponseJson : turn2GeminiResponseJson;
+
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(geminiResponseJson, Encoding.UTF8, "application/json")
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
             };
         });
 
@@ -220,7 +249,7 @@ public class AutonomousHunterAgentTests
 
         var dispatchedCommands = new List<MitigationCommand>();
 
-        // 2. 실행
+        // 2. 실행 (진짜 멀티턴 ReAct 루프 동작)
         var result = await agent.InvestigateAsync(targetNode, cmd =>
         {
             dispatchedCommands.Add(cmd);
@@ -228,11 +257,16 @@ public class AutonomousHunterAgentTests
         });
 
         // 3. 검증
+        Assert.Equal(2, callCount); // 2턴 왕복 검증
         Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
         Assert.True(result.Confidence >= 0.95);
-        Assert.Contains("Gemini 2.0 Flash", result.SummaryTitle);
-        Assert.Contains("Gemini 2.0 Flash", result.Narrative);
+        Assert.Contains("Gemini AI", result.SummaryTitle);
+        Assert.Contains("Gemini AI", result.Narrative);
         Assert.Contains("T1566.001", result.MitreTactics);
+
+        // 멀티턴 Trace 검증 (최소 2개 이상의 Step: DecodePayloadTool 및 사형 판결/방화벽)
+        Assert.True(result.Traces.Count >= 2);
+        Assert.Contains(result.Traces, t => t.ActionTool == "DecodePayloadTool");
 
         // LiteDB 저장 확인
         var saved = archiveManager.GetIncident(result.IncidentId);
@@ -370,7 +404,7 @@ public class AutonomousHunterAgentTests
         Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
         Assert.False(string.IsNullOrWhiteSpace(result.Narrative));
         Assert.False(string.IsNullOrWhiteSpace(result.SummaryTitle));
-        Assert.True(result.Traces.Count > 0);
+        Assert.True(result.Traces.Count >= 2, $"멀티턴 단계 부족: {result.Traces.Count}");
 
         _output.WriteLine($"[LIVE VERDICT] {result.VerdictAction} (Confidence: {result.Confidence:P1})");
         _output.WriteLine($"[TITLE] {result.SummaryTitle}");

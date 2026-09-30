@@ -208,9 +208,10 @@ public class GeminiRestClient
                 ? new Content("system", new List<Part> { new Part(systemInstruction) })
                 : null,
             GenerationConfig: new GenerationConfig(
-                Temperature: 0.2f,
+                Temperature: null,
                 MaxOutputTokens: 4096,
-                ResponseMimeType: "application/json"
+                ResponseMimeType: "application/json",
+                ThinkingConfig: new ThinkingConfig(ThinkingLevel.low)
             )
         );
 

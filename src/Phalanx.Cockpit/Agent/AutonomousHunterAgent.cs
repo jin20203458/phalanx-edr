@@ -107,55 +107,74 @@ public class AutonomousHunterAgent
         Func<MitigationCommand, Task>? commandSender,
         CancellationToken cancellationToken)
     {
-        // SLA 레이스 컨디션 차단: C++ 워치독 30초보다 먼저 안전하게 결론 도출하도록 25초 제한
+        // SLA 레이스 컨디션 차단: C++ 센서가 타임아웃 1회 연장 티켓(30초)을 적용받아 최대 60초까지 감시하므로,
+        // 워치독 만료 10초 전 안전 마진을 두어 50초(50,000ms) 내에 멀티턴 수사를 완결하도록 제한
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromMilliseconds(25000));
+        cts.CancelAfter(TimeSpan.FromMilliseconds(50000));
 
         var traces = new List<ReActTraceRecord>();
         var ancestry = _treeManager.GetAncestry(targetNode.ProcessId, maxDepth: 5, includeSelf: true);
         string rootCause = ancestry.Count > 1 ? $"{ancestry[1].ImageName} (PID: {ancestry[1].ProcessId})" : $"{targetNode.ImageName} (PID: {targetNode.ProcessId})";
 
         string systemInstruction = """
-            당신은 최첨단 엔터프라이즈 보안 EDR 'Phalanx'의 자율 AI 위협 헌터(Autonomous Hunter Agent)입니다.
-            Windows 커널 센서가 선제 동결한 회색지대 프로세스를 심층 조사하여 악성 여부를 가리고 사형(ACTION_KILL) 또는 동결해제(ACTION_RESUME)를 최종 판결해야 합니다.
-            
-            사용 가능한 5대 OS 조사 도구 목록:
-            1. DecodePayloadTool: Base64/Hex 난독화 명령줄 해독 (인자: encodedCommand)
-            2. ProcessMemoryScanTool: 동결된 프로세스 가상 메모리(RAM) 스캔 (인자: targetPid)
-            3. ThreatReputationTool: 추출된 IP/도메인 위협 평판 조회 (인자: targetIndicator)
-            4. MitreClassifierTool: 관찰된 행위를 MITRE ATT&CK Matrix TTP로 매핑 (인자: observedBehavior)
-            5. SystemFirewallTool: 악성 C2 통신 IP 윈도우 방화벽 인/아웃바운드 차단 (인자: maliciousIp)
+            <system_directive>
+            당신은 최첨단 엔터프라이즈 EDR 'Phalanx'의 자율 AI 위협 헌터(Autonomous Hunter Agent)입니다.
+            Windows 커널 센서가 24μs 만에 선제 동결한 의심 프로세스를 수사하여 최종 판결(사형: ACTION_KILL / 정상 복구: ACTION_RESUME)과 침해사고 공식 서사를 도출하십시오.
+            </system_directive>
 
-            [ReAct 멀티턴 에이전트 행동 규칙]
-            - 초기 단계에서는 증거가 불충분하므로 즉시 최종 판결을 내리지 말고 적절한 도구를 호출하십시오.
-            - 도구를 호출할 때에는 반드시 "is_final_verdict": false 로 설정하고, "action_tool"과 "action_args"를 명시하십시오.
-            - 도구 실행 결과([Observation])가 제공되면, 이를 바탕으로 다음 도구를 호출하거나 증거가 충분할 경우 최종 판결을 내리십시오.
-            - 최종 판결 시에는 반드시 "is_final_verdict": true 로 설정하고, "action_tool": "None", "verdict_action"("ACTION_KILL" 또는 "ACTION_RESUME"), "confidence_score", "summary_title", "narrative", "mitre_tactics"를 모두 작성하십시오.
+            <tools>
+            에이전트가 호출할 수 있는 5대 OS 수사 도구 규격:
+            1. DecodePayloadTool: Base64/Hex 난독화 명령줄을 재귀 해독 (매개변수: encodedCommand)
+            2. ProcessMemoryScanTool: 동결된 프로세스의 RAM 메모리를 스캔하여 인메모리 위협/URL 탐색 (매개변수: targetPid)
+            3. ThreatReputationTool: 추출된 통신 지표의 위협 인텔리전스 및 C2 평판 조회 (매개변수: targetIndicator)
+            4. MitreClassifierTool: 관찰된 공격 전술 체인을 MITRE ATT&CK Matrix TTP로 분류 (매개변수: observedBehavior)
+            5. SystemFirewallTool: 악성 C2 통신 IP에 대한 Windows 방화벽 즉시 차단 (매개변수: maliciousIp)
+            </tools>
 
-            반드시 아래 JSON 스키마 형식으로만 응답하십시오:
-            {
-              "thought": "프로세스 족보 및 도구 관찰 결과를 분석한 심층 추론 및 다음 행동 이유",
-              "action_tool": "호출할 도구 이름 (예: DecodePayloadTool, ProcessMemoryScanTool 등) 또는 최종 판결 시 'None'",
-              "action_args": { "인자명": "값" },
-              "is_final_verdict": true 또는 false,
-              "verdict_action": "ACTION_KILL" 또는 "ACTION_RESUME" (최종 판결 시 필수),
-              "confidence_score": 0.98,
-              "summary_title": "침해사고 한 줄 요약",
-              "narrative": "사건 발단부터 동결, 도구 조사 결과, 최종 사살/해제에 이르는 한국어 공식 침해사고 서사",
-              "mitre_tactics": ["T1566.001", "T1059.001"]
+            <rules>
+            1. 증거 수집 단계: 타깃의 행위가 악성인지 정상인지 입증할 구체적 증거가 부족한 경우, 반드시 is_final_verdict: false로 설정하고 조사에 필요한 최적의 도구와 인자를 제출하십시오.
+            2. 관찰 피드백 활용: C# 엔진이 전달한 <tool_observation> 결과를 면밀히 분석하여 다음 도구로 추가 연계하거나, 위협이 확증되면 최종 판결로 전환하십시오.
+            3. 최종 판결 단계: 조사가 충분히 완료된 경우, 반드시 is_final_verdict: true, action_tool: "None"으로 설정하고 verdict_action(ACTION_KILL 또는 ACTION_RESUME), confidence_score, summary_title, narrative, mitre_tactics를 완성하십시오.
+            4. 서사 작성 규칙: narrative는 전문적인 한국어 공식 침해사고 보고서 문체로 사건 발단, 동결, 도구 수사 결과, 최종 사살/복구 처분 사유를 구체적으로 서술하십시오.
+            </rules>
+
+            <output_format>
+            interface AiInvestigationDecision {
+              thought: string;           // 족보 및 도구 관찰 결과를 분석한 한국어 심층 추론
+              action_tool: string;       // 호출할 도구명 또는 최종 판결 시 "None"
+              action_args: Record<string, any>; // 도구 실행 매개변수 (없을 경우 빈 객체)
+              is_final_verdict: boolean; // 최종 판결 도달 여부
+              verdict_action?: "ACTION_KILL" | "ACTION_RESUME"; // 최종 판결 시 필수
+              confidence_score: number;  // 0.0 ~ 1.0 (최종 판결 시 필수)
+              summary_title?: string;    // 침해사고 1줄 요약 제목
+              narrative?: string;        // 공식 침해사고 서사
+              mitre_tactics?: string[];  // 관련 MITRE ATT&CK TTP ID 목록
             }
+            </output_format>
+
+            <example>
+            {
+              "thought": "부모 프로세스 winword.exe가 powershell.exe를 기동하였으며 명령줄에 Base64 난독화(-enc)가 확인됩니다. 은닉된 실행 명령을 확인하기 위해 DecodePayloadTool을 호출합니다.",
+              "action_tool": "DecodePayloadTool",
+              "action_args": { "encodedCommand": "SQBuAHY..." },
+              "is_final_verdict": false
+            }
+            </example>
             """;
 
         string userPrompt = $"""
-            [동결된 타깃 프로세스 정보]
-            - PID: {targetNode.ProcessId}
-            - 실행 이미지: {targetNode.ImageName}
-            - 명령줄 인자: {targetNode.CommandLine}
-            - 부모 프로세스: {rootCause}
-            - 전체 족보 체인: {string.Join(" -> ", ancestry.Select(a => $"{a.ImageName}(PID:{a.ProcessId})"))}
-            - 상태: 동결됨(SUSPENDED, 24μs 원자적 동결 완료)
-            
-            타깃 프로세스의 위험성을 평가하고, 첫 번째로 실행할 OS 조사 도구를 JSON 형식으로 요청하십시오. (초기 단계에서는 is_final_verdict: false 로 도구를 호출해야 합니다)
+            <target_context>
+            - ProcessId: {targetNode.ProcessId}
+            - ImageName: {targetNode.ImageName}
+            - CommandLine: {targetNode.CommandLine}
+            - ParentProcess: {rootCause}
+            - AncestryChain: {string.Join(" -> ", ancestry.Select(a => $"{a.ImageName}(PID:{a.ProcessId})"))}
+            - Status: SUSPENDED (24μs 원자적 동결 완료, 메모리 보존 상태)
+            </target_context>
+
+            <final_instruction>
+            위 <target_context>의 정보를 정밀 분석하여, 첫 번째로 실행할 OS 조사 도구를 <output_format> 규격의 순수 JSON으로 제출하십시오. (증거 수집 단계이므로 is_final_verdict: false를 지정하십시오)
+            </final_instruction>
             """;
 
         const int MaxSteps = 3;
@@ -171,7 +190,7 @@ public class AutonomousHunterAgent
 
         while (step <= MaxSteps)
         {
-            string rawResponse = await _geminiClient!.GenerateContentAsync(conversationHistory, systemInstruction, cts.Token, timeoutMs: 25000);
+            string rawResponse = await _geminiClient!.GenerateContentAsync(conversationHistory, systemInstruction, cts.Token, timeoutMs: 40000);
             var decision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(rawResponse);
 
             if (decision == null)
@@ -270,12 +289,15 @@ public class AutonomousHunterAgent
                 Observation = observationOutput
             });
 
-            // 모델에게 도구 실행 결과([Observation]) 피드백 전송
+            // 모델에게 도구 실행 결과(<tool_observation>) 피드백 전송
             string observationFeedback = $"""
-                [Observation - 도구 '{actionTool}' 실행 결과]
+                <tool_observation tool="{actionTool}">
                 {observationOutput}
+                </tool_observation>
 
-                위 관찰 결과를 바탕으로 다음 조치(추가 도구 호출 또는 is_final_verdict: true 최종 판결)를 결정하십시오.
+                <final_instruction>
+                위 <tool_observation>의 실행 결과를 면밀히 검토하여, 추가 조사가 필요하면 다음 도구를 호출하고, 위협 여부가 충분히 입증되었다면 is_final_verdict: true와 함께 최종 판결(ACTION_KILL 또는 ACTION_RESUME)을 제출하십시오.
+                </final_instruction>
                 """;
             conversationHistory.Add(new Content("user", new List<Part> { new Part(observationFeedback) }));
         }

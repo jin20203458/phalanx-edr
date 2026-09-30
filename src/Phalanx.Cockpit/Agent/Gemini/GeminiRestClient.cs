@@ -183,11 +183,6 @@ public class GeminiRestClient
         }
     }
 
-    [Obsolete("Use TryCreateFromLocalConfig instead.")]
-    public static GeminiRestClient? TryCreateFromMundusVivensConfig(
-        HttpClient? httpClient = null,
-        string? modelName = null) => TryCreateFromLocalConfig(httpClient, modelName);
-
     /// <summary>
     /// Phalanx 자체 AppSettings.json 및 Config/google-credentials.json을 자동 탐색하여 Vertex AI 클라이언트 비동기 생성
     /// </summary>
@@ -199,21 +194,9 @@ public class GeminiRestClient
         return Task.FromResult(TryCreateFromLocalConfig(httpClient, modelName));
     }
 
-    [Obsolete("Use TryCreateFromLocalConfigAsync instead.")]
-    public static Task<GeminiRestClient?> TryCreateFromMundusVivensConfigAsync(
-        HttpClient? httpClient = null,
-        string? modelName = null,
-        CancellationToken cancellationToken = default)
-    {
-        return TryCreateFromLocalConfigAsync(httpClient, modelName, cancellationToken);
-    }
-
-    /// <summary>
-    /// Gemini 모델에 프롬프트를 전송하고 텍스트/JSON 응답을 수신합니다.
-    /// 실전 클라우드 네트워크 왕복 및 토큰 교환을 고려하여 기본 10초 타임아웃 링크가 적용됩니다.
-    /// </summary>
     /// <summary>
     /// Gemini REST API에 임의의 GeminiRequest를 전송하고 원본 응답 및 GeminiResponse 객체를 반환합니다.
+    /// 실전 클라우드 네트워크 왕복 및 토큰 교환을 고려하여 기본 타임아웃 링크가 적용됩니다.
     /// </summary>
     public async Task<(GeminiResponse Response, string RawJson)> SendRequestRawAsync(
         GeminiRequest requestBody,

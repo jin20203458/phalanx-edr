@@ -574,6 +574,7 @@ public class AutonomousHunterAgentTests
         };
 
         var results = new List<(string Name, string Verdict, string Expected, bool IsMatch, double Confidence, int Turns, double ElapsedMs)>();
+        var detailedResults = new List<object>();
 
         _output.WriteLine("=========================================================================================");
         _output.WriteLine("   PHALANX GEMINI 3.7 FLASH 멀티 시나리오 평균 턴 수 & 지연시간 실측 벤치마크 (Live 10 Scenarios)   ");
@@ -615,6 +616,30 @@ public class AutonomousHunterAgentTests
             bool isMatch = res.VerdictAction == sc.ExpectedAction;
             results.Add((sc.Name, res.VerdictAction.ToString(), sc.ExpectedAction.ToString(), isMatch, res.Confidence, turns, res.Elapsed.TotalMilliseconds));
 
+            detailedResults.Add(new
+            {
+                Name = sc.Name,
+                Parent = sc.ParentImage,
+                Target = sc.TargetImage,
+                CommandLine = sc.CommandLine,
+                Expected = sc.ExpectedAction.ToString(),
+                Verdict = res.VerdictAction.ToString(),
+                IsMatch = isMatch,
+                Confidence = res.Confidence,
+                Turns = turns,
+                ElapsedMs = res.Elapsed.TotalMilliseconds,
+                SummaryTitle = res.SummaryTitle,
+                Narrative = res.Narrative,
+                MitreTactics = res.MitreTactics,
+                Steps = res.Traces.Select(t => new
+                {
+                    StepNumber = t.StepNumber,
+                    ElapsedMs = t.ElapsedMs,
+                    Tool = t.ActionTool,
+                    Thought = t.Thought
+                }).ToList()
+            });
+
             _output.WriteLine($"  ✔ 판결: {res.VerdictAction} (기대값: {sc.ExpectedAction}, 일치여부: {(isMatch ? "MATCH" : "MISMATCH")}) | 확신도: {res.Confidence:P0} | 소요 턴: {turns}턴 | 시간: {res.Elapsed.TotalMilliseconds:F0}ms");
             _output.WriteLine($"  ✔ 사건 서사 요약: {res.SummaryTitle}");
 
@@ -640,6 +665,9 @@ public class AutonomousHunterAgentTests
         _output.WriteLine($" ⭐ 평균 소요 턴 수   : {avgTurns:F2} 턴 (최대 5턴 예산 대비 최적화율: {(1 - avgTurns / 5.0) * 100:F1}%)");
         _output.WriteLine($" ⭐ 평균 완결 시간     : {avgElapsed:F0} ms ({avgElapsed / 1000.0:F2} 초 / 50초 SLA 대비 충분한 마진)");
         _output.WriteLine("=========================================================================================\n");
+
+        string dumpPath = Path.Combine(AppContext.BaseDirectory, "benchmark_10scenarios_result.json");
+        File.WriteAllText(dumpPath, JsonSerializer.Serialize(detailedResults, new JsonSerializerOptions { WriteIndented = true }));
 
         Assert.Equal(results.Count, results.Count(r => r.IsMatch));
         Assert.True(avgTurns <= 5.0, $"평균 턴 수가 최대 한도(5턴)를 초과함: {avgTurns}");

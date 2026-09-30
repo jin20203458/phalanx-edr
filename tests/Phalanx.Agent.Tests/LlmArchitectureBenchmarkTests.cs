@@ -8,6 +8,7 @@ using Xunit.Abstractions;
 
 namespace Phalanx.Agent.Tests;
 
+[Trait("Category", "Benchmark")]
 public class LlmArchitectureBenchmarkTests
 {
     private readonly ITestOutputHelper _output;

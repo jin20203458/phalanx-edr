@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Phalanx.Agent.Tests;
 
+[Trait("Category", "Unit")]
 public class InvestigationToolsTests
 {
     [Fact]

@@ -179,6 +179,14 @@ bool EtwKernelCollector::Start() {
                     }
                 });
 
+                // 이전 비정상 종료로 잔여 세션이 남아있을 경우를 대비한 방어적 세션 정리
+                try {
+                    krabs::user_trace leftover(L"PhalanxKernelProcessSession");
+                    leftover.stop();
+                } catch (...) {
+                    // 잔여 세션이 없으면 무시
+                }
+
                 impl_->trace = std::make_unique<krabs::user_trace>(L"PhalanxKernelProcessSession");
                 impl_->trace->enable(provider);
                 std::cout << "🚀 [ETW] Microsoft-Windows-Kernel-Process 트레이스 세션 구동 중..." << std::endl;

@@ -1,0 +1,54 @@
+# ==============================================================================
+# PHALANX EDR - 풀체인 E2E 통합 시스템 테스트 러너 (3대 시나리오)
+# ==============================================================================
+# 시나리오 1: C++ 즉각 처형 (0.1ms 현장 사살, C# AI 수사 바이패스)
+# 시나리오 2: C++ 24μs 동결 ➔ C# Gemini LLM 수사 ➔ 50초 연장 티켓 ➔ C++ 사살
+# 시나리오 3: C++ 24μs 동결 ➔ C# 로컬 오프라인 23ms 수사 (연장 없음) ➔ C++ 사살
+# ==============================================================================
+
+param(
+    [switch]$Detailed = $false
+)
+
+$ErrorActionPreference = "Stop"
+Set-Location -Path $PSScriptRoot\..
+
+Write-Host "================================================================================" -ForegroundColor Cyan
+Write-Host "   PHALANX EDR - 풀체인 E2E 통합 시스템 테스트 (3대 시나리오 실측 검증)           " -ForegroundColor Cyan
+Write-Host "================================================================================" -ForegroundColor Cyan
+
+# 1. C# 3대 시나리오 풀체인 시스템 테스트 실행
+Write-Host "`n[1/3] C# 관제 콕핏 ➔ AI 위협 헌터 풀체인 3대 시나리오 함수 호출 순서 실측 검증..." -ForegroundColor Yellow
+$verb = if ($Detailed) { "detailed" } else { "minimal" }
+dotnet test tests/Phalanx.Agent.Tests/ --filter "FullyQualifiedName~FullChainSystemTests" --logger "console;verbosity=$verb"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ FullChainSystemTests 검증 실패! (Exit Code: $LASTEXITCODE)" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+# 2. C++ 네이티브 센서 & 엔진 단위/통합 테스트 검증
+Write-Host "`n[2/3] C++ 센서 & 액추에이터 24μs 동결 / 0.1ms 사살 검증..." -ForegroundColor Yellow
+& .\out\build\windows-default\tests\SensorTests\SensorTests.exe
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ SensorTests.exe 검증 실패! (Exit Code: $LASTEXITCODE)" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+& .\out\build\windows-default\tests\EngineTests\EngineTests.exe
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ EngineTests.exe 검증 실패! (Exit Code: $LASTEXITCODE)" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+# 3. C++ gRPC 스트리밍 루프백 IPC 검증
+Write-Host "`n[3/3] C++ gRPC 양방향 스트리밍 IPC 파이프라인 검증..." -ForegroundColor Yellow
+& .\out\build\windows-default\tests\IpcE2ETest\IpcE2ETest.exe
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ IpcE2ETest.exe 검증 실패! (Exit Code: $LASTEXITCODE)" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+Write-Host "`n================================================================================" -ForegroundColor Green
+Write-Host "🎉 Phalanx 3대 시나리오 풀체인 E2E 통합 시스템 테스트 전원 통과! (Exit Code 0) " -ForegroundColor Green
+Write-Host "================================================================================" -ForegroundColor Green
+exit 0

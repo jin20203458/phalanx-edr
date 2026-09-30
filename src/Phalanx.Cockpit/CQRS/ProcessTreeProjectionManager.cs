@@ -276,6 +276,14 @@ public class ProcessTreeProjectionManager
         return null;
     }
 
+    public ProcessNodeModel? FindNodeByPid(uint pid)
+    {
+        lock (_syncLock)
+        {
+            return AllNodes.FirstOrDefault(n => n.ProcessId == pid);
+        }
+    }
+
     public ProcessNodeModel? FindNodeByGuid(ulong guid)
     {
         _nodesByGuid.TryGetValue(guid, out var node);

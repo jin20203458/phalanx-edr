@@ -65,12 +65,11 @@ public class GeminiRestClient
     }
 
     /// <summary>
-    /// MundusVivens의 AppSettings.json 및 Config/google-credentials.json을 자동 탐색하여 Vertex AI 클라이언트 생성
+    /// MundusVivens의 AppSettings.json 및 Config/google-credentials.json을 동기적으로 탐색하여 Vertex AI 클라이언트 생성
     /// </summary>
-    public static async Task<GeminiRestClient?> TryCreateFromMundusVivensConfigAsync(
+    public static GeminiRestClient? TryCreateFromMundusVivensConfig(
         HttpClient? httpClient = null,
-        string? modelName = null,
-        CancellationToken cancellationToken = default)
+        string? modelName = null)
     {
         try
         {
@@ -89,7 +88,7 @@ public class GeminiRestClient
 
             if (File.Exists(appSettingsPath))
             {
-                var json = await File.ReadAllTextAsync(appSettingsPath, cancellationToken);
+                var json = File.ReadAllText(appSettingsPath);
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("ProjectId", out var p) && !string.IsNullOrWhiteSpace(p.GetString()))
                 {
@@ -101,7 +100,7 @@ public class GeminiRestClient
                 }
             }
 
-            string credJson = await File.ReadAllTextAsync(credentialsPath, cancellationToken);
+            string credJson = File.ReadAllText(credentialsPath);
             var specCred = CredentialFactory.FromJson<ServiceAccountCredential>(credJson);
             var googleCred = specCred.ToGoogleCredential().CreateScoped("https://www.googleapis.com/auth/cloud-platform");
 
@@ -118,6 +117,17 @@ public class GeminiRestClient
             Trace.WriteLine($"[GeminiRestClient] MV Config 로드 실패: {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// MundusVivens의 AppSettings.json 및 Config/google-credentials.json을 자동 탐색하여 Vertex AI 클라이언트 비동기 생성
+    /// </summary>
+    public static Task<GeminiRestClient?> TryCreateFromMundusVivensConfigAsync(
+        HttpClient? httpClient = null,
+        string? modelName = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(TryCreateFromMundusVivensConfig(httpClient, modelName));
     }
 
     /// <summary>

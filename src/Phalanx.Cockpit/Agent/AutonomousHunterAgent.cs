@@ -21,8 +21,6 @@ public class AutonomousHunterAgent
     private readonly ProcessTreeProjectionManager _treeManager;
     private readonly ForensicArchiveManager _archiveManager;
     private readonly Dictionary<string, IInvestigationTool> _tools = new(StringComparer.OrdinalIgnoreCase);
-    private readonly string? _geminiApiKey;
-    private readonly HttpClient _httpClient;
     private readonly GeminiRestClient? _geminiClient;
 
     public AutonomousHunterAgent(
@@ -35,8 +33,6 @@ public class AutonomousHunterAgent
     {
         _treeManager = treeManager;
         _archiveManager = archiveManager;
-        _geminiApiKey = geminiApiKey ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY");
-        _httpClient = httpClient ?? new HttpClient();
 
         foreach (var tool in tools)
         {
@@ -47,14 +43,20 @@ public class AutonomousHunterAgent
         {
             _geminiClient = geminiClient;
         }
-        else if (!string.IsNullOrWhiteSpace(_geminiApiKey))
+        else
         {
-            _geminiClient = new GeminiRestClient(_httpClient, _geminiApiKey);
-        }
-        else if (geminiApiKey == null)
-        {
-            // 환경변수도 없고 명시적 오프라인(string.Empty)도 아니면 MundusVivens의 Vertex AI 설정 자동 연결
-            _geminiClient = GeminiRestClient.TryCreateFromMundusVivensConfigAsync(_httpClient).GetAwaiter().GetResult();
+            string? effectiveApiKey = geminiApiKey ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+            var clientHttp = httpClient ?? new HttpClient();
+
+            if (!string.IsNullOrWhiteSpace(effectiveApiKey))
+            {
+                _geminiClient = new GeminiRestClient(clientHttp, effectiveApiKey);
+            }
+            else if (geminiApiKey == null)
+            {
+                // 환경변수도 없고 명시적 오프라인(string.Empty)도 아니면 MundusVivens의 Vertex AI 설정 자동 연결
+                _geminiClient = GeminiRestClient.TryCreateFromMundusVivensConfig(clientHttp);
+            }
         }
     }
 

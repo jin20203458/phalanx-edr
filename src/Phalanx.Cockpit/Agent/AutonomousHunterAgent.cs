@@ -1068,12 +1068,19 @@ public class AutonomousHunterAgent
         // 3-2. LOLBAS 프록시 악용 (rundll32, regsvr32, mshta 등) (+30)
         string imgName = targetNode.ImageName.ToLowerInvariant();
         bool isLolbinProxy = imgName.Contains("rundll32") || imgName.Contains("regsvr32") || imgName.Contains("mshta") || imgName.Contains("certutil");
-        if (isLolbinProxy && (HasInlineC2Pattern(decodedScript, targetNode.CommandLine) || threatScore >= 0.80))
+        if (isLolbinProxy && (HasInlineC2Pattern(decodedScript, targetNode.CommandLine) || threatScore >= 0.80 || fileAnomalyScore >= 50))
         {
             riskScore += 30;
         }
 
-        // 3-3. 시스템 핵심 바이너리 명칭 위장 드로퍼 (T1036.005) (+50)
+        // 3-3. 비실행형 확장자 위장 PE 바이너리 또는 고위험 파일 이상 징후 (T1036.008) (+40)
+        bool isDisguisedExe = traces.Any(t => t.ActionTool == "FileInspectionTool" && t.Observation.Contains("확장자 위장(Disguised PE Executable): DETECTED"));
+        if (isDisguisedExe || fileAnomalyScore >= 65)
+        {
+            riskScore += 40;
+        }
+
+        // 3-4. 시스템 핵심 바이너리 명칭 위장 드로퍼 (T1036.005) (+50)
         string fullTarget = $"{targetNode.CommandLine} {decodedScript}".ToLowerInvariant();
         bool isMasquerading = isPathMasqueraded ||
                               fileAnomalyScore >= 80 ||
@@ -1110,7 +1117,13 @@ public class AutonomousHunterAgent
             verdictAction = MitigationCommand.Types.ActionType.ActionKill;
             summaryTitle = isMasquerading
                 ? "시스템 핵심 바이너리 경로 위장(Masquerading T1036.005) 및 C2 침투 탐지"
-                : "악성 오피스 매크로/LOLBAS를 통한 파일리스 C2 다운로더 침투 시도";
+                : isDisguisedExe
+                    ? "비실행형 확장자 위장(Disguised PE T1036.008) 실행 바이너리 침투 탐지"
+                    : isLolbinProxy
+                        ? "LOLBAS 신뢰 시스템 바이너리 프록시 악용(Proxy Execution T1218) 탐지"
+                        : hasUnbackedMemory
+                            ? "프로세스 메모리 인젝션(Unbacked Executable Memory T1055) 침투 탐지"
+                            : "악성 오피스 매크로/LOLBAS를 통한 파일리스 C2 다운로더 침투 시도";
             narrative = $"{DateTime.Now:HH시 mm분}, 시스템에서 실행된 '{rootCause}' 프로세스가 비정상 자식 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 은밀히 기동했습니다. " +
                         $"Phalanx 센서가 원자적으로 선제 동결을 집행하였으며, AI 에이전트의 심층 족보 역추적 및 메모리/페이로드 분석 결과 " +
                         $"{(extractedIp != null ? $"해외 악성 C2({extractedIp})" : "원격 C2 인프라")}와의 통신 및 파일리스 공격 시도가 확인되었습니다. " +
@@ -1120,9 +1133,13 @@ public class AutonomousHunterAgent
             {
                 mitreList = isMasquerading
                     ? new List<string> { "T1036.005", "T1059.001", "T1071.001" }
-                    : hasUnbackedMemory
-                        ? new List<string> { "T1055", "T1071.001" }
-                        : new List<string> { "T1566.001", "T1059.001", "T1071.001" };
+                    : isDisguisedExe
+                        ? new List<string> { "T1036.008", "T1027", "T1071.001" }
+                        : isLolbinProxy
+                            ? new List<string> { "T1218.011", "T1071.001" }
+                            : hasUnbackedMemory
+                                ? new List<string> { "T1055", "T1071.001" }
+                                : new List<string> { "T1566.001", "T1059.001", "T1071.001" };
             }
         }
         else
@@ -1134,6 +1151,8 @@ public class AutonomousHunterAgent
                         $"누적 위험도 {riskScore}점(임계치 80점 미만)으로 무해 판정을 도출하고 안전하게 정상 복구(ACTION_RESUME) 조치를 완료했습니다.";
         }
 
+        string blockedIp = (isMalicious ? extractedIp : string.Empty) ?? string.Empty;
+
         // [최종 명령 C++ 전송]
         if (commandSender != null)
         {
@@ -1141,7 +1160,7 @@ public class AutonomousHunterAgent
             {
                 Action = verdictAction,
                 TargetPid = targetNode.ProcessId,
-                TargetIp = extractedIp ?? string.Empty,
+                TargetIp = blockedIp,
                 Reason = summaryTitle
             });
         }
@@ -1161,7 +1180,7 @@ public class AutonomousHunterAgent
             SummaryTitle = summaryTitle,
             Narrative = narrative,
             MitreTactics = mitreList,
-            BlockedIp = extractedIp ?? string.Empty,
+            BlockedIp = blockedIp,
             RootCauseProcess = rootCause,
             TerminatedProcesses = isMalicious ? new() { $"{targetNode.ImageName} (PID: {targetNode.ProcessId})" } : new(),
             RemediationStatus = isMalicious ? "SECURED" : "RESTORED",
@@ -1178,7 +1197,7 @@ public class AutonomousHunterAgent
             summaryTitle,
             narrative,
             mitreList,
-            extractedIp,
+            blockedIp,
             traces,
             sw.Elapsed,
             incidentRecord,

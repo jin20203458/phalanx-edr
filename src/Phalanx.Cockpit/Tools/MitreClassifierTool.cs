@@ -202,7 +202,7 @@ public class MitreClassifierTool : IInvestigationTool
         if (matched.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine("📋 [공격 킬체인 종합 서사 (Kill Chain Narrative)]");
+            sb.AppendLine("[공격 킬체인 종합 서사 (Kill Chain Narrative)]");
             var distinctTactics = matched.Select(m => m.Tactic).Distinct().ToList();
             sb.AppendLine($"  {string.Join(" ➔ ", distinctTactics)}");
         }

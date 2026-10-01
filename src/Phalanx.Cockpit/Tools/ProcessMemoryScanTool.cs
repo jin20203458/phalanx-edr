@@ -237,7 +237,7 @@ public class ProcessMemoryScanTool : IInvestigationTool
                                     checkedHeader = true;
                                     if (bytesRead >= 2 && buffer[0] == 0x4D && buffer[1] == 0x5A) // 'MZ'
                                     {
-                                        detectedInjections.Add($"🚨 Reflective PE/DLL 주입 발견: 주소 0x{mbi.BaseAddress.ToInt64():X} (MEM_PRIVATE + 실행 권한 영역 내 MZ 헤더 존재)");
+                                        detectedInjections.Add($"[경고] Reflective PE/DLL 주입 발견: 주소 0x{mbi.BaseAddress.ToInt64():X} (MEM_PRIVATE + 실행 권한 영역 내 MZ 헤더 존재)");
                                     }
                                 }
 

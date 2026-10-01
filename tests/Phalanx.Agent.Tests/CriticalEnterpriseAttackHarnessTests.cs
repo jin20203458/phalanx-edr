@@ -42,7 +42,8 @@ public class CriticalEnterpriseAttackHarnessTests
             new ThreatReputationTool(),
             new MitreClassifierTool(),
             new SystemFirewallTool(),
-            new FileInspectionTool()
+            new FileInspectionTool(),
+            new RegistryInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(tree, archive, tools, geminiApiKey: offlineOnly ? string.Empty : null);

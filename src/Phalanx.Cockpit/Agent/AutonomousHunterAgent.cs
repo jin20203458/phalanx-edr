@@ -406,6 +406,7 @@ public class AutonomousHunterAgent
             4. MitreClassifierTool: 관찰된 공격 행위 MITRE TTP 분류 (observedBehavior: string)
             5. SystemFirewallTool: 악성 C2 IP 방화벽 차단 (maliciousIp: string)
             6. FileInspectionTool: 디스크 상의 파일 경로, 디지털 서명(Authenticode), 시스템 파일 위장(Masquerading T1036.005), PE 헤더, Shannon 엔트로피 검증 (filePath: string)
+            7. RegistryInspectionTool: 윈도우 레지스트리(CLSID, InprocServer32, Run/RunOnce, ScriptletURL) 간접 실행 및 COM 하이재킹 무결성 검증 (registryKey: string)
             </tools>
 
             <rules>
@@ -414,6 +415,7 @@ public class AutonomousHunterAgent
             3. 최종 판결 시: is_final_verdict: true, action_tool: "None"으로 지정하고 모든 판결 필드를 완성하십시오.
             4. 공식 서사: narrative는 한국어 보고서 문체로 발단, 동결, 수사 결과, 처분 사유를 구체적으로 서술하십시오.
             5. 파일 수사 지침: 페이로드 해독이나 명령행에서 로컬 파일 경로가 포착되면, 메모리 스캔보다 먼저 FileInspectionTool을 호출하여 Authenticode 서명 및 시스템 경로 위장(Masquerading) 여부를 우선 확증하십시오.
+            6. 레지스트리 수사 지침: LOLBAS 프록시(regsvr32, rundll32, mshta 등) 명령행이나 /i: 인자에서 레지스트리 경로/CLSID가 포착되면, 즉시 RegistryInspectionTool을 호출하여 간접 스크립틀릿 실행 및 COM 하이재킹 여부를 확증하십시오.
             </rules>
 
             <output_format>
@@ -586,6 +588,14 @@ public class AutonomousHunterAgent
                 else if (actionTool.Equals("DecodePayloadTool", StringComparison.OrdinalIgnoreCase) && (!caseInsensitiveArgs.ContainsKey("encodedCommand") || string.IsNullOrWhiteSpace(caseInsensitiveArgs["encodedCommand"]?.ToString())))
                 {
                     caseInsensitiveArgs["encodedCommand"] = targetNode.CommandLine;
+                }
+                else if (actionTool.Equals("RegistryInspectionTool", StringComparison.OrdinalIgnoreCase) && !caseInsensitiveArgs.ContainsKey("registryKey"))
+                {
+                    string? extractedKey = ExtractTargetRegistryKey(decodedScript, targetNode.CommandLine);
+                    if (!string.IsNullOrEmpty(extractedKey))
+                    {
+                        caseInsensitiveArgs["registryKey"] = extractedKey;
+                    }
                 }
 
                 try
@@ -938,6 +948,43 @@ public class AutonomousHunterAgent
             }
         }
 
+        // --- ReAct Step 1.8: 의심 레지스트리 키 정밀 검증 (RegistryInspectionTool: CLSID, Scriptlet, COM 하이재킹) ---
+        string? targetRegistryKey = ExtractTargetRegistryKey(decodedScript, cmd);
+        bool isRegistryIndirect = false;
+        bool isComHijack = false;
+        int registryAnomalyScore = 0;
+
+        if (!string.IsNullOrWhiteSpace(targetRegistryKey) && _tools.TryGetValue("RegistryInspectionTool", out var regTool))
+        {
+            var thoughtReg = $"[Step {step} 추론] 명령행에서 레지스트리 인자 '{targetRegistryKey}'가 포착되어 Squiblydoo 간접 스크립틀릿(T1218.010) 및 COM 하이재킹 여부를 확증합니다.";
+            var resReg = await regTool.ExecuteAsync(new() { ["registryKey"] = targetRegistryKey });
+
+            var traceReg = new ReActTraceRecord
+            {
+                IncidentId = incidentId,
+                StepNumber = step++,
+                Thought = thoughtReg,
+                ActionTool = regTool.Name,
+                ActionArgsJson = JsonSerializer.Serialize(new { registryKey = targetRegistryKey }),
+                Observation = resReg.Output
+            };
+            traces.Add(traceReg);
+            OnReActStepProgress?.Invoke(incidentId, traceReg);
+
+            if (resReg.Data != null)
+            {
+                if (resReg.Data.TryGetValue("IsIndirectExecution", out var indObj) && indObj is bool bInd) isRegistryIndirect = bInd;
+                if (resReg.Data.TryGetValue("IsComHijack", out var comObj) && comObj is bool bCom) isComHijack = bCom;
+                if (resReg.Data.TryGetValue("AnomalyScore", out var scObj) && scObj is int aSc) registryAnomalyScore = aSc;
+
+                // 레지스트리 내부에서 C2 IP가 추출된 경우 IP 갱신
+                if (resReg.Data.TryGetValue("ExtractedIps", out var ipsObj) && ipsObj is List<string> regIps && regIps.Count > 0)
+                {
+                    extractedIp ??= regIps[0];
+                }
+            }
+        }
+
         // --- ReAct Step 2: 타깃 RAM 메모리 스캔 (C2 URL/IP 탐색) ---
         if (_tools.TryGetValue("ProcessMemoryScanTool", out var memTool))
         {
@@ -1068,7 +1115,7 @@ public class AutonomousHunterAgent
         // 3-2. LOLBAS 프록시 악용 (rundll32, regsvr32, mshta 등) (+30)
         string imgName = targetNode.ImageName.ToLowerInvariant();
         bool isLolbinProxy = imgName.Contains("rundll32") || imgName.Contains("regsvr32") || imgName.Contains("mshta") || imgName.Contains("certutil");
-        if (isLolbinProxy && (HasInlineC2Pattern(decodedScript, targetNode.CommandLine) || threatScore >= 0.80 || fileAnomalyScore >= 50))
+        if (isLolbinProxy && (HasInlineC2Pattern(decodedScript, targetNode.CommandLine) || threatScore >= 0.80 || fileAnomalyScore >= 50 || isRegistryIndirect || isComHijack || registryAnomalyScore >= 50))
         {
             riskScore += 30;
         }
@@ -1091,6 +1138,12 @@ public class AutonomousHunterAgent
         if (isMasquerading)
         {
             riskScore += 50;
+        }
+
+        // 3-5. 레지스트리 간접 실행(LOLBAS T1218.010) 및 COM 하이재킹(T1546.015) (+40)
+        if (isRegistryIndirect || isComHijack || registryAnomalyScore >= 50)
+        {
+            riskScore += 40;
         }
 
         // 4. 랜섬웨어 파괴 명령 패턴: 시스템 복구 무력화 (+80 즉각 사살 트리거)
@@ -1119,11 +1172,13 @@ public class AutonomousHunterAgent
                 ? "시스템 핵심 바이너리 경로 위장(Masquerading T1036.005) 및 C2 침투 탐지"
                 : isDisguisedExe
                     ? "비실행형 확장자 위장(Disguised PE T1036.008) 실행 바이너리 침투 탐지"
-                    : isLolbinProxy
-                        ? "LOLBAS 신뢰 시스템 바이너리 프록시 악용(Proxy Execution T1218) 탐지"
-                        : hasUnbackedMemory
-                            ? "프로세스 메모리 인젝션(Unbacked Executable Memory T1055) 침투 탐지"
-                            : "악성 오피스 매크로/LOLBAS를 통한 파일리스 C2 다운로더 침투 시도";
+                    : (isRegistryIndirect || isComHijack)
+                        ? "레지스트리 간접 실행(Squiblydoo T1218.010) 및 COM 하이재킹 침투 탐지"
+                        : isLolbinProxy
+                            ? "LOLBAS 신뢰 시스템 바이너리 프록시 악용(Proxy Execution T1218) 탐지"
+                            : hasUnbackedMemory
+                                ? "프로세스 메모리 인젝션(Unbacked Executable Memory T1055) 침투 탐지"
+                                : "악성 오피스 매크로/LOLBAS를 통한 파일리스 C2 다운로더 침투 시도";
             narrative = $"{DateTime.Now:HH시 mm분}, 시스템에서 실행된 '{rootCause}' 프로세스가 비정상 자식 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 은밀히 기동했습니다. " +
                         $"Phalanx 센서가 원자적으로 선제 동결을 집행하였으며, AI 에이전트의 심층 족보 역추적 및 메모리/페이로드 분석 결과 " +
                         $"{(extractedIp != null ? $"해외 악성 C2({extractedIp})" : "원격 C2 인프라")}와의 통신 및 파일리스 공격 시도가 확인되었습니다. " +
@@ -1135,11 +1190,13 @@ public class AutonomousHunterAgent
                     ? new List<string> { "T1036.005", "T1059.001", "T1071.001" }
                     : isDisguisedExe
                         ? new List<string> { "T1036.008", "T1027", "T1071.001" }
-                        : isLolbinProxy
-                            ? new List<string> { "T1218.011", "T1071.001" }
-                            : hasUnbackedMemory
-                                ? new List<string> { "T1055", "T1071.001" }
-                                : new List<string> { "T1566.001", "T1059.001", "T1071.001" };
+                        : (isRegistryIndirect || isComHijack)
+                            ? new List<string> { "T1218.010", "T1546.015", "T1071.001" }
+                            : isLolbinProxy
+                                ? new List<string> { "T1218.011", "T1071.001" }
+                                : hasUnbackedMemory
+                                    ? new List<string> { "T1055", "T1071.001" }
+                                    : new List<string> { "T1566.001", "T1059.001", "T1071.001" };
             }
         }
         else
@@ -1286,6 +1343,42 @@ public class AutonomousHunterAgent
         {
             return match.Value;
         }
+        return null;
+    }
+
+    private static string? ExtractTargetRegistryKey(string? decodedScript, string commandLine)
+    {
+        string full = $"{commandLine} {decodedScript}";
+
+        // 1. regsvr32 /i: 인자 추출 (/i: 또는 /i:"...")
+        var iMatch = System.Text.RegularExpressions.Regex.Match(
+            full,
+            @"/i:(?:""([^""]+)""|([^\s]+))",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (iMatch.Success)
+        {
+            string candidate = !string.IsNullOrEmpty(iMatch.Groups[1].Value)
+                ? iMatch.Groups[1].Value
+                : iMatch.Groups[2].Value;
+
+            // 원격 HTTP(S) URL은 ThreatReputationTool 대상이므로 레지스트리 키 추출 대상에서 제외
+            if (!candidate.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !candidate.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return candidate.Trim(' ', '\t', '"', '\'');
+            }
+        }
+
+        // 2. 표준 Hive 또는 CLSID 직접 경로 추출
+        var regMatch = System.Text.RegularExpressions.Regex.Match(
+            full,
+            @"(?:HKCU|HKLM|HKCR|HKEY_CURRENT_USER|HKEY_LOCAL_MACHINE|HKEY_CLASSES_ROOT|Software\\Classes\\CLSID|CLSID)\\[^\s""',;)]+",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (regMatch.Success)
+        {
+            return regMatch.Value.Trim(' ', '\t', '"', '\'');
+        }
+
         return null;
     }
     #endregion

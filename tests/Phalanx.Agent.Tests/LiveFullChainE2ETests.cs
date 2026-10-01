@@ -66,7 +66,8 @@ public class LiveFullChainE2ETests
             new ThreatReputationTool(),
             new MitreClassifierTool(),
             new SystemFirewallTool(),
-            new FileInspectionTool()
+            new FileInspectionTool(),
+            new RegistryInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
@@ -217,7 +218,8 @@ public class LiveFullChainE2ETests
             new ThreatReputationTool(),
             new MitreClassifierTool(),
             new SystemFirewallTool(),
-            new FileInspectionTool()
+            new FileInspectionTool(),
+            new RegistryInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);

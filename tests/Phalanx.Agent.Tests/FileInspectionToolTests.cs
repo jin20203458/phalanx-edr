@@ -280,7 +280,8 @@ public class FileInspectionToolTests
             new ThreatReputationTool(),
             new MitreClassifierTool(),
             new SystemFirewallTool(),
-            new FileInspectionTool()
+            new FileInspectionTool(),
+            new RegistryInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);

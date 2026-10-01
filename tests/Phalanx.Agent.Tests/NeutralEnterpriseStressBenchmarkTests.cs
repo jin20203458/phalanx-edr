@@ -68,7 +68,8 @@ public class NeutralEnterpriseStressBenchmarkTests
             new ThreatReputationTool(),
             new MitreClassifierTool(),
             new SystemFirewallTool(),
-            new FileInspectionTool()
+            new FileInspectionTool(),
+            new RegistryInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(tree, archive, tools, geminiApiKey: offlineOnly ? string.Empty : null);
@@ -745,6 +746,22 @@ public class NeutralEnterpriseStressBenchmarkTests
         uint parentPid = 1008;
         uint targetPid = 2008;
 
+        string mockClsidKey = @"Software\Classes\CLSID\{F0001111-0000-0000-0000-000000000001}";
+        RegistryInspectionTool.RegisterSimulatedKey(
+            mockClsidKey,
+            RegistryInspectionTool.CreateSimulatedEntry(
+                keyPath: mockClsidKey,
+                exists: true,
+                defaultValue: "Malicious Squiblydoo Component",
+                values: new Dictionary<string, object>
+                {
+                    ["ScriptletURL"] = "http://185.220.101.5/payload.sct",
+                    ["InprocServer32"] = @"C:\Windows\System32\scrobj.dll"
+                },
+                subKeys: new List<string> { "InprocServer32" }
+            )
+        );
+
         try
         {
             tree.ApplySnapshotBatch(new[]
@@ -796,6 +813,7 @@ public class NeutralEnterpriseStressBenchmarkTests
         }
         finally
         {
+            RegistryInspectionTool.ClearSimulatedKeys();
         }
     }
 

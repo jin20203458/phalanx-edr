@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
+using Microsoft.Win32;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Phalanx.Cockpit.Agent;
@@ -1350,7 +1351,35 @@ public partial class MainViewModel : ObservableObject
                     ? Settings.ReportExportPath
                     : Path.Combine(AppContext.BaseDirectory, Settings.ReportExportPath));
 
-            string savedPath = await Task.Run(() => _reportGenerator.ExportReportToFile(incident, exportDir));
+            string savedPath;
+            if (Application.Current != null)
+            {
+                string safeIncidentId = string.IsNullOrWhiteSpace(incident.IncidentId)
+                    ? $"INC-{DateTime.UtcNow:yyyyMMdd-HHmmss}"
+                    : string.Join("_", incident.IncidentId.Split(Path.GetInvalidFileNameChars()));
+                string defaultFileName = $"Phalanx_Forensic_Report_{safeIncidentId}_{incident.Timestamp:yyyyMMdd_HHmmss}.pdf";
+
+                var saveDialog = new SaveFileDialog
+                {
+                    Title = "A4 포렌식 리포트 저장 위치 지정",
+                    Filter = "PDF Files (*.pdf)|*.pdf|All Files (*.*)|*.*",
+                    InitialDirectory = Directory.Exists(exportDir) ? exportDir : AppContext.BaseDirectory,
+                    FileName = defaultFileName
+                };
+
+                if (saveDialog.ShowDialog() != true)
+                {
+                    return; // 사용자가 취소함
+                }
+
+                string targetFilePath = saveDialog.FileName;
+                savedPath = await Task.Run(() => _reportGenerator.ExportReportToFilePath(incident, targetFilePath));
+            }
+            else
+            {
+                // Headless/CLI/Unit Test 환경에서는 다이얼로그 없이 기본 디렉터리로 직결 저장
+                savedPath = await Task.Run(() => _reportGenerator.ExportReportToFile(incident, exportDir));
+            }
 
             SimulatorLog += $"\n[{DateTime.Now:HH:mm:ss}] [포렌식 PDF 리포트 생성 완료] 사건: {incident.IncidentId}\n" +
                             $" ➔ 저장 경로: {savedPath}\n" +

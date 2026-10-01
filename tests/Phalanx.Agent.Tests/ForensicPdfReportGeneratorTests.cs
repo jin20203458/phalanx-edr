@@ -166,4 +166,53 @@ public class ForensicPdfReportGeneratorTests
         Assert.True(bytes.Length > 1024);
         Assert.Equal(0x25, bytes[0]); // '%'
     }
+
+    [Fact]
+    public void ExportReportToFilePath_WritesPdfToSpecifiedExactPath()
+    {
+        // 1. Arrange
+        string tempDir = Path.Combine(Path.GetTempPath(), "Phalanx_Report_Custom_" + Guid.NewGuid().ToString("N"));
+        string targetFilePath = Path.Combine(tempDir, "SubDir", "Custom_Forensic_Report.pdf");
+
+        try
+        {
+            var incident = new IncidentItemViewModel
+            {
+                IncidentId = "INC-CUSTOM-PATH-001",
+                VerdictAction = "ACTION_KILL",
+                TargetImage = @"C:\Windows\System32\cmd.exe",
+                TargetPid = 7777,
+                SummaryTitle = "Custom Target File Path Verification"
+            };
+            var generator = new ForensicPdfReportGenerator();
+
+            // 2. Act
+            string savedPath = generator.ExportReportToFilePath(incident, targetFilePath);
+
+            // 3. Assert
+            Assert.True(File.Exists(savedPath));
+            Assert.Equal(Path.GetFullPath(targetFilePath), savedPath);
+            var info = new FileInfo(savedPath);
+            Assert.True(info.Length > 1024);
+            Assert.Equal("Custom_Forensic_Report.pdf", Path.GetFileName(savedPath));
+
+            byte[] header = new byte[5];
+            using (var fs = File.OpenRead(savedPath))
+            {
+                fs.ReadExactly(header, 0, 5);
+            }
+            Assert.Equal(0x25, header[0]); // '%'
+            Assert.Equal(0x50, header[1]); // 'P'
+            Assert.Equal(0x44, header[2]); // 'D'
+            Assert.Equal(0x46, header[3]); // 'F'
+            Assert.Equal(0x2D, header[4]); // '-'
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, true);
+            }
+        }
+    }
 }

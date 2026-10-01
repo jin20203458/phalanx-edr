@@ -17,4 +17,10 @@ public interface IForensicReportGenerator
     /// 인시던트 보고서를 지정된 출력 디렉터리에 PDF 파일로 저장하고 절대 경로를 반환합니다.
     /// </summary>
     string ExportReportToFile(IncidentItemViewModel incident, string outputDirectory);
+
+    /// <summary>
+    /// 인시던트 보고서를 지정된 절대 파일 경로에 PDF 파일로 저장하고 절대 경로를 반환합니다.
+    /// 대상 상위 디렉터리가 없을 경우 자동으로 생성합니다.
+    /// </summary>
+    string ExportReportToFilePath(IncidentItemViewModel incident, string targetFilePath);
 }

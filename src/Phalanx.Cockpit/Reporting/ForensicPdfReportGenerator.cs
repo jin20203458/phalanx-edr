@@ -50,15 +50,28 @@ public class ForensicPdfReportGenerator : IForensicReportGenerator
     }
 
     /// <inheritdoc />
+    public string ExportReportToFilePath(IncidentItemViewModel incident, string targetFilePath)
+    {
+        ArgumentNullException.ThrowIfNull(incident);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetFilePath);
+
+        string? directory = Path.GetDirectoryName(targetFilePath);
+        if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        byte[] pdfBytes = GenerateReportBytes(incident);
+        File.WriteAllBytes(targetFilePath, pdfBytes);
+
+        return Path.GetFullPath(targetFilePath);
+    }
+
+    /// <inheritdoc />
     public string ExportReportToFile(IncidentItemViewModel incident, string outputDirectory)
     {
         ArgumentNullException.ThrowIfNull(incident);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
-
-        if (!Directory.Exists(outputDirectory))
-        {
-            Directory.CreateDirectory(outputDirectory);
-        }
 
         string safeIncidentId = string.IsNullOrWhiteSpace(incident.IncidentId)
             ? $"INC-{DateTime.UtcNow:yyyyMMdd-HHmmss}"
@@ -67,9 +80,6 @@ public class ForensicPdfReportGenerator : IForensicReportGenerator
         string fileName = $"Phalanx_Forensic_Report_{safeIncidentId}_{incident.Timestamp:yyyyMMdd_HHmmss}.pdf";
         string fullPath = Path.Combine(outputDirectory, fileName);
 
-        byte[] pdfBytes = GenerateReportBytes(incident);
-        File.WriteAllBytes(fullPath, pdfBytes);
-
-        return fullPath;
+        return ExportReportToFilePath(incident, fullPath);
     }
 }

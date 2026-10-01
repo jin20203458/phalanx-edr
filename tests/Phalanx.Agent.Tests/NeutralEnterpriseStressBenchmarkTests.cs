@@ -825,18 +825,15 @@ public class NeutralEnterpriseStressBenchmarkTests
         string homoglyphExe = "svch\u043Est.exe";
         string homoglyphPath = @"C:\Windows\System32\" + homoglyphExe;
 
-        FileInspectionTool.RegisterSimulatedFile(homoglyphPath, new FileInspectionTool.SimulatedFileEntry(
-            Exists: true,
-            FileSizeBytes: 142336L,
-            Sha256: "9999999999999999999999999999999999999999999999999999999999999999",
-            Entropy: 7.4210,
-            IsSigned: false,
-            SignerSubject: string.Empty,
-            SignatureStatus: "NotSigned (TRUST_E_NOSIGNATURE)",
-            IsPathMasqueraded: false, // 단순 ASCII 비교에서는 System32Binaries와 불일치하여 false 반환
-            IsDisguisedExecutable: false,
-            AnomalyScore: 35,
-            DiagnosticReason: "System32 디렉터리 내 무서명 고엔트로피 바이너리 (키릴 자모 위장 의심)"
+        FileInspectionTool.RegisterSimulatedFile(homoglyphPath, FileInspectionTool.CreateSimulatedEntry(
+            filePath: homoglyphPath,
+            exists: true,
+            fileSizeBytes: 142336L,
+            sha256: "9999999999999999999999999999999999999999999999999999999999999999",
+            entropy: 7.4210,
+            isSigned: false,
+            signerSubject: string.Empty,
+            signatureStatus: "NotSigned (TRUST_E_NOSIGNATURE)"
         ));
 
         try

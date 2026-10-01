@@ -352,4 +352,106 @@ public class FileInspectionToolTests
             FileInspectionTool.ClearSimulatedFiles();
         }
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void TestFileInspection_GetUnicodeSkeleton_NormalizesCyrillicAndGreek()
+    {
+        // 1. Cyrillic small 'е' (U+0435) -> explorer.exe
+        Assert.Equal("explorer.exe", FileInspectionTool.GetUnicodeSkeleton("\u0435xplorer.exe"));
+
+        // 2. Cyrillic small 'о' (U+043E) -> svchost.exe
+        Assert.Equal("svchost.exe", FileInspectionTool.GetUnicodeSkeleton("svch\u043Est.exe"));
+
+        // 3. Cyrillic small 'ѕ' (U+0455) -> svchost.exe
+        Assert.Equal("svchost.exe", FileInspectionTool.GetUnicodeSkeleton("svcho\u0455t.exe"));
+
+        // 4. Greek small 'τ' (U+03C4) -> svchost.exe
+        Assert.Equal("svchost.exe", FileInspectionTool.GetUnicodeSkeleton("svchos\u03C4.exe"));
+
+        // 5. Cyrillic small 'к' (U+043A) + Greek small 'ω' (U+03C9) -> taskhostw.exe
+        Assert.Equal("taskhostw.exe", FileInspectionTool.GetUnicodeSkeleton("tas\u043Ahost\u03C9.exe"));
+
+        // 6. 빈 문자열 및 정상 ASCII 보존
+        Assert.Equal(string.Empty, FileInspectionTool.GetUnicodeSkeleton(string.Empty));
+        Assert.Equal("normal_binary.exe", FileInspectionTool.GetUnicodeSkeleton("normal_binary.exe"));
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_UnicodeHomoglyphInSystem32_DetectedAsMasqueradedAndScore100()
+    {
+        // Arrange
+        string homoglyphExe = "svch\u043Est.exe";
+        string homoglyphPath = @"C:\Windows\System32\" + homoglyphExe;
+        var entry = FileInspectionTool.CreateSimulatedEntry(
+            filePath: homoglyphPath,
+            exists: true,
+            fileSizeBytes: 142336L,
+            sha256: "9999999999999999999999999999999999999999999999999999999999999999",
+            entropy: 7.4210,
+            isSigned: false,
+            signerSubject: string.Empty,
+            signatureStatus: "NotSigned (TRUST_E_NOSIGNATURE)"
+        );
+
+        FileInspectionTool.RegisterSimulatedFile(homoglyphPath, entry);
+
+        try
+        {
+            // Act
+            var res = await _tool.ExecuteAsync(new() { ["filePath"] = homoglyphPath });
+
+            // Assert
+            Assert.True(res.Success);
+            Assert.NotNull(res.Data);
+            Assert.True((bool)res.Data["IsPathMasqueraded"]);
+            Assert.Equal(100, (int)res.Data["AnomalyScore"]);
+            string reason = (string)res.Data["DiagnosticReason"];
+            Assert.Contains("UTR #39", reason);
+            Assert.Contains("T1036.005", reason);
+        }
+        finally
+        {
+            FileInspectionTool.ClearSimulatedFiles();
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_UnsignedBinaryInSystem32_ZeroTrustViolation_Score70()
+    {
+        // Arrange: System32 내부에 위치하나 시스템 핵심 바이너리명이 아닌 임의의 무서명 도구
+        string unsignedSystemPath = @"C:\Windows\System32\custom_internal_tool.exe";
+        var entry = FileInspectionTool.CreateSimulatedEntry(
+            filePath: unsignedSystemPath,
+            exists: true,
+            fileSizeBytes: 524288L,
+            sha256: "1111111111111111111111111111111111111111111111111111111111111111",
+            entropy: 6.1023,
+            isSigned: false,
+            signerSubject: string.Empty,
+            signatureStatus: "NotSigned (TRUST_E_NOSIGNATURE)"
+        );
+
+        FileInspectionTool.RegisterSimulatedFile(unsignedSystemPath, entry);
+
+        try
+        {
+            // Act
+            var res = await _tool.ExecuteAsync(new() { ["filePath"] = unsignedSystemPath });
+
+            // Assert
+            Assert.True(res.Success);
+            Assert.NotNull(res.Data);
+            Assert.False((bool)res.Data["IsPathMasqueraded"]); // 위장 사칭은 아님
+            Assert.True((int)res.Data["AnomalyScore"] >= 70); // System32 Zero Trust 위반으로 최소 70점
+            string reason = (string)res.Data["DiagnosticReason"];
+            Assert.Contains("System32 Zero Trust", reason);
+        }
+        finally
+        {
+            FileInspectionTool.ClearSimulatedFiles();
+        }
+    }
 }

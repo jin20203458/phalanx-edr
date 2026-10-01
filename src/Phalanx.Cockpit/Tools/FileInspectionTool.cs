@@ -59,6 +59,84 @@ public sealed class FileInspectionTool : IInvestigationTool
         _simulatedFiles.Clear();
     }
 
+    /// <summary>
+    /// 단위 테스트 및 모의 텔레메트리 랩에서 정합성 있게 메트릭을 도출하기 위한 가상 엔트리 생성기
+    /// </summary>
+    public static SimulatedFileEntry CreateSimulatedEntry(
+        string filePath,
+        bool exists,
+        long fileSizeBytes,
+        string sha256,
+        double entropy,
+        bool isSigned,
+        string signerSubject,
+        string signatureStatus,
+        bool isDisguisedExecutable = false)
+    {
+        string norm = NormalizePath(filePath);
+        string fileName = Path.GetFileName(norm);
+        bool isMasqueraded = CheckPathMasqueraded(norm, fileName, out bool isHomoglyph, out string targetBinary);
+        bool isInSystem32 = IsInSystem32Directory(norm);
+        bool isTrustedMicrosoft = isSigned && signerSubject.Contains("Microsoft", StringComparison.OrdinalIgnoreCase);
+
+        int score = 0;
+        var reasons = new List<string>();
+
+        if (isMasqueraded)
+        {
+            score += 50;
+            reasons.Add(isHomoglyph
+                ? $"유니코드 동형이의어(Homoglyph UTR #39)를 악용한 시스템 핵심 바이너리({targetBinary}) 사칭 (T1036.005 Masquerading)"
+                : "시스템 핵심 바이너리 파일명이 비인가 디렉터리에 위치함 (T1036.005 Masquerading)");
+
+            if (!isTrustedMicrosoft)
+            {
+                score += 50;
+                reasons.Add("위장된 시스템 바이너리에 공인 Microsoft Authenticode 서명이 결여됨 (High Critical Threat)");
+            }
+        }
+        else if (isInSystem32 && !isSigned)
+        {
+            score += 70;
+            reasons.Add("보호된 System32/SysWOW64 디렉터리 내 무서명 바이너리 검출 (System32 Zero Trust 위반)");
+        }
+
+        if (isDisguisedExecutable)
+        {
+            score += 40;
+            reasons.Add("비실행형 확장자 내부에 은닉된 PE 실행 바이너리 포착");
+        }
+
+        if (entropy > 7.2)
+        {
+            score += 25;
+            reasons.Add($"고밀도 암호화 또는 패킹 의심 (Shannon Entropy: {entropy:F2} > 7.20)");
+        }
+
+        if (!isSigned && !isMasqueraded && !isInSystem32)
+        {
+            score += 10;
+            reasons.Add($"디지털 서명 미보유 ({signatureStatus})");
+        }
+
+        score = Math.Clamp(score, 0, 100);
+        string diagnosticReason = reasons.Count > 0 ? string.Join("; ", reasons) : "정상 정규 파일 (특이 이상 징후 없음)";
+
+        return new SimulatedFileEntry(
+            Exists: exists,
+            FileSizeBytes: fileSizeBytes,
+            Sha256: sha256,
+            Entropy: entropy,
+            IsSigned: isSigned,
+            SignerSubject: signerSubject,
+            SignatureStatus: signatureStatus,
+            IsPathMasqueraded: isMasqueraded,
+            IsDisguisedExecutable: isDisguisedExecutable,
+            AnomalyScore: score,
+            DiagnosticReason: diagnosticReason
+        );
+    }
+
     #endregion
 
     #region Win32 WinVerifyTrust P/Invoke 선언 및 구조체
@@ -224,7 +302,7 @@ public sealed class FileInspectionTool : IInvestigationTool
 
             // 5. 시스템 파일 경로 위장(Masquerading T1036.005) 검증
             string fileName = Path.GetFileName(normalized);
-            bool isPathMasqueraded = CheckPathMasqueraded(normalized, fileName);
+            bool isPathMasqueraded = CheckPathMasqueraded(normalized, fileName, out bool isHomoglyph, out string targetBinary);
 
             // 6. 바이트 스트림 분석: Shannon 엔트로피 및 PE 매직 바이트
             var (entropy, isDisguisedExe) = InspectBytes(normalized);
@@ -233,18 +311,34 @@ public sealed class FileInspectionTool : IInvestigationTool
             int anomalyScore = 0;
             var reasons = new List<string>();
 
+            bool isTrustedMicrosoft = isSigned && signerSubject.Contains("Microsoft", StringComparison.OrdinalIgnoreCase);
+            bool isInSystem32 = IsInSystem32Directory(normalized);
+
             if (isPathMasqueraded)
             {
                 anomalyScore += 50;
-                reasons.Add("시스템 핵심 바이너리 파일명이 비인가 디렉터리에 위치함 (T1036.005 Masquerading)");
+                if (isHomoglyph)
+                {
+                    reasons.Add($"유니코드 동형이의어(Homoglyph UTR #39)를 악용한 시스템 핵심 바이너리({targetBinary}) 사칭 (T1036.005 Masquerading)");
+                }
+                else
+                {
+                    reasons.Add("시스템 핵심 바이너리 파일명이 비인가 디렉터리에 위치함 (T1036.005 Masquerading)");
+                }
 
                 // 시스템 경로 위장 파일이 유효한 Microsoft 서명이 없으면 즉시 크리티컬 100점
-                bool isTrustedMicrosoft = isSigned && signerSubject.Contains("Microsoft", StringComparison.OrdinalIgnoreCase);
                 if (!isTrustedMicrosoft)
                 {
                     anomalyScore += 50;
-                    reasons.Add("비인가 경로에 위장된 시스템 바이너리에 공인 Microsoft Authenticode 서명이 결여됨 (High Critical Threat)");
+                    reasons.Add("위장된 시스템 바이너리에 공인 Microsoft Authenticode 서명이 결여됨 (High Critical Threat)");
                 }
+            }
+            else if (isInSystem32 && !isSigned)
+            {
+                // [System32 Zero-Trust]
+                // 보호된 System32/SysWOW64 디렉터리 내에 유효한 디지털 서명이 없는 실행 파일이 상주하는 것은 심각한 이상 징후
+                anomalyScore += 70;
+                reasons.Add("보호된 System32/SysWOW64 디렉터리 내 무서명 바이너리 검출 (System32 Zero Trust 위반)");
             }
 
             if (isDisguisedExe)
@@ -259,7 +353,7 @@ public sealed class FileInspectionTool : IInvestigationTool
                 reasons.Add($"고밀도 암호화 또는 패킹 의심 (Shannon Entropy: {entropy:F2} > 7.20)");
             }
 
-            if (!isSigned && !isPathMasqueraded)
+            if (!isSigned && !isPathMasqueraded && !isInSystem32)
             {
                 // 일반 바이너리 무서명 시 경미 가산
                 anomalyScore += 10;
@@ -378,6 +472,92 @@ public sealed class FileInspectionTool : IInvestigationTool
 #pragma warning restore SYSLIB0057
     }
 
+    #region Unicode Confusable UTR #39 Skeleton 매핑 및 디렉터리 판별
+
+    private static readonly Dictionary<char, char> ConfusableSkeletonMap = new()
+    {
+        // Cyrillic Small
+        ['\u0430'] = 'a', ['\u0441'] = 'c', ['\u0435'] = 'e', ['\u043E'] = 'o',
+        ['\u0440'] = 'p', ['\u0455'] = 's', ['\u0445'] = 'x', ['\u0443'] = 'y',
+        ['\u0456'] = 'i', ['\u0458'] = 'j', ['\u043A'] = 'k', ['\u0501'] = 'd',
+        ['\u051B'] = 'q', ['\u051D'] = 'w', ['\u04BB'] = 'h', ['\u04CF'] = 'l',
+
+        // Cyrillic Capital
+        ['\u0410'] = 'A', ['\u0412'] = 'B', ['\u0421'] = 'C', ['\u0415'] = 'E',
+        ['\u041D'] = 'H', ['\u0406'] = 'I', ['\u0408'] = 'J', ['\u041A'] = 'K',
+        ['\u041C'] = 'M', ['\u041E'] = 'O', ['\u0420'] = 'P', ['\u0405'] = 'S',
+        ['\u0422'] = 'T', ['\u0425'] = 'X', ['\u04AE'] = 'Y',
+
+        // Greek Small
+        ['\u03B1'] = 'a', ['\u03B2'] = 'b', ['\u03B5'] = 'e', ['\u03B7'] = 'n',
+        ['\u03B9'] = 'i', ['\u03BA'] = 'k', ['\u03BF'] = 'o', ['\u03C1'] = 'p',
+        ['\u03C2'] = 's', ['\u03C3'] = 's', ['\u03C4'] = 't', ['\u03C5'] = 'u',
+        ['\u03BD'] = 'v', ['\u03C7'] = 'x', ['\u03C9'] = 'w',
+
+        // Greek Capital
+        ['\u0391'] = 'A', ['\u0392'] = 'B', ['\u0395'] = 'E', ['\u0397'] = 'H',
+        ['\u0399'] = 'I', ['\u039A'] = 'K', ['\u039C'] = 'M', ['\u039D'] = 'N',
+        ['\u039F'] = 'O', ['\u03A1'] = 'P', ['\u03A4'] = 'T', ['\u03A5'] = 'Y',
+        ['\u03A7'] = 'X', ['\u0396'] = 'Z'
+    };
+
+    public static string GetUnicodeSkeleton(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return string.Empty;
+
+        // 1. 호환 분해
+        string decomposed = input.Normalize(NormalizationForm.FormKD);
+        var sb = new StringBuilder(decomposed.Length);
+
+        // 2. Confusable 문자 치환
+        foreach (char c in decomposed)
+        {
+            if (ConfusableSkeletonMap.TryGetValue(c, out char target))
+            {
+                sb.Append(target);
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+
+        // 3. 재정규화
+        return sb.ToString().Normalize(NormalizationForm.FormKD);
+    }
+
+    private static bool IsInSystem32Directory(string normalizedPath)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPath)) return false;
+
+        string dir = Path.GetDirectoryName(normalizedPath)?.TrimEnd('\\', '/') ?? string.Empty;
+        if (string.IsNullOrEmpty(dir)) return false;
+
+        string sys32 = Environment.GetFolderPath(Environment.SpecialFolder.System).TrimEnd('\\', '/');
+        string sysWow64 = Environment.GetFolderPath(Environment.SpecialFolder.SystemX86).TrimEnd('\\', '/');
+
+        // 비Windows 또는 특수 환경 가드
+        if (string.IsNullOrEmpty(sys32) && string.IsNullOrEmpty(sysWow64)) return false;
+
+        return (!string.IsNullOrEmpty(sys32) && string.Equals(dir, sys32, StringComparison.OrdinalIgnoreCase)) ||
+               (!string.IsNullOrEmpty(sysWow64) && string.Equals(dir, sysWow64, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsInWindowsDirectory(string normalizedPath)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPath)) return false;
+
+        string dir = Path.GetDirectoryName(normalizedPath)?.TrimEnd('\\', '/') ?? string.Empty;
+        if (string.IsNullOrEmpty(dir)) return false;
+
+        string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows).TrimEnd('\\', '/');
+        if (string.IsNullOrEmpty(winDir)) return false;
+
+        return string.Equals(dir, winDir, StringComparison.OrdinalIgnoreCase);
+    }
+
+    #endregion
+
     private static readonly HashSet<string> System32Binaries = new(StringComparer.OrdinalIgnoreCase)
     {
         "svchost.exe", "csrss.exe", "smss.exe", "wininit.exe", "winlogon.exe",
@@ -386,24 +566,43 @@ public sealed class FileInspectionTool : IInvestigationTool
 
     private static bool CheckPathMasqueraded(string normalizedPath, string fileName)
     {
-        if (System32Binaries.Contains(fileName))
-        {
-            string dir = Path.GetDirectoryName(normalizedPath)?.TrimEnd('\\', '/') ?? string.Empty;
-            string sys32 = Environment.GetFolderPath(Environment.SpecialFolder.System).TrimEnd('\\', '/');
-            string sysWow64 = Environment.GetFolderPath(Environment.SpecialFolder.SystemX86).TrimEnd('\\', '/');
+        return CheckPathMasqueraded(normalizedPath, fileName, out _, out _);
+    }
 
-            // System32 또는 SysWOW64 정규 디렉터리에 위치하지 않으면 위장으로 적발
-            if (!string.Equals(dir, sys32, StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(dir, sysWow64, StringComparison.OrdinalIgnoreCase))
+    private static bool CheckPathMasqueraded(
+        string normalizedPath,
+        string fileName,
+        out bool isHomoglyphDetected,
+        out string matchedSystemBinary)
+    {
+        isHomoglyphDetected = false;
+        matchedSystemBinary = string.Empty;
+
+        string skeleton = GetUnicodeSkeleton(fileName);
+        bool hasConfusable = !string.Equals(fileName, skeleton, StringComparison.OrdinalIgnoreCase);
+
+        bool isSys32Target = System32Binaries.Contains(skeleton);
+        bool isExplorerTarget = string.Equals(skeleton, "explorer.exe", StringComparison.OrdinalIgnoreCase);
+
+        if (isSys32Target || isExplorerTarget)
+        {
+            matchedSystemBinary = skeleton;
+
+            // 1. 동형이의어가 사용된 경우: 디렉터리 위치와 상관없이 100% 위장으로 판정
+            // (System32 내부에 키릴 자모 svchоst.exe가 존재하더라도 이는 시스템 파일 사칭 백도어임)
+            if (hasConfusable)
+            {
+                isHomoglyphDetected = true;
+                return true;
+            }
+
+            // 2. 정규 명칭 바이너리가 비인가 디렉터리에 위치한 경우
+            if (isSys32Target && !IsInSystem32Directory(normalizedPath))
             {
                 return true;
             }
-        }
-        else if (string.Equals(fileName, "explorer.exe", StringComparison.OrdinalIgnoreCase))
-        {
-            string dir = Path.GetDirectoryName(normalizedPath)?.TrimEnd('\\', '/') ?? string.Empty;
-            string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows).TrimEnd('\\', '/');
-            if (!string.Equals(dir, winDir, StringComparison.OrdinalIgnoreCase))
+
+            if (isExplorerTarget && !IsInWindowsDirectory(normalizedPath))
             {
                 return true;
             }

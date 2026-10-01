@@ -86,6 +86,10 @@ public class MitreClassifierTool : IInvestigationTool
             new Regex(@"\b(?:set-mppreference\s+-disablerealtimemonitoring|fltmc\s+unload\s+sysmon)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
             new MitreTechnique("T1562.001", "Impair Defenses: Disable or Modify Tools", "Defense Evasion", "Windows Defender 실시간 감시를 무력화하거나 보안 에이전트 미니필터를 언로드하는 기법", 5)
         ),
+        new(
+            new Regex(@"(?:\bmasquerad|\bt1036(?:\.005)?|경로\s*위장|위장|\btemp\\(?:svchost|csrss|lsass))\b", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
+            new MitreTechnique("T1036.005", "Masquerading: Match Legitimate Name or Location", "Defense Evasion", "탐지를 회피하기 위해 합법적인 시스템 핵심 바이너리 명칭을 사칭하거나 비인가 디렉터리에 배치하는 기법", 5)
+        ),
 
         // 6. Credential Access (Order: 6)
         new(

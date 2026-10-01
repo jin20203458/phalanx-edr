@@ -12,8 +12,7 @@ namespace Phalanx.Cockpit.Services;
 /// </summary>
 public class SensorProcessController
 {
-    private static SensorProcessController? _instance;
-    public static SensorProcessController Instance => _instance ??= new SensorProcessController();
+    public static SensorProcessController Instance { get; } = new();
 
     private Process? _sensorProcess;
     private readonly CockpitUiBridge _uiBridge;
@@ -21,10 +20,64 @@ public class SensorProcessController
     public bool IsSensorRunning { get; private set; }
     public event Action<bool>? SensorStateChanged;
 
+    /// <summary>
+    /// C++ 센서가 연결할 Cockpit gRPC 수신 엔드포인트 (기본: 127.0.0.1:50051)
+    /// </summary>
+    public string Endpoint { get; set; } = "127.0.0.1:50051";
+
+    /// <summary>
+    /// C++ 센서 기본 워치독 제한시간(초) (기본: 10초)
+    /// </summary>
+    public int WatchdogTimeoutSec { get; set; } = 10;
+
+    /// <summary>
+    /// C++ 센서 AI 수사 1회성 연장 제한시간(초) (기본: 50초)
+    /// </summary>
+    public int ExtendTimeoutSec { get; set; } = 50;
+
     public SensorProcessController(CockpitUiBridge? uiBridge = null)
     {
         _uiBridge = uiBridge ?? CockpitUiBridge.Instance;
         _uiBridge.SensorConnectionChanged += OnSensorConnectionChanged;
+        LoadSettingsFromAppSettings();
+    }
+
+    private void LoadSettingsFromAppSettings()
+    {
+        try
+        {
+            string[] candidates = new[]
+            {
+                Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
+                Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"))
+            };
+
+            foreach (var path in candidates)
+            {
+                if (File.Exists(path))
+                {
+                    var json = File.ReadAllText(path);
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("Sensor", out var s))
+                    {
+                        string host = s.TryGetProperty("Host", out var h) && !string.IsNullOrWhiteSpace(h.GetString()) ? h.GetString()! : "127.0.0.1";
+                        int port = s.TryGetProperty("Port", out var p) && p.TryGetInt32(out var pVal) ? pVal : 50051;
+                        Endpoint = $"{host}:{port}";
+                    }
+                    if (root.TryGetProperty("Gemini", out var g))
+                    {
+                        if (g.TryGetProperty("WatchdogTimeoutSec", out var wt) && wt.TryGetInt32(out var wtVal))
+                            WatchdogTimeoutSec = Math.Clamp(wtVal, 1, 60);
+                        if (g.TryGetProperty("CtsTimeoutSec", out var ct) && ct.TryGetInt32(out var ctVal))
+                            ExtendTimeoutSec = Math.Clamp(ctVal, 5, 300);
+                    }
+                    break;
+                }
+            }
+        }
+        catch { }
     }
 
     private void OnSensorConnectionChanged(bool isConnected)
@@ -78,10 +131,18 @@ public class SensorProcessController
     /// </summary>
     public async Task<bool> StartSensorAsync()
     {
+        _sensorProcess?.Dispose();
+        _sensorProcess = null;
+
         // 1. 이미 외부 또는 백그라운드에서 센서가 돌고 있는지 확인
         var existing = Process.GetProcessesByName("Phalanx.Sensor");
         if (existing.Length > 0)
         {
+            for (int i = 1; i < existing.Length; i++)
+            {
+                try { existing[i].Dispose(); } catch { }
+            }
+
             Console.WriteLine($"[SensorController] 이미 실행 중인 Phalanx.Sensor 프로세스 감지 (PID: {existing[0].Id})");
             _sensorProcess = existing[0];
             try
@@ -113,7 +174,7 @@ public class SensorProcessController
         var psi = new ProcessStartInfo
         {
             FileName = exePath,
-            Arguments = "--endpoint 127.0.0.1:50051",
+            Arguments = $"--endpoint {Endpoint} --watchdog-timeout {WatchdogTimeoutSec} --extend-timeout {ExtendTimeoutSec}",
             WorkingDirectory = workingDir, // Gate 1 필수 지침: 7개 종속 DLL 로더 실패(0xC0000135) 방지
             UseShellExecute = true,
             Verb = "runas" // UAC 팝업 요청
@@ -194,13 +255,41 @@ public class SensorProcessController
         }
 
         // 3단계: 센서 프로세스 정상 종료 대기 (최대 3초)
-        if (_sensorProcess != null && !_sensorProcess.HasExited)
+        if (_sensorProcess != null)
         {
             try
             {
-                await Task.Run(() => _sensorProcess.WaitForExit(3000));
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await _sensorProcess.WaitForExitAsync(cts.Token);
             }
-            catch { }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine("[SensorController] 센서 정상 종료 대기 시간 초과(3초). 강제 프로세스 종료를 시도합니다.");
+                try
+                {
+                    if (!_sensorProcess.HasExited)
+                    {
+                        _sensorProcess.Kill(entireProcessTree: true);
+                    }
+                }
+                catch (Exception killEx)
+                {
+                    Console.WriteLine($"[SensorController] 센서 강제 종료 실패: {killEx.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SensorController] 센서 종료 대기 중 예외: {ex.Message}");
+            }
+            finally
+            {
+                try
+                {
+                    _sensorProcess.Dispose();
+                }
+                catch { }
+                _sensorProcess = null;
+            }
         }
 
         IsSensorRunning = false;

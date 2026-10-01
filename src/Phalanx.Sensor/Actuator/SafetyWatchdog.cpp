@@ -3,8 +3,9 @@
 
 namespace Phalanx::Actuator {
 
-SafetyWatchdog::SafetyWatchdog(std::chrono::milliseconds default_timeout)
+SafetyWatchdog::SafetyWatchdog(std::chrono::milliseconds default_timeout, std::chrono::milliseconds default_extend_timeout)
     : default_timeout_(default_timeout),
+      default_extend_timeout_(default_extend_timeout),
       running_(true),
       worker_thread_(&SafetyWatchdog::WatchdogLoop, this) {
 }
@@ -37,6 +38,10 @@ void SafetyWatchdog::RegisterSuspended(uint32_t pid, std::vector<DWORD> thread_i
 }
 
 bool SafetyWatchdog::ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by) {
+    if (extend_by.count() <= 0) {
+        extend_by = default_extend_timeout_;
+    }
+
     std::lock_guard<std::mutex> lock(entries_lock_);
     auto it = entries_.find(pid);
     if (it != entries_.end()) {

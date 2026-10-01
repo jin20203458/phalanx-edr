@@ -34,7 +34,9 @@ using AutoResumeCallback = std::function<void(uint32_t pid, const std::vector<DW
  */
 class SafetyWatchdog {
 public:
-    explicit SafetyWatchdog(std::chrono::milliseconds default_timeout = std::chrono::milliseconds(10000));
+    explicit SafetyWatchdog(
+        std::chrono::milliseconds default_timeout = std::chrono::milliseconds(10000),
+        std::chrono::milliseconds default_extend_timeout = std::chrono::milliseconds(50000));
     ~SafetyWatchdog();
 
     SafetyWatchdog(const SafetyWatchdog&) = delete;
@@ -50,9 +52,9 @@ public:
     void RegisterSuspended(uint32_t pid, std::vector<DWORD> thread_ids = {}, std::chrono::milliseconds timeout = std::chrono::milliseconds(0));
 
     /**
-     * @brief AI 심층 수사 진입 시 조기 동결 해제를 방지하기 위해 만료 시한을 1회 연장 (최대 1회 한도, 기본 50초)
+     * @brief AI 심층 수사 진입 시 조기 동결 해제를 방지하기 위해 만료 시한을 1회 연장 (최대 1회 한도, 기본값 0 전달 시 default_extend_timeout_ 적용)
      */
-    bool ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by = std::chrono::milliseconds(50000));
+    bool ExtendTimeout(uint32_t pid, std::chrono::milliseconds extend_by = std::chrono::milliseconds(0));
 
     /**
      * @brief 프로세스 종료(Kill) 또는 명시적 동결 해제 시 감시 목록에서 등록 제거
@@ -74,6 +76,7 @@ private:
     void WatchdogLoop();
 
     std::chrono::milliseconds default_timeout_;
+    std::chrono::milliseconds default_extend_timeout_;
     AutoResumeCallback auto_resume_callback_;
 
     mutable std::mutex entries_lock_;

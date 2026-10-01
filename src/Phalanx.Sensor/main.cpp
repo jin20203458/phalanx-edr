@@ -56,6 +56,8 @@ int main(int argc, char* argv[]) {
     // 1. 명령줄 인자 파싱 (관리자 권한 확인 전 도움말 플래그 우선 처리)
     std::string endpoint = "127.0.0.1:50051";
     bool standalone = false;
+    int watchdog_timeout_sec = 10;
+    int extend_timeout_sec = 50;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -63,10 +65,24 @@ int main(int argc, char* argv[]) {
             endpoint = argv[++i];
         } else if (arg == "--standalone") {
             standalone = true;
+        } else if (arg == "--watchdog-timeout" && i + 1 < argc) {
+            try {
+                watchdog_timeout_sec = std::clamp(std::stoi(argv[++i]), 1, 60);
+            } catch (...) {
+                watchdog_timeout_sec = 10;
+            }
+        } else if (arg == "--extend-timeout" && i + 1 < argc) {
+            try {
+                extend_timeout_sec = std::clamp(std::stoi(argv[++i]), 5, 300);
+            } catch (...) {
+                extend_timeout_sec = 50;
+            }
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "사용법: Phalanx.Sensor.exe [--endpoint <ip:port>] [--standalone]\n"
-                      << "  --endpoint <ip:port> : gRPC Core 원격 측정 엔드포인트 (기본값: 127.0.0.1:50051)\n"
-                      << "  --standalone          : gRPC 서버 없이 로컬 콘솔에만 커널 이벤트를 출력하는 단독 실행 모드\n";
+            std::cout << "사용법: Phalanx.Sensor.exe [--endpoint <ip:port>] [--standalone] [--watchdog-timeout <sec>] [--extend-timeout <sec>]\n"
+                      << "  --endpoint <ip:port>         : gRPC Core 원격 측정 엔드포인트 (기본값: 127.0.0.1:50051)\n"
+                      << "  --standalone                  : gRPC 서버 없이 로컬 콘솔에만 커널 이벤트를 출력하는 단독 실행 모드\n"
+                      << "  --watchdog-timeout <sec>     : 커널 기본 동결 안전 워치독 타임아웃 초 (기본값: 10, 범위: 1~60)\n"
+                      << "  --extend-timeout <sec>       : AI 수사 1회성 동결 연장 타임아웃 초 (기본값: 50, 범위: 5~300)\n";
             return 0;
         }
     }
@@ -93,7 +109,9 @@ int main(int argc, char* argv[]) {
 
     // 3. 동시성 큐 및 안전 워치독/액추에이터 초기화
     auto queue = std::make_shared<Phalanx::Queue::DoubleBufferedSwapQueue<phalanx::ProcessEvent>>();
-    auto watchdog = std::make_shared<Phalanx::Actuator::SafetyWatchdog>(std::chrono::milliseconds(10000));
+    auto watchdog = std::make_shared<Phalanx::Actuator::SafetyWatchdog>(
+        std::chrono::milliseconds(watchdog_timeout_sec * 1000),
+        std::chrono::milliseconds(extend_timeout_sec * 1000));
     auto actuator = std::make_shared<Phalanx::Actuator::ProcessActuator>(watchdog);
 
     // 4. C++ 인메모리 프로세스 트리(DAG) 및 스냅샷 웜업 초기화

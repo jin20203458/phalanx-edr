@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Grpc.Core;
 using Phalanx.Cockpit.Agent;
 using Phalanx.Cockpit.CQRS;
@@ -9,17 +10,19 @@ namespace Phalanx.Cockpit.Services;
 /// C++ 네이티브 센서(Phalanx.Sensor)와의 gRPC 양방향 스트리밍 통신 엔드포인트 서비스.
 /// 센서로부터 TelemetryBatch를 수신하여 CQRS 프로젝션 트리를 갱신하고,
 /// 선제 동결(LIFECYCLE_SUSPENDED) 인입 시 자율 AI 위협 헌터를 가동하여 방어 명령을 역전송합니다.
+/// 다중 클라이언트(센서 및 모의 도구) 동시 연결을 안전하게 지원합니다.
 /// </summary>
 public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
 {
     private readonly ProcessTreeProjectionManager _treeManager;
     private readonly AutonomousHunterAgent _agent;
     private readonly CockpitUiBridge? _uiBridge;
-    private IServerStreamWriter<MitigationCommand>? _responseStream;
+    private readonly ConcurrentDictionary<string, IServerStreamWriter<MitigationCommand>> _activeClients = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     public event Action<TelemetryBatch>? OnBatchReceived;
     public event Action<MitigationCommand>? OnCommandSent;
+    public int ActiveConnectionCount => _activeClients.Count;
 
     public PhalanxGrpcService(
         ProcessTreeProjectionManager treeManager,
@@ -41,8 +44,9 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
         IServerStreamWriter<MitigationCommand> responseStream,
         ServerCallContext context)
     {
-        _responseStream = responseStream;
-        Console.WriteLine("⚡ [gRPC Server] C++ 센서 클라이언트 연결됨.");
+        string connectionId = Guid.NewGuid().ToString("N");
+        _activeClients[connectionId] = responseStream;
+        Console.WriteLine($"⚡ [gRPC Server] 클라이언트 연결됨 (ID: {connectionId}, 활성 연결 수: {_activeClients.Count})");
         _uiBridge?.NotifySensorConnected(true);
 
         try
@@ -82,6 +86,27 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
                             });
                         }
                     }
+                    // 3. C++ 커널 룰 엔진에서 0.1ms 이내 즉각 현장 사살(Reflex Kill) 집행된 타깃 감지
+                    else if (ev.IsTerminated || ev.Lifecycle == ProcessLifecycle.LifecycleTerminated)
+                    {
+                        var node = _treeManager.FindNodeByPid(ev.ProcessId) ?? new ProcessNodeModel
+                        {
+                            ProcessId = ev.ProcessId,
+                            ParentProcessId = ev.ParentProcessId,
+                            ImageName = ev.ImageName,
+                            CommandLine = ev.CommandLine
+                        };
+
+                        Console.WriteLine($"⚡ [C++ 현장 사살 인입] PID: {node.ProcessId} ({node.ImageName}) - 0.1ms Reflex Kill 즉시 관제 보고!");
+                        try
+                        {
+                            _agent.HandleReflexKill(node);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"❌ [현장 사살 보고 오류] {ex.Message}");
+                        }
+                    }
                 }
 
                 _uiBridge?.NotifyProcessCount(_treeManager.ActiveCount);
@@ -97,18 +122,23 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
         }
         finally
         {
-            _responseStream = null;
-            _uiBridge?.NotifySensorConnected(false);
-            Console.WriteLine("🔌 [gRPC Server] C++ 센서 클라이언트 연결 종료.");
+            _activeClients.TryRemove(connectionId, out _);
+            Console.WriteLine($"🔌 [gRPC Server] 클라이언트 연결 종료 (ID: {connectionId}, 잔여 연결 수: {_activeClients.Count})");
+
+            // 모든 연결이 종료되었을 때만 UI에 DISCONNECTED 알림
+            if (_activeClients.IsEmpty)
+            {
+                _uiBridge?.NotifySensorConnected(false);
+            }
         }
     }
 
     /// <summary>
-    /// C++ 센서로 방어 완화 명령(사살/동결해제/연장) 비동기 전송
+    /// 연결된 모든 C++ 센서 및 클라이언트로 방어 완화 명령(사살/동결해제/연장) 비동기 전송
     /// </summary>
     public async Task SendCommandAsync(MitigationCommand command)
     {
-        if (_responseStream == null)
+        if (_activeClients.IsEmpty)
         {
             return;
         }
@@ -116,13 +146,32 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
         await _writeLock.WaitAsync();
         try
         {
-            if (_responseStream != null)
+            var deadClients = new List<string>();
+            foreach (var kvp in _activeClients)
             {
-                await _responseStream.WriteAsync(command);
-                OnCommandSent?.Invoke(command);
-                _uiBridge?.NotifyCommandDispatched(command);
-                Console.WriteLine($"🛡️ [gRPC 완화 명령 하달] 조치: {command.Action} | 타깃 PID: {command.TargetPid} | 사유: {command.Reason}");
+                try
+                {
+                    await kvp.Value.WriteAsync(command);
+                }
+                catch
+                {
+                    deadClients.Add(kvp.Key);
+                }
             }
+
+            foreach (var dead in deadClients)
+            {
+                _activeClients.TryRemove(dead, out _);
+            }
+
+            if (_activeClients.IsEmpty)
+            {
+                _uiBridge?.NotifySensorConnected(false);
+            }
+
+            OnCommandSent?.Invoke(command);
+            _uiBridge?.NotifyCommandDispatched(command);
+            Console.WriteLine($"🛡️ [gRPC 완화 명령 하달] 조치: {command.Action} | 타깃 PID: {command.TargetPid} | 사유: {command.Reason}");
         }
         finally
         {

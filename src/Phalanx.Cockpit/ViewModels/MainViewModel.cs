@@ -111,8 +111,8 @@ public partial class MainViewModel : ObservableObject
             ParentImage = parentImg,
             VerdictAction = "SUSPENDED",
             StatusSeverity = "SUSPENDED",
-            SummaryTitle = "Gemini 3.8 Flash 자율 수사 진행 중 (Process Frozen)...",
-            Narrative = "24μs 원자적 동결 완료. Gemini 자율 수사관이 메모리 VAD 및 명령줄 난독화 해독을 조사 중입니다."
+            SummaryTitle = "AI 자율 수사관 심층 조사 진행 중 (Process Frozen)...",
+            Narrative = "원자적 프로세스 동결 완료. AI 자율 수사관이 메모리 VAD 및 명령줄 난독화 해독을 조사 중입니다."
         };
 
         Incidents.Insert(0, item);
@@ -210,18 +210,18 @@ public partial class MainViewModel : ObservableObject
 
                 var item = new IncidentItemViewModel
                 {
-                    IncidentId = rec.IncidentId,
+                    IncidentId = rec.IncidentId ?? string.Empty,
                     Timestamp = rec.Timestamp,
                     TargetPid = rec.TargetPid,
-                    TargetImage = rec.TargetImage,
-                    CommandLine = rec.CommandLine,
-                    VerdictAction = rec.VerdictAction,
+                    TargetImage = rec.TargetImage ?? string.Empty,
+                    CommandLine = rec.CommandLine ?? string.Empty,
+                    VerdictAction = rec.VerdictAction ?? string.Empty,
                     StatusSeverity = isKill ? "CRITICAL" : "BENIGN",
                     ConfidenceScore = rec.ConfidenceScore,
-                    SummaryTitle = rec.SummaryTitle,
-                    Narrative = rec.Narrative,
-                    BlockedIp = rec.BlockedIp,
-                    ParentImage = rec.RootCauseProcess
+                    SummaryTitle = rec.SummaryTitle ?? string.Empty,
+                    Narrative = rec.Narrative ?? string.Empty,
+                    BlockedIp = rec.BlockedIp ?? string.Empty,
+                    ParentImage = rec.RootCauseProcess ?? string.Empty
                 };
 
                 foreach (var m in rec.MitreTactics)
@@ -234,7 +234,7 @@ public partial class MainViewModel : ObservableObject
                     item.RemediationSteps.Add(r);
                 }
 
-                var traces = _archiveManager.GetTracesForIncident(rec.IncidentId);
+                var traces = _archiveManager.GetTracesForIncident(rec.IncidentId ?? string.Empty);
                 foreach (var tr in traces)
                 {
                     item.Traces.Add(new ReActStepViewModel
@@ -247,6 +247,8 @@ public partial class MainViewModel : ObservableObject
                     });
                 }
 
+                double traceElapsed = traces.Sum(t => t.ElapsedMs);
+                item.ElapsedMs = rec.ElapsedMs > 0 ? rec.ElapsedMs : (traceElapsed > 0 ? traceElapsed : 0.08);
                 Incidents.Add(item);
             }
 
@@ -313,44 +315,6 @@ public partial class MainViewModel : ObservableObject
         LoadIncidentsFromDatabase();
     }
 
-    [RelayCommand]
-    private async Task ForceTerminateAsync()
-    {
-        if (SelectedIncident == null) return;
-
-        await _uiBridge.SendManualCommandAsync(new MitigationCommand
-        {
-            Action = ActionType.ActionKill,
-            TargetPid = SelectedIncident.TargetPid,
-            Reason = $"[SecOps Manual Override] 관제관 수동 강제 사살 (PID: {SelectedIncident.TargetPid})"
-        });
-
-        SelectedIncident.VerdictAction = "ACTION_KILL";
-        SelectedIncident.StatusSeverity = "CRITICAL";
-        SelectedIncident.SummaryTitle += " [수동 사살 집행됨]";
-        TotalTerminatedCount++;
-        ApplyFilter();
-    }
-
-    [RelayCommand]
-    private async Task ForceResumeAsync()
-    {
-        if (SelectedIncident == null) return;
-
-        await _uiBridge.SendManualCommandAsync(new MitigationCommand
-        {
-            Action = ActionType.ActionResume,
-            TargetPid = SelectedIncident.TargetPid,
-            Reason = $"[SecOps Manual Override] 관제관 수동 동결 해제 (PID: {SelectedIncident.TargetPid})"
-        });
-
-        SelectedIncident.VerdictAction = "ACTION_RESUME";
-        SelectedIncident.StatusSeverity = "BENIGN";
-        SelectedIncident.SummaryTitle += " [수동 동결 해제됨]";
-        TotalRestoredCount++;
-        ApplyFilter();
-    }
-
     partial void OnSearchQueryChanged(string value)
     {
         ApplyFilter();
@@ -373,11 +337,11 @@ public partial class MainViewModel : ObservableObject
 
             if (!string.IsNullOrWhiteSpace(SearchQuery))
             {
-                bool matchesSearch = item.TargetImage.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
-                                     item.CommandLine.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
+                bool matchesSearch = (item.TargetImage?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                                     (item.CommandLine?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
                                      item.TargetPid.ToString().Contains(SearchQuery) ||
-                                     item.SummaryTitle.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ||
-                                     item.BlockedIp.Contains(SearchQuery);
+                                     (item.SummaryTitle?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                                     (item.BlockedIp?.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) ?? false);
                 if (!matchesSearch) continue;
             }
 

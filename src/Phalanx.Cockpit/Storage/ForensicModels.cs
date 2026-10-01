@@ -25,6 +25,7 @@ public class IncidentRecord
     public List<string> TerminatedProcesses { get; set; } = new();
     public string RemediationStatus { get; set; } = "SECURED";
     public List<string> RemediationSteps { get; set; } = new();
+    public double ElapsedMs { get; set; }
 }
 
 /// <summary>

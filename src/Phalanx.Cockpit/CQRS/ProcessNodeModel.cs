@@ -70,24 +70,24 @@ public partial class ProcessNodeModel : ObservableObject
         if (isTerminated || lifecycle == ProcessLifecycle.LifecycleTerminated)
         {
             IsAlive = false;
-            StatusBadge = "💀 [0.1ms 현장 사살]";
+            StatusBadge = "[현장 사살]";
         }
         else if (isSuspended || lifecycle == ProcessLifecycle.LifecycleSuspended)
         {
-            StatusBadge = "❄️ [24μs 원자적 동결 (수사 중)]";
+            StatusBadge = "[원자적 동결 (수사 중)]";
         }
         else if (lifecycle == ProcessLifecycle.LifecycleStop)
         {
             IsAlive = false;
-            StatusBadge = "⏹️ [정상 종료]";
+            StatusBadge = "[정상 종료]";
         }
         else if (lifecycle == ProcessLifecycle.LifecycleSnapshot)
         {
-            StatusBadge = "🌳 [기저 프로세스]";
+            StatusBadge = "[기저 프로세스]";
         }
         else
         {
-            StatusBadge = "🟢 [실시간 가동 중]";
+            StatusBadge = "[실시간 가동 중]";
         }
     }
 }

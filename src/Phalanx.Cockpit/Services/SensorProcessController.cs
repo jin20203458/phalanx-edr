@@ -84,6 +84,18 @@ public class SensorProcessController
         {
             Console.WriteLine($"[SensorController] 이미 실행 중인 Phalanx.Sensor 프로세스 감지 (PID: {existing[0].Id})");
             _sensorProcess = existing[0];
+            try
+            {
+                _sensorProcess.EnableRaisingEvents = true;
+                _sensorProcess.Exited += (s, e) =>
+                {
+                    Console.WriteLine("[SensorController] C++ 커널 센서 프로세스 종료 감지.");
+                    IsSensorRunning = false;
+                    SensorStateChanged?.Invoke(false);
+                };
+            }
+            catch { }
+
             IsSensorRunning = true;
             SensorStateChanged?.Invoke(true);
             return true;

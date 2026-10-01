@@ -43,7 +43,8 @@
     <!-- ================================================================= -->
     <!--  2. Vector Icon Geometries (SVG Path Data - No Emojis)            -->
     <!-- ================================================================= -->
-    <Geometry x:Key="IconShield">M12 2L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-3z</Geometry>
+    <!-- Phalanx Minimalist Layered Chevron Shield (Triple Defense Plates) -->
+    <Geometry x:Key="IconShield">M 12,2 L 20,5.5 L 20,8 L 12,4.5 L 4,8 L 4,5.5 Z M 12,7 L 20,10.5 L 20,13 L 12,9.5 L 4,13 L 4,10.5 Z M 12,12 L 19.5,15.2 L 12,22 L 4.5,15.2 Z</Geometry>
     <Geometry x:Key="IconTerminal">M4 17l6-6-6-6m8 14h8</Geometry>
     <Geometry x:Key="IconKill">M18 6L6 18M6 6l12 12</Geometry>
     <Geometry x:Key="IconCheck">M20 6L9 17l-5-5</Geometry>

@@ -8,6 +8,7 @@ using Phalanx.Cockpit.Agent.Gemini;
 using Phalanx.Cockpit.CQRS;
 using Phalanx.Cockpit.Storage;
 using Phalanx.Cockpit.Tools;
+using Phalanx.Cockpit.ViewModels;
 using Phalanx.Shared.Protos;
 using ActionType = Phalanx.Shared.Protos.MitigationCommand.Types.ActionType;
 using Xunit;
@@ -892,6 +893,56 @@ public class AutonomousHunterAgentTests
 
         // 실측 검증: 미등록 IP 및 위장 드롭 복합 시나리오에서 4턴의 다단계 수사가 전개됨을 검증
         Assert.True(res.Traces.Count >= 4, $"4턴 이상의 복합 수사가 전개되어야 함: 현재 {res.Traces.Count}턴");
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void TestReflexKillRemediationAndAdaptiveLatencyFormatting()
+    {
+        // 1. C++ 0.1ms 현장 사살 시 후속 대응 런북 정제 검증
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, Array.Empty<IInvestigationTool>(), string.Empty);
+
+        var targetNode = new ProcessNodeModel
+        {
+            ProcessId = 9999,
+            ParentProcessId = 1000,
+            ImageName = "vssadmin.exe",
+            CommandLine = "vssadmin.exe delete shadows /all /quiet"
+        };
+
+        var result = agent.HandleReflexKill(targetNode);
+
+        Assert.NotNull(result);
+        Assert.Equal(ActionType.ActionKill, result.VerdictAction);
+        Assert.NotNull(result.RemediationSteps);
+        Assert.DoesNotContain(result.RemediationSteps, s => s.Contains("사살 완료"));
+        Assert.Contains(result.RemediationSteps, s => s.Contains("볼륨 섀도 복사본 잔여 상태"));
+
+        // 2. IncidentItemViewModel의 적응형 지연시간(Latency) 포맷팅 검증 (0.00s 버그 방지)
+        var vm = new IncidentItemViewModel();
+
+        // A) 0.08ms (80μs) 초고속 현장 사살 케이스: 0.00s가 아닌 마이크로초/밀리초로 표기되어야 함
+        vm.ElapsedMs = 0.08;
+        string reflexLatency = vm.FormattedLatency;
+        Assert.Contains("80μs", reflexLatency);
+        Assert.Contains("0.08ms", reflexLatency);
+        Assert.DoesNotContain("0.00s", reflexLatency);
+
+        // B) 밀리초급 케이스
+        vm.ElapsedMs = 125.4;
+        Assert.Equal("125.4ms (Reflex)", vm.FormattedLatency);
+
+        // C) 초급 (Gemini ReAct 수사) 케이스
+        vm.ElapsedMs = 32886.5;
+        Assert.Equal("32.89s (Reflex)", vm.FormattedLatency);
+
+        // D) 수사 진행 중 케이스
+        vm.ElapsedMs = 0;
+        Assert.Equal("Investigating...", vm.FormattedLatency);
+
+        _output.WriteLine($"✅ [단위 테스트 통과] 런북 무결성 및 적응형 레이턴시 포맷 검증 완료: {reflexLatency}");
     }
 }
 

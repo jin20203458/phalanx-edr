@@ -28,6 +28,9 @@ public static class Program
         builder.WebHost.ConfigureKestrel(options =>
         {
             options.ListenAnyIP(50051, o => o.Protocols = Microsoft.AspNetCore.Server.Kestrel.Core.HttpProtocols.Http2);
+            options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(5);
+            options.Limits.Http2.KeepAlivePingDelay = TimeSpan.FromSeconds(30);
+            options.Limits.Http2.KeepAlivePingTimeout = TimeSpan.FromSeconds(15);
         });
 
         // 싱글톤 UI 브리지 및 센서 프로세스 컨트롤러
@@ -75,7 +78,17 @@ public static class Program
 
         // 백그라운드 Kestrel gRPC 서버 동기 기동
         Console.WriteLine("[SERVER] gRPC 관제 서버가 0.0.0.0:50051 에서 백그라운드 구동 중입니다...");
-        webApp.Start();
+        try
+        {
+            webApp.Start();
+        }
+        catch (Exception ex) when (ex is System.IO.IOException || ex.InnerException is System.Net.Sockets.SocketException)
+        {
+            string msg = $"[포트 충돌 오류] gRPC 수신 포트(50051)가 이미 다른 프로세스(기존 Cockpit 또는 dotnet 등)에서 점유 중입니다.\n\n작업 관리자 또는 PowerShell(Get-NetTCPConnection -LocalPort 50051)에서 해당 프로세스를 종료한 후 다시 실행하십시오.\n\n세부 오류: {ex.Message}";
+            Console.Error.WriteLine($"\n❌ {msg}");
+            System.Windows.MessageBox.Show(msg, "Phalanx Cockpit - 포트 충돌", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            return;
+        }
 
         // WPF 애플리케이션 및 메인 윈도우 기동 (동기 STA 유지)
         var wpfApp = new App();

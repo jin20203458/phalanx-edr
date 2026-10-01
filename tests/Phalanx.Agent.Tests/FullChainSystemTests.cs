@@ -199,7 +199,15 @@ public class FullChainSystemTests
         Assert.False(node.IsAlive);
         Assert.Equal("vssadmin.exe", node.ImageName);
 
-        _output.WriteLine($"✅ [시나리오 1 통과] C++ 즉각 사살 ➔ C# 수사 바이패스 완벽 실증 ({sw.ElapsedMilliseconds}ms)");
+        // D) C++ 0.1ms 현장 사살 즉각 관제 포렌식 아카이브 및 UI 등록 검증
+        var incidents = archiveManager.GetAllIncidents();
+        Assert.Single(incidents);
+        Assert.Equal(9901u, incidents[0].TargetPid);
+        Assert.Equal("ACTION_KILL", incidents[0].VerdictAction);
+        Assert.Contains("T1490", incidents[0].MitreTactics);
+        Assert.Contains("현장 사살", incidents[0].SummaryTitle);
+
+        _output.WriteLine($"✅ [시나리오 1 통과] C++ 즉각 사살 ➔ C# 수사 바이패스 및 관제 즉각 등록 완벽 실증 ({sw.ElapsedMilliseconds}ms)");
     }
 
     /// <summary>
@@ -533,5 +541,73 @@ public class FullChainSystemTests
         Assert.True(idxKill < idxTerm, "사살 명령 후 TerminateProcess가 집행되어야 함");
 
         _output.WriteLine($"✅ [시나리오 3 통과] C++ 24μs 동결 ➔ 오프라인 23ms 수사 ➔ C++ 사살 풀체인 완벽 실증 ({sw.ElapsedMilliseconds}ms)");
+    }
+
+    [Fact]
+    public async Task TestPhalanxGrpcService_MultiClientConcurrentStreams_MaintainsConnectionState()
+    {
+        var treeManager = new ProcessTreeProjectionManager();
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, Array.Empty<IInvestigationTool>(), geminiApiKey: string.Empty);
+        var uiBridge = new CockpitUiBridge();
+
+        var grpcService = new PhalanxGrpcService(treeManager, agent, uiBridge);
+
+        bool lastReportedConnection = false;
+        uiBridge.SensorConnectionChanged += connected =>
+        {
+            lastReportedConnection = connected;
+        };
+
+        // Client 1 (C++ 센서) 연결
+        var req1 = new MockAsyncStreamReader<TelemetryBatch>();
+        var res1 = new MockServerStreamWriter<MitigationCommand>();
+        using var cts1 = new CancellationTokenSource();
+        var task1 = Task.Run(() => grpcService.StreamTelemetry(req1, res1, new MockServerCallContext(cts1.Token)));
+
+        for (int i = 0; i < 20 && !lastReportedConnection; i++)
+        {
+            await Task.Delay(25);
+        }
+        Assert.True(lastReportedConnection);
+        Assert.Equal(1, grpcService.ActiveConnectionCount);
+
+        // Client 2 (공격 시뮬레이터) 연결
+        var req2 = new MockAsyncStreamReader<TelemetryBatch>();
+        var res2 = new MockServerStreamWriter<MitigationCommand>();
+        using var cts2 = new CancellationTokenSource();
+        var task2 = Task.Run(() => grpcService.StreamTelemetry(req2, res2, new MockServerCallContext(cts2.Token)));
+
+        for (int i = 0; i < 20 && grpcService.ActiveConnectionCount < 2; i++)
+        {
+            await Task.Delay(25);
+        }
+        Assert.True(lastReportedConnection);
+        Assert.Equal(2, grpcService.ActiveConnectionCount);
+
+        // Client 2 연결 종료 (시뮬레이터 완료)
+        req2.Complete();
+        await task2;
+
+        // Client 1이 여전히 연결되어 있으므로 UI 상태는 true로 유지되어야 함 (자꾸 DISCONNECTED로 바뀌는 버그 차단)
+        Assert.True(lastReportedConnection);
+        Assert.Equal(1, grpcService.ActiveConnectionCount);
+
+        // 명령 전송 시 남아있는 Client 1로 정상 전달되어야 함
+        await grpcService.SendCommandAsync(new MitigationCommand
+        {
+            Action = MitigationCommand.Types.ActionType.ActionKill,
+            TargetPid = 9999,
+            Reason = "Multi-client routing test"
+        });
+        Assert.Single(res1.Written);
+
+        // Client 1 연결 종료
+        req1.Complete();
+        await task1;
+
+        // 모든 클라이언트가 종료되었을 때만 false로 전이
+        Assert.False(lastReportedConnection);
+        Assert.Equal(0, grpcService.ActiveConnectionCount);
     }
 }

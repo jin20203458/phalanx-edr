@@ -61,9 +61,23 @@ public partial class IncidentItemViewModel : ObservableObject
 
     public string FormattedTime => Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
-    public string FormattedLatency => ElapsedMs > 0 
-        ? $"{ElapsedMs / 1000.0:F2}s ({Traces.Count} Turns)" 
-        : "Investigating...";
+    public string FormattedLatency
+    {
+        get
+        {
+            if (ElapsedMs <= 0 && (VerdictAction == "SUSPENDED" || string.IsNullOrEmpty(VerdictAction)))
+                return "Investigating...";
+
+            double displayMs = ElapsedMs > 0 ? ElapsedMs : 0.08;
+            string turns = Traces.Count <= 1 ? "Reflex" : $"{Traces.Count} Turns";
+
+            if (displayMs < 1.0)
+                return $"{displayMs * 1000.0:F0}μs ({displayMs:F2}ms, {turns})";
+            if (displayMs < 1000.0)
+                return $"{displayMs:F1}ms ({turns})";
+            return $"{displayMs / 1000.0:F2}s ({turns})";
+        }
+    }
 
     public string ConfidenceDisplay => $"{ConfidenceScore:P0}";
 

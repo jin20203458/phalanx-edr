@@ -9,7 +9,14 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>Phalanx.Cockpit</RootNamespace>
     <StartupObject>Phalanx.Cockpit.Program</StartupObject>
+    <ApplicationIcon>Assets\phalanx.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\phalanx.ico" />
+    <Resource Include="Assets\phalanx.png" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />

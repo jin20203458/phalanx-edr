@@ -5,7 +5,10 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/EnterpriseTheme.xaml" />
+                <!-- Active Theme Palette (Index 0: Swapped dynamically by ThemeManager) -->
+                <ResourceDictionary Source="pack://application:,,,/Phalanx.Cockpit;component/Themes/Palettes/DarkPalette.xaml" />
+                <!-- Permanent Component Styles & ControlTemplates (Index 1) -->
+                <ResourceDictionary Source="pack://application:,,,/Phalanx.Cockpit;component/Themes/EnterpriseTheme.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

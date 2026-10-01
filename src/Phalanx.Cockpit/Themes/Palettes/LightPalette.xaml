@@ -1,0 +1,57 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ================================================================= -->
+    <!--  Phalanx Enterprise High-Contrast Light Palette (Linear / GitHub) -->
+    <!--  Layered Elevation: Canvas (#F1F5F9) -> Surface (#F8FAFC) -> Card (#FFFFFF) -->
+    <!-- ================================================================= -->
+    <SolidColorBrush x:Key="RootBackgroundBrush" Color="#F1F5F9" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#F8FAFC" />
+    <SolidColorBrush x:Key="CardBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="CardHoverBrush" Color="#F1F5F9" />
+    <SolidColorBrush x:Key="CardSelectedBrush" Color="#EBF3FC" />
+    <SolidColorBrush x:Key="BorderBrush" Color="#E2E8F0" />
+    <SolidColorBrush x:Key="BorderLightBrush" Color="#CBD5E1" />
+    <SolidColorBrush x:Key="BorderFocusedBrush" Color="#2563EB" />
+
+    <!-- Typography Brushes (High Contrast Slate Hierarchy - WCAG AAA Compliant) -->
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#0F172A" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#334155" />
+    <SolidColorBrush x:Key="TextMutedBrush" Color="#64748B" />
+    <SolidColorBrush x:Key="TextSubtleBrush" Color="#94A3B8" />
+
+    <!-- Semantic Severity Brushes (High Contrast Deep Tones on Pastel Backdrops) -->
+    <SolidColorBrush x:Key="SeverityCriticalBgBrush" Color="#FEF2F2" />
+    <SolidColorBrush x:Key="SeverityCriticalBorderBrush" Color="#FCA5A5" />
+    <SolidColorBrush x:Key="SeverityCriticalTextBrush" Color="#991B1B" />
+
+    <SolidColorBrush x:Key="SeverityBenignBgBrush" Color="#F0FDF4" />
+    <SolidColorBrush x:Key="SeverityBenignBorderBrush" Color="#86EFAC" />
+    <SolidColorBrush x:Key="SeverityBenignTextBrush" Color="#166534" />
+
+    <SolidColorBrush x:Key="SeveritySuspendedBgBrush" Color="#FFFBEB" />
+    <SolidColorBrush x:Key="SeveritySuspendedBorderBrush" Color="#FCD34D" />
+    <SolidColorBrush x:Key="SeveritySuspendedTextBrush" Color="#92400E" />
+
+    <!-- Micro-Dot & Monochromatic Badge Palette (Light Enterprise Tones) -->
+    <SolidColorBrush x:Key="BadgeBgBrush" Color="#F1F5F9" />
+    <SolidColorBrush x:Key="BadgeBorderBrush" Color="#CBD5E1" />
+    <SolidColorBrush x:Key="BadgeTextBrush" Color="#0F172A" />
+    <SolidColorBrush x:Key="DotCriticalBrush" Color="#DC2626" />
+    <SolidColorBrush x:Key="DotSuspendedBrush" Color="#D97706" />
+    <SolidColorBrush x:Key="DotBenignBrush" Color="#94A3B8" />
+    <SolidColorBrush x:Key="DotLiveBrush" Color="#059669" />
+
+    <!-- Brand & Accent Brushes (Obsidian Dark Mark & Vivid Enterprise Royal Blue) -->
+    <SolidColorBrush x:Key="AccentBrandBrush" Color="#0F172A" />
+    <SolidColorBrush x:Key="AccentBrandHoverBrush" Color="#1E293B" />
+    <SolidColorBrush x:Key="AccentBlueBrush" Color="#2563EB" />
+    <SolidColorBrush x:Key="AccentBlueHoverBrush" Color="#1D4ED8" />
+
+    <!-- Form, Input & Control Surface Brushes -->
+    <SolidColorBrush x:Key="InputBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="CodeBoxBackgroundBrush" Color="#F8FAFC" />
+    <SolidColorBrush x:Key="CodeBoxForegroundBrush" Color="#0F172A" />
+    <SolidColorBrush x:Key="CapsuleButtonBgBrush" Color="#FFFFFF" />
+</ResourceDictionary>

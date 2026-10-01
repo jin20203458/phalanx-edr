@@ -23,27 +23,46 @@ public static class WindowTitleBarBehavior
             "EnableDarkTitleBar",
             typeof(bool),
             typeof(WindowTitleBarBehavior),
-            new PropertyMetadata(false, OnEnableDarkTitleBarChanged));
+            new PropertyMetadata(false, OnEnableThemeTitleBarChanged));
 
     public static bool GetEnableDarkTitleBar(DependencyObject obj) => (bool)obj.GetValue(EnableDarkTitleBarProperty);
     public static void SetEnableDarkTitleBar(DependencyObject obj, bool value) => obj.SetValue(EnableDarkTitleBarProperty, value);
 
-    private static void OnEnableDarkTitleBarChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    private static void OnEnableThemeTitleBarChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is Window window && (bool)e.NewValue)
         {
             if (window.IsLoaded)
             {
-                ApplyDarkThemeTitleBar(window);
+                ApplyCurrentThemeTitleBar(window);
             }
             else
             {
-                window.SourceInitialized += (s, ev) => ApplyDarkThemeTitleBar(window);
+                window.SourceInitialized += (s, ev) => ApplyCurrentThemeTitleBar(window);
             }
         }
     }
 
-    public static void ApplyDarkThemeTitleBar(Window window)
+    /// <summary>
+    /// 현재 활성화된 테마 상태(ThemeManager.IsDark)에 맞춰 DWM 타이틀바 모드 적용
+    /// </summary>
+    public static void ApplyCurrentThemeTitleBar(Window window)
+    {
+        try
+        {
+            bool isDark = Services.ThemeManager.Instance.IsDark;
+            UpdateImmersiveDarkMode(window, isDark);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[WindowTitleBarBehavior] ApplyCurrentThemeTitleBar 실패: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 지정된 윈도우의 DWM 심층 다크 모드 속성 동적 갱신 (다크: 1, 라이트: 0)
+    /// </summary>
+    public static void UpdateImmersiveDarkMode(Window window, bool isDark)
     {
         try
         {
@@ -52,8 +71,8 @@ public static class WindowTitleBarBehavior
 
             if (hwnd == IntPtr.Zero) return;
 
-            // 창 전체 심층 다크 모드 활성화 (Alt+Space 시스템 메뉴, DWM 창 그림자, 스냅 가이드 다크 렌더링)
-            int useImmersiveDarkMode = 1;
+            // 창 전체 심층 다크/라이트 모드 토글 (Alt+Space 시스템 메뉴, DWM 창 그림자, 스냅 가이드 렌더링)
+            int useImmersiveDarkMode = isDark ? 1 : 0;
             if (DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useImmersiveDarkMode, sizeof(int)) != 0)
             {
                 DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, ref useImmersiveDarkMode, sizeof(int));
@@ -61,7 +80,12 @@ public static class WindowTitleBarBehavior
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[WindowTitleBarBehavior] DWM 다크 모드 적용 실패: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[WindowTitleBarBehavior] DWM 모드 갱신 실패: {ex.Message}");
         }
+    }
+
+    public static void ApplyDarkThemeTitleBar(Window window)
+    {
+        ApplyCurrentThemeTitleBar(window);
     }
 }

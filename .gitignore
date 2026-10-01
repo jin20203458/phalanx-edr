@@ -21,6 +21,7 @@ ARM64/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+*.log
 
 # Visual Studio Code
 .vscode/

@@ -58,6 +58,11 @@ public class CriticalEnterpriseAttackHarnessTests
     [Trait("Category", "Unit")]
     public async Task TestScenario1_LolbinProxyExecution_WithUnsignedDllAndUncatalogedIp()
     {
+        await RunScenario1Async();
+    }
+
+    public async Task<InvestigationResult> RunScenario1Async()
+    {
         var (tree, archive, agent) = CreateTestHarness();
         string mockDll = @"C:\Users\user\AppData\Local\Temp\netupdate.dll";
 
@@ -97,11 +102,13 @@ public class CriticalEnterpriseAttackHarnessTests
 
             var res = await agent.InvestigateAsync(target, cmd => Task.CompletedTask);
 
-            _output.WriteLine($"[시나리오 1 결과] 판결: {res.VerdictAction} | 제목: {res.SummaryTitle} | TTP: {string.Join(", ", res.MitreTactics)}");
+            _output.WriteLine($"[시나리오 1 결과] 판결: {res.VerdictAction} | 턴 수: {res.Traces.Count} | 제목: {res.SummaryTitle} | TTP: {string.Join(", ", res.MitreTactics)}");
 
             Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, res.VerdictAction);
             Assert.Contains(res.Traces, t => t.ActionTool == "FileInspectionTool");
             Assert.Contains("T1218.011", res.MitreTactics);
+
+            return res;
         }
         finally
         {
@@ -118,6 +125,11 @@ public class CriticalEnterpriseAttackHarnessTests
     [Fact]
     [Trait("Category", "Unit")]
     public async Task TestScenario2_ReflectiveDllInjection_IntoLegitimateSignedSvchost()
+    {
+        await RunScenario2Async();
+    }
+
+    public async Task<InvestigationResult> RunScenario2Async()
     {
         var (tree, archive, agent) = CreateTestHarness();
         uint targetPid = 3300;
@@ -155,12 +167,14 @@ public class CriticalEnterpriseAttackHarnessTests
 
             var res = await agent.InvestigateAsync(target, cmd => Task.CompletedTask);
 
-            _output.WriteLine($"[시나리오 2 결과] 판결: {res.VerdictAction} | 제목: {res.SummaryTitle} | TTP: {string.Join(", ", res.MitreTactics)}");
+            _output.WriteLine($"[시나리오 2 결과] 판결: {res.VerdictAction} | 턴 수: {res.Traces.Count} | 제목: {res.SummaryTitle} | TTP: {string.Join(", ", res.MitreTactics)}");
 
             Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, res.VerdictAction);
             Assert.Contains(res.Traces, t => t.ActionTool == "ProcessMemoryScanTool");
             Assert.Contains("T1055", res.MitreTactics);
             Assert.Equal("185.220.101.5", res.BlockedIp);
+
+            return res;
         }
         finally
         {
@@ -176,6 +190,11 @@ public class CriticalEnterpriseAttackHarnessTests
     [Fact]
     [Trait("Category", "Unit")]
     public async Task TestScenario3_DisguisedExtensionExecutable_SteganographyDropper()
+    {
+        await RunScenario3Async();
+    }
+
+    public async Task<InvestigationResult> RunScenario3Async()
     {
         var (tree, archive, agent) = CreateTestHarness();
         string mockDisguisedPath = @"C:\Users\Public\banner.png";
@@ -219,11 +238,13 @@ public class CriticalEnterpriseAttackHarnessTests
 
             var res = await agent.InvestigateAsync(target, cmd => Task.CompletedTask);
 
-            _output.WriteLine($"[시나리오 3 결과] 판결: {res.VerdictAction} | 제목: {res.SummaryTitle} | TTP: {string.Join(", ", res.MitreTactics)}");
+            _output.WriteLine($"[시나리오 3 결과] 판결: {res.VerdictAction} | 턴 수: {res.Traces.Count} | 제목: {res.SummaryTitle} | TTP: {string.Join(", ", res.MitreTactics)}");
 
             Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, res.VerdictAction);
             Assert.Contains(res.Traces, t => t.ActionTool == "FileInspectionTool");
             Assert.Contains("T1036.008", res.MitreTactics);
+
+            return res;
         }
         finally
         {
@@ -239,6 +260,11 @@ public class CriticalEnterpriseAttackHarnessTests
     [Fact]
     [Trait("Category", "Unit")]
     public async Task TestScenario4_MasqueradingSystemBinaryDropper_InTempDirectory()
+    {
+        await RunScenario4Async();
+    }
+
+    public async Task<InvestigationResult> RunScenario4Async()
     {
         var (tree, archive, agent) = CreateTestHarness();
         string mockCsrssPath = @"C:\Windows\Temp\csrss.exe";
@@ -282,12 +308,14 @@ public class CriticalEnterpriseAttackHarnessTests
 
             var res = await agent.InvestigateAsync(target, cmd => Task.CompletedTask);
 
-            _output.WriteLine($"[시나리오 4 결과] 판결: {res.VerdictAction} | 제목: {res.SummaryTitle} | TTP: {string.Join(", ", res.MitreTactics)}");
+            _output.WriteLine($"[시나리오 4 결과] 판결: {res.VerdictAction} | 턴 수: {res.Traces.Count} | 제목: {res.SummaryTitle} | TTP: {string.Join(", ", res.MitreTactics)}");
 
             Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, res.VerdictAction);
             Assert.Contains(res.Traces, t => t.ActionTool == "FileInspectionTool");
             Assert.Contains("T1036.005", res.MitreTactics);
             Assert.Equal("198.51.100.99", res.BlockedIp);
+
+            return res;
         }
         finally
         {
@@ -303,6 +331,11 @@ public class CriticalEnterpriseAttackHarnessTests
     [Fact]
     [Trait("Category", "Unit")]
     public async Task TestScenario5_LegitimateInternalAdminActivity_FalsePositiveResistance()
+    {
+        await RunScenario5Async();
+    }
+
+    public async Task<InvestigationResult> RunScenario5Async()
     {
         var (tree, archive, agent) = CreateTestHarness();
 
@@ -329,10 +362,12 @@ public class CriticalEnterpriseAttackHarnessTests
 
         var res = await agent.InvestigateAsync(target, cmd => Task.CompletedTask);
 
-        _output.WriteLine($"[시나리오 5 결과] 판결: {res.VerdictAction} | 제목: {res.SummaryTitle} | 위협 확신도: {res.Confidence:P0}");
+        _output.WriteLine($"[시나리오 5 결과] 판결: {res.VerdictAction} | 턴 수: {res.Traces.Count} | 제목: {res.SummaryTitle} | 위협 확신도: {res.Confidence:P0}");
 
         Assert.Equal(MitigationCommand.Types.ActionType.ActionResume, res.VerdictAction);
         Assert.Empty(res.BlockedIp ?? string.Empty);
+
+        return res;
     }
 
     /// <summary>
@@ -345,11 +380,11 @@ public class CriticalEnterpriseAttackHarnessTests
     {
         var sw = Stopwatch.StartNew();
 
-        await TestScenario1_LolbinProxyExecution_WithUnsignedDllAndUncatalogedIp();
-        await TestScenario2_ReflectiveDllInjection_IntoLegitimateSignedSvchost();
-        await TestScenario3_DisguisedExtensionExecutable_SteganographyDropper();
-        await TestScenario4_MasqueradingSystemBinaryDropper_InTempDirectory();
-        await TestScenario5_LegitimateInternalAdminActivity_FalsePositiveResistance();
+        var res1 = await RunScenario1Async();
+        var res2 = await RunScenario2Async();
+        var res3 = await RunScenario3Async();
+        var res4 = await RunScenario4Async();
+        var res5 = await RunScenario5Async();
 
         sw.Stop();
 
@@ -368,13 +403,63 @@ public class CriticalEnterpriseAttackHarnessTests
             PassedScenarios = 5,
             PassRate = 1.0,
             TotalElapsedMs = sw.ElapsedMilliseconds,
-            Scenarios = new[]
+            Scenarios = new object[]
             {
-                new { Id = 1, Name = "LOLBAS Proxy Execution with Unsigned DLL (T1218.011)", Expected = "ACTION_KILL", Actual = "ACTION_KILL", Status = "PASS" },
-                new { Id = 2, Name = "Reflective DLL Memory Injection in Signed svchost (T1055.012)", Expected = "ACTION_KILL", Actual = "ACTION_KILL", Status = "PASS" },
-                new { Id = 3, Name = "Disguised Extension Executable Steganography (T1036.008)", Expected = "ACTION_KILL", Actual = "ACTION_KILL", Status = "PASS" },
-                new { Id = 4, Name = "Masquerading System Binary Dropper in Temp (T1036.005)", Expected = "ACTION_KILL", Actual = "ACTION_KILL", Status = "PASS" },
-                new { Id = 5, Name = "Legitimate Internal Admin Inventory (FP Prevention)", Expected = "ACTION_RESUME", Actual = "ACTION_RESUME", Status = "PASS" }
+                new {
+                    Id = 1,
+                    Name = "LOLBAS Proxy Execution with Unsigned DLL (T1218.011)",
+                    Expected = "ACTION_KILL",
+                    Actual = res1.VerdictAction.ToString(),
+                    Status = res1.VerdictAction == MitigationCommand.Types.ActionType.ActionKill ? "PASS" : "FAIL",
+                    TotalTurns = res1.Traces.Count,
+                    ElapsedMs = res1.Elapsed.TotalMilliseconds,
+                    ToolSequence = string.Join(" ➔ ", res1.Traces.Select(t => t.ActionTool)),
+                    Steps = res1.Traces.Select(t => new { Step = t.StepNumber, Tool = t.ActionTool, ElapsedMs = t.ElapsedMs, Observation = t.Observation.Length > 90 ? t.Observation[..90] + "..." : t.Observation }).ToList()
+                },
+                new {
+                    Id = 2,
+                    Name = "Reflective DLL Memory Injection in Signed svchost (T1055.012)",
+                    Expected = "ACTION_KILL",
+                    Actual = res2.VerdictAction.ToString(),
+                    Status = res2.VerdictAction == MitigationCommand.Types.ActionType.ActionKill ? "PASS" : "FAIL",
+                    TotalTurns = res2.Traces.Count,
+                    ElapsedMs = res2.Elapsed.TotalMilliseconds,
+                    ToolSequence = string.Join(" ➔ ", res2.Traces.Select(t => t.ActionTool)),
+                    Steps = res2.Traces.Select(t => new { Step = t.StepNumber, Tool = t.ActionTool, ElapsedMs = t.ElapsedMs, Observation = t.Observation.Length > 90 ? t.Observation[..90] + "..." : t.Observation }).ToList()
+                },
+                new {
+                    Id = 3,
+                    Name = "Disguised Extension Executable Steganography (T1036.008)",
+                    Expected = "ACTION_KILL",
+                    Actual = res3.VerdictAction.ToString(),
+                    Status = res3.VerdictAction == MitigationCommand.Types.ActionType.ActionKill ? "PASS" : "FAIL",
+                    TotalTurns = res3.Traces.Count,
+                    ElapsedMs = res3.Elapsed.TotalMilliseconds,
+                    ToolSequence = string.Join(" ➔ ", res3.Traces.Select(t => t.ActionTool)),
+                    Steps = res3.Traces.Select(t => new { Step = t.StepNumber, Tool = t.ActionTool, ElapsedMs = t.ElapsedMs, Observation = t.Observation.Length > 90 ? t.Observation[..90] + "..." : t.Observation }).ToList()
+                },
+                new {
+                    Id = 4,
+                    Name = "Masquerading System Binary Dropper in Temp (T1036.005)",
+                    Expected = "ACTION_KILL",
+                    Actual = res4.VerdictAction.ToString(),
+                    Status = res4.VerdictAction == MitigationCommand.Types.ActionType.ActionKill ? "PASS" : "FAIL",
+                    TotalTurns = res4.Traces.Count,
+                    ElapsedMs = res4.Elapsed.TotalMilliseconds,
+                    ToolSequence = string.Join(" ➔ ", res4.Traces.Select(t => t.ActionTool)),
+                    Steps = res4.Traces.Select(t => new { Step = t.StepNumber, Tool = t.ActionTool, ElapsedMs = t.ElapsedMs, Observation = t.Observation.Length > 90 ? t.Observation[..90] + "..." : t.Observation }).ToList()
+                },
+                new {
+                    Id = 5,
+                    Name = "Legitimate Internal Admin Inventory (FP Prevention)",
+                    Expected = "ACTION_RESUME",
+                    Actual = res5.VerdictAction.ToString(),
+                    Status = res5.VerdictAction == MitigationCommand.Types.ActionType.ActionResume ? "PASS" : "FAIL",
+                    TotalTurns = res5.Traces.Count,
+                    ElapsedMs = res5.Elapsed.TotalMilliseconds,
+                    ToolSequence = string.Join(" ➔ ", res5.Traces.Select(t => t.ActionTool)),
+                    Steps = res5.Traces.Select(t => new { Step = t.StepNumber, Tool = t.ActionTool, ElapsedMs = t.ElapsedMs, Observation = t.Observation.Length > 90 ? t.Observation[..90] + "..." : t.Observation }).ToList()
+                }
             }
         };
 

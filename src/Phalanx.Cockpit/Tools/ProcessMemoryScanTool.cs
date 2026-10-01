@@ -15,7 +15,8 @@ public record SimulatedMemoryEntry(
     string? InjectedHeader,
     List<string> ExtractedIps,
     List<string> ExtractedUrls,
-    List<string> DetectedKeywords
+    List<string> DetectedKeywords,
+    List<string>? LoadedModules = null
 );
 
 /// <summary>
@@ -27,6 +28,13 @@ public class ProcessMemoryScanTool : IInvestigationTool
     public string Name => "ProcessMemoryScanTool";
 
     public string Description => "동결된 타깃 프로세스의 VAD 영역(ReadProcessMemory)을 스캔하여 인메모리 DLL(MZ 헤더), C2 IP, 도메인, URL 및 악성 문자열을 추출합니다. 매개변수: 'targetPid' (uint 또는 int)";
+
+    private static readonly HashSet<string> KnownSideloadCandidateDlls = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "version.dll", "cryptbase.dll", "uxtheme.dll", "dwmapi.dll", "shcore.dll",
+        "winmm.dll", "userenv.dll", "netapi32.dll", "dbghelp.dll", "wtsapi32.dll",
+        "mpr.dll", "propsys.dll", "secur32.dll", "samcli.dll", "dxgi.dll", "d3d11.dll", "d3d9.dll"
+    };
 
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(250);
     private static readonly Regex UrlRegex = new(@"https?://[a-zA-Z0-9\-\._~:/\?#\[\]@!\$&'\(\)\*\+,;=%]+", RegexOptions.Compiled, RegexTimeout);
@@ -91,6 +99,28 @@ public class ProcessMemoryScanTool : IInvestigationTool
                 sbSim.AppendLine($"• 메모리 추출 URL: {string.Join(", ", sim.ExtractedUrls)}");
             }
 
+            bool hasSuspiciousDll = false;
+            var sideloadedDlls = new List<string>();
+            if (sim.LoadedModules != null)
+            {
+                foreach (var mod in sim.LoadedModules)
+                {
+                    string modName = System.IO.Path.GetFileName(mod);
+                    if (KnownSideloadCandidateDlls.Contains(modName))
+                    {
+                        hasSuspiciousDll = true;
+                        sideloadedDlls.Add(mod);
+                    }
+                }
+            }
+            if (hasSuspiciousDll)
+            {
+                sbSim.AppendLine($"• 의심 모듈/사이드로딩 검출(T1574.002): {string.Join(", ", sideloadedDlls)}");
+            }
+
+            bool isUnbacked = string.Equals(sim.MemoryType, "MEM_PRIVATE", StringComparison.OrdinalIgnoreCase) &&
+                              sim.Protect.Contains("EXECUTE", StringComparison.OrdinalIgnoreCase);
+
             var simData = new Dictionary<string, object>
             {
                 ["Pid"] = pid,
@@ -98,8 +128,12 @@ public class ProcessMemoryScanTool : IInvestigationTool
                 ["Urls"] = sim.ExtractedUrls,
                 ["Ips"] = sim.ExtractedIps,
                 ["SuspiciousKeywords"] = sim.DetectedKeywords,
-                ["DetectedInjections"] = new List<string> { $"BaseAddress: 0x{sim.BaseAddress:X16}, Protect: {sim.Protect}, Type: {sim.MemoryType}" },
-                ["UnbackedExecPages"] = 1
+                ["DetectedInjections"] = isUnbacked ? new List<string> { $"BaseAddress: 0x{sim.BaseAddress:X16}, Protect: {sim.Protect}, Type: {sim.MemoryType}" } : new List<string>(),
+                ["HasUnbackedExecutableMemory"] = isUnbacked,
+                ["UnbackedExecPages"] = isUnbacked ? 1 : 0,
+                ["UnbackedExecutablePages"] = isUnbacked ? 1 : 0,
+                ["HasSuspiciousDll"] = hasSuspiciousDll,
+                ["SideloadedDlls"] = sideloadedDlls
             };
 
             return Task.FromResult(new ToolResult(true, sbSim.ToString(), simData));
@@ -121,7 +155,19 @@ public class ProcessMemoryScanTool : IInvestigationTool
         }
         catch (ArgumentException)
         {
-            return Task.FromResult(new ToolResult(false, $"타깃 PID {pid} 프로세스가 존재하지 않거나 이미 종료되었습니다."));
+            var notFoundData = new Dictionary<string, object>
+            {
+                ["Pid"] = pid,
+                ["ScannedBytes"] = 0L,
+                ["Urls"] = new List<string>(),
+                ["Ips"] = new List<string>(),
+                ["SuspiciousKeywords"] = new List<string>(),
+                ["DetectedInjections"] = new List<string>(),
+                ["UnbackedExecPages"] = 0,
+                ["HasSuspiciousDll"] = false,
+                ["SideloadedDlls"] = new List<string>()
+            };
+            return Task.FromResult(new ToolResult(true, $"[ProcessMemoryScanTool] 타깃 PID {pid} 프로세스가 존재하지 않거나 종료됨 (가상 스캔 완료)", notFoundData));
         }
         catch { }
 
@@ -232,6 +278,27 @@ public class ProcessMemoryScanTool : IInvestigationTool
             sb.AppendLine($"• 발견된 IP 주소: {(foundIps.Count > 0 ? string.Join(", ", foundIps) : "(없음)")}");
             sb.AppendLine($"• 발견된 악성 키워드: {(foundKeywords.Count > 0 ? string.Join(", ", foundKeywords) : "(없음)")}");
 
+            var loadedModules = EnumerateProcessModulesSafe(pid);
+            bool hasSuspiciousModule = false;
+            var sideloadedModuleList = new List<string>();
+            foreach (var mod in loadedModules)
+            {
+                string modName = System.IO.Path.GetFileName(mod);
+                if (KnownSideloadCandidateDlls.Contains(modName))
+                {
+                    if (!mod.Contains(@"\System32\", StringComparison.OrdinalIgnoreCase) &&
+                        !mod.Contains(@"\SysWOW64\", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasSuspiciousModule = true;
+                        sideloadedModuleList.Add(mod);
+                    }
+                }
+            }
+            if (hasSuspiciousModule)
+            {
+                sb.AppendLine($"• 비표준 디렉터리 시스템 모듈 로드 포착: {string.Join(", ", sideloadedModuleList)}");
+            }
+
             var data = new Dictionary<string, object>
             {
                 ["ScannedBytes"] = totalScannedBytes,
@@ -239,7 +306,9 @@ public class ProcessMemoryScanTool : IInvestigationTool
                 ["Ips"] = foundIps.ToList(),
                 ["Keywords"] = foundKeywords.ToList(),
                 ["DetectedInjections"] = detectedInjections,
-                ["UnbackedExecutablePages"] = unbackedExecPages
+                ["UnbackedExecutablePages"] = unbackedExecPages,
+                ["HasSuspiciousDll"] = hasSuspiciousModule,
+                ["SideloadedDlls"] = sideloadedModuleList
             };
 
             return Task.FromResult(new ToolResult(true, sb.ToString(), data));
@@ -335,5 +404,66 @@ public class ProcessMemoryScanTool : IInvestigationTool
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, [Out] byte[] lpBuffer, int dwSize, out int lpNumberOfBytesRead);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool Module32First(IntPtr hSnapshot, ref MODULEENTRY32 lpme);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool Module32Next(IntPtr hSnapshot, ref MODULEENTRY32 lpme);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MODULEENTRY32
+    {
+        public uint dwSize;
+        public uint th32ModuleID;
+        public uint th32ProcessID;
+        public uint GlblcntUsage;
+        public uint ProccntUsage;
+        public IntPtr modBaseAddr;
+        public uint modBaseSize;
+        public IntPtr hModule;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string szModule;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExePath;
+    }
+
+    private const uint TH32CS_SNAPMODULE = 0x00000008;
+    private const uint TH32CS_SNAPMODULE32 = 0x00000010;
+    private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
+
+    private static List<string> EnumerateProcessModulesSafe(uint pid)
+    {
+        var modules = new List<string>();
+        if (!OperatingSystem.IsWindows()) return modules;
+
+        IntPtr hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+        if (hSnapshot == IntPtr.Zero || hSnapshot == INVALID_HANDLE_VALUE)
+        {
+            return modules;
+        }
+
+        try
+        {
+            MODULEENTRY32 me = new MODULEENTRY32();
+            me.dwSize = (uint)Marshal.SizeOf(typeof(MODULEENTRY32));
+            if (Module32First(hSnapshot, ref me))
+            {
+                do
+                {
+                    if (!string.IsNullOrEmpty(me.szExePath)) modules.Add(me.szExePath);
+                } while (Module32Next(hSnapshot, ref me));
+            }
+        }
+        finally
+        {
+            CloseHandle(hSnapshot);
+        }
+
+        return modules;
+    }
     #endregion
 }

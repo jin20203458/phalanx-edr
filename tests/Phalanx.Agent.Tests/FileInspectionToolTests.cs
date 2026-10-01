@@ -455,4 +455,100 @@ public class FileInspectionToolTests
             FileInspectionTool.ClearSimulatedFiles();
         }
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_SideloadCandidateDirectory_Detected()
+    {
+        // Arrange: C:\Users\Public\OneDrive\ 경로에 서명된 실행 파일과 무서명 version.dll 공존
+        string baseDir = @"C:\Users\Public\OneDrive";
+        string exePath = Path.Combine(baseDir, "OneDriveUpdate.exe");
+        string dllPath = Path.Combine(baseDir, "version.dll");
+
+        var exeEntry = FileInspectionTool.CreateSimulatedEntry(
+            filePath: exePath,
+            exists: true,
+            fileSizeBytes: 204800L,
+            sha256: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            entropy: 5.8,
+            isSigned: true,
+            signerSubject: "CN=Microsoft Corporation, O=Microsoft Corporation",
+            signatureStatus: "Valid (Signed by Microsoft)"
+        );
+
+        var dllEntry = FileInspectionTool.CreateSimulatedEntry(
+            filePath: dllPath,
+            exists: true,
+            fileSizeBytes: 65536L,
+            sha256: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+            entropy: 5.6,
+            isSigned: false,
+            signerSubject: string.Empty,
+            signatureStatus: "NotSigned (TRUST_E_NOSIGNATURE)"
+        );
+
+        FileInspectionTool.RegisterSimulatedFile(exePath, exeEntry);
+        FileInspectionTool.RegisterSimulatedFile(dllPath, dllEntry);
+
+        try
+        {
+            // Act
+            var res = await _tool.ExecuteAsync(new() { ["filePath"] = exePath });
+
+            // Assert
+            Assert.True(res.Success);
+            Assert.NotNull(res.Data);
+            Assert.True((bool)res.Data["IsDllSideloading"]);
+            Assert.True((int)res.Data["AnomalyScore"] >= 50);
+
+            var sideloaded = (List<string>)res.Data["SideloadedDlls"];
+            Assert.Contains(sideloaded, s => s.EndsWith("version.dll", StringComparison.OrdinalIgnoreCase));
+
+            string reason = (string)res.Data["DiagnosticReason"];
+            Assert.Contains("T1574.002", reason);
+        }
+        finally
+        {
+            FileInspectionTool.ClearSimulatedFiles();
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_CleanDirectory_NoSideloading()
+    {
+        // Arrange: Sideloading 대상 시스템 DLL이 없는 클린 디렉터리
+        string baseDir = @"C:\Users\Public\NormalApp";
+        string exePath = Path.Combine(baseDir, "app.exe");
+
+        var exeEntry = FileInspectionTool.CreateSimulatedEntry(
+            filePath: exePath,
+            exists: true,
+            fileSizeBytes: 102400L,
+            sha256: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+            entropy: 5.1,
+            isSigned: true,
+            signerSubject: "CN=Vendor, O=Vendor",
+            signatureStatus: "Valid"
+        );
+
+        FileInspectionTool.RegisterSimulatedFile(exePath, exeEntry);
+
+        try
+        {
+            // Act
+            var res = await _tool.ExecuteAsync(new() { ["filePath"] = exePath });
+
+            // Assert
+            Assert.True(res.Success);
+            Assert.NotNull(res.Data);
+            Assert.False((bool)res.Data["IsDllSideloading"]);
+            Assert.Empty((List<string>)res.Data["SideloadedDlls"]);
+        }
+        finally
+        {
+            FileInspectionTool.ClearSimulatedFiles();
+        }
+    }
 }
+

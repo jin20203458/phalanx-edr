@@ -597,6 +597,18 @@ public class AutonomousHunterAgent
                         caseInsensitiveArgs["registryKey"] = extractedKey;
                     }
                 }
+                else if (actionTool.Equals("FileInspectionTool", StringComparison.OrdinalIgnoreCase) && !caseInsensitiveArgs.ContainsKey("filePath"))
+                {
+                    string? candidatePath = ExtractTargetFilePath(decodedScript, targetNode.CommandLine);
+                    if (!string.IsNullOrEmpty(candidatePath))
+                    {
+                        caseInsensitiveArgs["filePath"] = candidatePath;
+                    }
+                    else if (targetNode.ImageName.Contains('\\'))
+                    {
+                        caseInsensitiveArgs["filePath"] = targetNode.ImageName;
+                    }
+                }
 
                 try
                 {
@@ -919,9 +931,10 @@ public class AutonomousHunterAgent
             }
         }
 
-        // --- ReAct Step 1.5: 의심 파일 정밀 검증 (FileInspectionTool: 디지털 서명, 시스템 경로 위장, PE 헤더) ---
-        string? targetFilePath = ExtractTargetFilePath(decodedScript, cmd);
+        // --- ReAct Step 1.5: 의심 파일 정밀 검증 (FileInspectionTool: 디지털 서명, 시스템 경로 위장, PE 헤더, DLL 사이드로딩) ---
+        string? targetFilePath = ExtractTargetFilePath(decodedScript, cmd) ?? (targetNode.ImageName.Contains('\\') ? targetNode.ImageName : null);
         bool isPathMasqueraded = false;
+        bool isDllSideloading = false;
         int fileAnomalyScore = 0;
 
         if (!string.IsNullOrWhiteSpace(targetFilePath) && _tools.TryGetValue("FileInspectionTool", out var fileTool))
@@ -944,6 +957,7 @@ public class AutonomousHunterAgent
             if (resFile.Data != null)
             {
                 if (resFile.Data.TryGetValue("IsPathMasqueraded", out var mObj) && mObj is bool b) isPathMasqueraded = b;
+                if (resFile.Data.TryGetValue("IsDllSideloading", out var dObj) && dObj is bool bDll) isDllSideloading = bDll;
                 if (resFile.Data.TryGetValue("AnomalyScore", out var scObj) && scObj is int aSc) fileAnomalyScore = aSc;
             }
         }
@@ -985,7 +999,7 @@ public class AutonomousHunterAgent
             }
         }
 
-        // --- ReAct Step 2: 타깃 RAM 메모리 스캔 (C2 URL/IP 탐색) ---
+        // --- ReAct Step 2: 타깃 RAM 메모리 스캔 (C2 URL/IP 탐색 및 PEB 로드 모듈 검사) ---
         if (_tools.TryGetValue("ProcessMemoryScanTool", out var memTool))
         {
             var thought2 = $"[Step {step} 추론] 동결된 프로세스의 메모리 영역을 P/Invoke VirtualQueryEx 및 ReadProcessMemory로 스캔하여 은닉된 통신 C2 IP 및 URL을 탐색합니다.";
@@ -1003,9 +1017,16 @@ public class AutonomousHunterAgent
             traces.Add(trace2);
             OnReActStepProgress?.Invoke(incidentId, trace2);
 
-            if (res2.Data != null && res2.Data.TryGetValue("Ips", out var memIps) && memIps is List<string> mList && mList.Count > 0)
+            if (res2.Data != null)
             {
-                extractedIp ??= mList[0];
+                if (res2.Data.TryGetValue("Ips", out var memIps) && memIps is List<string> mList && mList.Count > 0)
+                {
+                    extractedIp ??= mList[0];
+                }
+                if (res2.Data.TryGetValue("HasSuspiciousDll", out var hObj) && hObj is bool bSusp && bSusp)
+                {
+                    isDllSideloading = true;
+                }
             }
         }
 
@@ -1146,6 +1167,12 @@ public class AutonomousHunterAgent
             riskScore += 40;
         }
 
+        // 3-6. DLL 사이드로딩(T1574.002) 하이재킹 (+50)
+        if (isDllSideloading)
+        {
+            riskScore += 50;
+        }
+
         // 4. 랜섬웨어 파괴 명령 패턴: 시스템 복구 무력화 (+80 즉각 사살 트리거)
         if (IsRansomwareDestructiveCommand(targetNode.CommandLine, targetNode.ImageName))
         {
@@ -1168,17 +1195,19 @@ public class AutonomousHunterAgent
         if (isMalicious)
         {
             verdictAction = MitigationCommand.Types.ActionType.ActionKill;
-            summaryTitle = isMasquerading
-                ? "시스템 핵심 바이너리 경로 위장(Masquerading T1036.005) 및 C2 침투 탐지"
-                : isDisguisedExe
-                    ? "비실행형 확장자 위장(Disguised PE T1036.008) 실행 바이너리 침투 탐지"
-                    : (isRegistryIndirect || isComHijack)
-                        ? "레지스트리 간접 실행(Squiblydoo T1218.010) 및 COM 하이재킹 침투 탐지"
-                        : isLolbinProxy
-                            ? "LOLBAS 신뢰 시스템 바이너리 프록시 악용(Proxy Execution T1218) 탐지"
-                            : hasUnbackedMemory
-                                ? "프로세스 메모리 인젝션(Unbacked Executable Memory T1055) 침투 탐지"
-                                : "악성 오피스 매크로/LOLBAS를 통한 파일리스 C2 다운로더 침투 시도";
+            summaryTitle = isDllSideloading
+                ? "DLL 사이드로딩(T1574.002) 하이재킹 및 비인가 무서명 라이브러리 은닉 로드 탐지"
+                : isMasquerading
+                    ? "시스템 핵심 바이너리 경로 위장(Masquerading T1036.005) 및 C2 침투 탐지"
+                    : isDisguisedExe
+                        ? "비실행형 확장자 위장(Disguised PE T1036.008) 실행 바이너리 침투 탐지"
+                        : (isRegistryIndirect || isComHijack)
+                            ? "레지스트리 간접 실행(Squiblydoo T1218.010) 및 COM 하이재킹 침투 탐지"
+                            : isLolbinProxy
+                                ? "LOLBAS 신뢰 시스템 바이너리 프록시 악용(Proxy Execution T1218) 탐지"
+                                : hasUnbackedMemory
+                                    ? "프로세스 메모리 인젝션(Unbacked Executable Memory T1055) 침투 탐지"
+                                    : "악성 오피스 매크로/LOLBAS를 통한 파일리스 C2 다운로더 침투 시도";
             narrative = $"{DateTime.Now:HH시 mm분}, 시스템에서 실행된 '{rootCause}' 프로세스가 비정상 자식 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 은밀히 기동했습니다. " +
                         $"Phalanx 센서가 원자적으로 선제 동결을 집행하였으며, AI 에이전트의 심층 족보 역추적 및 메모리/페이로드 분석 결과 " +
                         $"{(extractedIp != null ? $"해외 악성 C2({extractedIp})" : "원격 C2 인프라")}와의 통신 및 파일리스 공격 시도가 확인되었습니다. " +
@@ -1186,17 +1215,23 @@ public class AutonomousHunterAgent
 
             if (mitreList.Count == 0)
             {
-                mitreList = isMasquerading
-                    ? new List<string> { "T1036.005", "T1059.001", "T1071.001" }
-                    : isDisguisedExe
-                        ? new List<string> { "T1036.008", "T1027", "T1071.001" }
-                        : (isRegistryIndirect || isComHijack)
-                            ? new List<string> { "T1218.010", "T1546.015", "T1071.001" }
-                            : isLolbinProxy
-                                ? new List<string> { "T1218.011", "T1071.001" }
-                                : hasUnbackedMemory
-                                    ? new List<string> { "T1055", "T1071.001" }
-                                    : new List<string> { "T1566.001", "T1059.001", "T1071.001" };
+                mitreList = isDllSideloading
+                    ? new List<string> { "T1574.002", "T1059.001", "T1071.001" }
+                    : isMasquerading
+                        ? new List<string> { "T1036.005", "T1059.001", "T1071.001" }
+                        : isDisguisedExe
+                            ? new List<string> { "T1036.008", "T1027", "T1071.001" }
+                            : (isRegistryIndirect || isComHijack)
+                                ? new List<string> { "T1218.010", "T1546.015", "T1071.001" }
+                                : isLolbinProxy
+                                    ? new List<string> { "T1218.011", "T1071.001" }
+                                    : hasUnbackedMemory
+                                        ? new List<string> { "T1055", "T1071.001" }
+                                        : new List<string> { "T1566.001", "T1059.001", "T1071.001" };
+            }
+            else if (isDllSideloading && !mitreList.Contains("T1574.002"))
+            {
+                mitreList.Insert(0, "T1574.002");
             }
         }
         else

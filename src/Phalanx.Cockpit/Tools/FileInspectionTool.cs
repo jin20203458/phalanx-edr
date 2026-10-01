@@ -261,7 +261,17 @@ public sealed class FileInspectionTool : IInvestigationTool
         // 1. Clean-Room 모의 파일 주입 우선 조회
         if (_simulatedFiles.TryGetValue(normalized, out var sim))
         {
-            return Task.FromResult(FormatResult(sim, normalized, isSimulated: true));
+            var (isSideload, sideloadList, sideloadScore, sideloadReasons) = CheckDirectoryForSideloading(normalized);
+            if (isSideload)
+            {
+                sim = sim with
+                {
+                    AnomalyScore = Math.Clamp(sim.AnomalyScore + sideloadScore, 0, 100),
+                    DiagnosticReason = sim.DiagnosticReason + "; " + string.Join("; ", sideloadReasons)
+                };
+            }
+
+            return Task.FromResult(FormatResult(sim, normalized, isSimulated: true, isSideloading: isSideload, sideloadedDlls: sideloadList));
         }
 
         // 2. 실제 디스크 파일 존재 여부 검사
@@ -360,6 +370,13 @@ public sealed class FileInspectionTool : IInvestigationTool
                 reasons.Add($"디지털 서명 미보유 ({sigStatus})");
             }
 
+            var (isSideloading, sideloadedList, addScore, sReasons) = CheckDirectoryForSideloading(normalized);
+            if (isSideloading)
+            {
+                anomalyScore += addScore;
+                reasons.AddRange(sReasons);
+            }
+
             anomalyScore = Math.Clamp(anomalyScore, 0, 100);
             string diagnosticReason = reasons.Count > 0 ? string.Join("; ", reasons) : "정상 정규 파일 (특이 이상 징후 없음)";
 
@@ -377,7 +394,7 @@ public sealed class FileInspectionTool : IInvestigationTool
                 DiagnosticReason: diagnosticReason
             );
 
-            return Task.FromResult(FormatResult(entry, normalized, isSimulated: false));
+            return Task.FromResult(FormatResult(entry, normalized, isSimulated: false, isSideloading: isSideloading, sideloadedDlls: sideloadedList));
         }
         catch (Exception ex)
         {
@@ -558,6 +575,77 @@ public sealed class FileInspectionTool : IInvestigationTool
 
     #endregion
 
+    #region DLL Search Order Hijacking / Sideloading (T1574.002) 정밀 분석
+
+    private static readonly HashSet<string> KnownSideloadCandidateDlls = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "version.dll", "cryptbase.dll", "uxtheme.dll", "dwmapi.dll", "shcore.dll",
+        "winmm.dll", "userenv.dll", "netapi32.dll", "dbghelp.dll", "wtsapi32.dll",
+        "mpr.dll", "propsys.dll", "secur32.dll", "samcli.dll", "dxgi.dll", "d3d11.dll", "d3d9.dll"
+    };
+
+    private static (bool IsSideloading, List<string> SideloadedDlls, int AdditionalScore, List<string> Reasons)
+        CheckDirectoryForSideloading(string targetFilePath)
+    {
+        var reasons = new List<string>();
+        var sideloaded = new List<string>();
+        int addScore = 0;
+
+        string? dir = Path.GetDirectoryName(targetFilePath);
+        if (string.IsNullOrEmpty(dir)) return (false, sideloaded, 0, reasons);
+
+        // System32/SysWOW64 자체는 정상 시스템 DLL의 본거지이므로 검사 제외
+        if (IsInSystem32Directory(targetFilePath) || IsInWindowsDirectory(targetFilePath))
+            return (false, sideloaded, 0, reasons);
+
+        // 경계 슬래시 보장: C:\Public\ 또는 C:\Users\user\AppData\Local\Temp\ 판별 안전화
+        string checkDir = dir.TrimEnd('\\', '/') + "\\";
+
+        // 사용자 쓰기 가능 디렉터리 검증
+        bool isUserDir = checkDir.Contains(@"\Users\", StringComparison.OrdinalIgnoreCase) ||
+                         checkDir.Contains(@"\Public\", StringComparison.OrdinalIgnoreCase) ||
+                         checkDir.Contains(@"\Temp\", StringComparison.OrdinalIgnoreCase) ||
+                         checkDir.Contains(@"\AppData\", StringComparison.OrdinalIgnoreCase) ||
+                         checkDir.Contains(@"\ProgramData\", StringComparison.OrdinalIgnoreCase);
+
+        if (!isUserDir) return (false, sideloaded, 0, reasons);
+
+        foreach (var candidateName in KnownSideloadCandidateDlls)
+        {
+            // 캐시 조회 키 정규화 적용
+            string rawCandidate = Path.Combine(dir, candidateName);
+            string candidatePath = NormalizePath(rawCandidate);
+
+            // 1. SimulatedFiles 내부 캐시 안전 확인
+            if (_simulatedFiles.TryGetValue(candidatePath, out var simEntry))
+            {
+                if (simEntry.Exists && !simEntry.IsSigned)
+                {
+                    sideloaded.Add(candidatePath);
+                    addScore += 60;
+                    reasons.Add($"비표준 디렉터리 내 시스템 라이브러리 사이드로딩(T1574.002) 포착: '{candidateName}' (무서명)");
+                }
+                continue;
+            }
+
+            // 2. 실제 디스크 파일 확인 (Win32 Authenticode 2-tuple 검증)
+            if (File.Exists(candidatePath))
+            {
+                var (isSigned, _) = VerifyAuthenticode(candidatePath);
+                if (!isSigned)
+                {
+                    sideloaded.Add(candidatePath);
+                    addScore += 60;
+                    reasons.Add($"비표준 디렉터리 내 시스템 라이브러리 사이드로딩(T1574.002) 포착: '{candidateName}' (무서명)");
+                }
+            }
+        }
+
+        return (sideloaded.Count > 0, sideloaded, addScore, reasons);
+    }
+
+    #endregion
+
     private static readonly HashSet<string> System32Binaries = new(StringComparer.OrdinalIgnoreCase)
     {
         "svchost.exe", "csrss.exe", "smss.exe", "wininit.exe", "winlogon.exe",
@@ -661,8 +749,14 @@ public sealed class FileInspectionTool : IInvestigationTool
         }
     }
 
-    private static ToolResult FormatResult(SimulatedFileEntry entry, string normalizedPath, bool isSimulated)
+    private static ToolResult FormatResult(
+        SimulatedFileEntry entry,
+        string normalizedPath,
+        bool isSimulated,
+        bool isSideloading = false,
+        List<string>? sideloadedDlls = null)
     {
+        sideloadedDlls ??= new List<string>();
         var sb = new StringBuilder();
         sb.AppendLine($"[FileInspectionTool 포렌식 검증 결과{(isSimulated ? " (Clean-Room Simulation)" : "")}]");
         sb.AppendLine($"• 대상 경로: {normalizedPath}");
@@ -672,6 +766,7 @@ public sealed class FileInspectionTool : IInvestigationTool
         if (!string.IsNullOrEmpty(entry.SignerSubject)) sb.AppendLine($"• 서명 주체: {entry.SignerSubject}");
         sb.AppendLine($"• 시스템 경로 위장(Masquerading T1036.005): {(entry.IsPathMasqueraded ? "CRITICAL DETECTED" : "Normal")}");
         sb.AppendLine($"• 확장자 위장(Disguised PE Executable): {(entry.IsDisguisedExecutable ? "DETECTED (MZ/PE in Non-Exe)" : "Normal")}");
+        sb.AppendLine($"• DLL 사이드로딩(T1574.002): {(isSideloading ? $"DETECTED ({string.Join(", ", sideloadedDlls)})" : "Normal")}");
         sb.AppendLine($"• Shannon 엔트로피: {entry.Entropy:F4} {(entry.Entropy > 7.2 ? "(HIGH: Packed/Encrypted)" : "(Normal)")}");
         sb.AppendLine($"• 복합 이상 징후 위험도: {entry.AnomalyScore}/100");
         sb.AppendLine($"• 정밀 진단 소견: {entry.DiagnosticReason}");
@@ -688,6 +783,8 @@ public sealed class FileInspectionTool : IInvestigationTool
             ["SignatureStatus"] = entry.SignatureStatus,
             ["IsPathMasqueraded"] = entry.IsPathMasqueraded,
             ["IsDisguisedExecutable"] = entry.IsDisguisedExecutable,
+            ["IsDllSideloading"] = isSideloading,
+            ["SideloadedDlls"] = sideloadedDlls,
             ["AnomalyScore"] = entry.AnomalyScore,
             ["DiagnosticReason"] = entry.DiagnosticReason
         };

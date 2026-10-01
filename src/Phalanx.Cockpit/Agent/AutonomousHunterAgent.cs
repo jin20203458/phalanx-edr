@@ -405,6 +405,7 @@ public class AutonomousHunterAgent
             3. ThreatReputationTool: 통신 지표(IP/도메인) 위협 평판 조회 (targetIndicator: string)
             4. MitreClassifierTool: 관찰된 공격 행위 MITRE TTP 분류 (observedBehavior: string)
             5. SystemFirewallTool: 악성 C2 IP 방화벽 차단 (maliciousIp: string)
+            6. FileInspectionTool: 디스크 상의 파일 경로, 디지털 서명(Authenticode), 시스템 파일 위장(Masquerading T1036.005), PE 헤더, Shannon 엔트로피 검증 (filePath: string)
             </tools>
 
             <rules>
@@ -412,6 +413,7 @@ public class AutonomousHunterAgent
             2. 관찰 피드백: <tool_observation> 결과를 분석하여 다음 도구로 연계하거나 최종 판결로 전환하십시오.
             3. 최종 판결 시: is_final_verdict: true, action_tool: "None"으로 지정하고 모든 판결 필드를 완성하십시오.
             4. 공식 서사: narrative는 한국어 보고서 문체로 발단, 동결, 수사 결과, 처분 사유를 구체적으로 서술하십시오.
+            5. 파일 수사 지침: 페이로드 해독이나 명령행에서 로컬 파일 경로가 포착되면, 메모리 스캔보다 먼저 FileInspectionTool을 호출하여 Authenticode 서명 및 시스템 경로 위장(Masquerading) 여부를 우선 확증하십시오.
             </rules>
 
             <output_format>
@@ -907,6 +909,35 @@ public class AutonomousHunterAgent
             }
         }
 
+        // --- ReAct Step 1.5: 의심 파일 정밀 검증 (FileInspectionTool: 디지털 서명, 시스템 경로 위장, PE 헤더) ---
+        string? targetFilePath = ExtractTargetFilePath(decodedScript, cmd);
+        bool isPathMasqueraded = false;
+        int fileAnomalyScore = 0;
+
+        if (!string.IsNullOrWhiteSpace(targetFilePath) && _tools.TryGetValue("FileInspectionTool", out var fileTool))
+        {
+            var thoughtFile = $"[Step {step} 추론] 명령행 및 해독 페이로드에서 파일 경로 '{targetFilePath}'가 포착되어 Authenticode 서명 및 시스템 경로 위장(Masquerading T1036.005) 여부를 우선 확증합니다.";
+            var resFile = await fileTool.ExecuteAsync(new() { ["filePath"] = targetFilePath });
+
+            var traceFile = new ReActTraceRecord
+            {
+                IncidentId = incidentId,
+                StepNumber = step++,
+                Thought = thoughtFile,
+                ActionTool = fileTool.Name,
+                ActionArgsJson = JsonSerializer.Serialize(new { filePath = targetFilePath }),
+                Observation = resFile.Output
+            };
+            traces.Add(traceFile);
+            OnReActStepProgress?.Invoke(incidentId, traceFile);
+
+            if (resFile.Data != null)
+            {
+                if (resFile.Data.TryGetValue("IsPathMasqueraded", out var mObj) && mObj is bool b) isPathMasqueraded = b;
+                if (resFile.Data.TryGetValue("AnomalyScore", out var scObj) && scObj is int aSc) fileAnomalyScore = aSc;
+            }
+        }
+
         // --- ReAct Step 2: 타깃 RAM 메모리 스캔 (C2 URL/IP 탐색) ---
         if (_tools.TryGetValue("ProcessMemoryScanTool", out var memTool))
         {
@@ -961,8 +992,9 @@ public class AutonomousHunterAgent
         }
 
         // --- ReAct Step 4: MITRE ATT&CK TTP 분류 ---
+        string fileObservation = traces.FirstOrDefault(t => t.ActionTool == "FileInspectionTool")?.Observation ?? "";
         string memoryObservation = traces.FirstOrDefault(t => t.ActionTool == "ProcessMemoryScanTool")?.Observation ?? "";
-        string combinedBehavior = $"{rootCause} -> {targetNode.ImageName} {targetNode.CommandLine} {decodedScript} {memoryObservation}";
+        string combinedBehavior = $"{rootCause} -> {targetNode.ImageName} {targetNode.CommandLine} {decodedScript} {fileObservation} {memoryObservation}";
         if (_tools.TryGetValue("MitreClassifierTool", out var mitreTool))
         {
             var thought4 = $"[Step {step} 추론] 관찰된 침해 전술 체인을 MITRE ATT&CK Matrix TTP 기법으로 자동 분류합니다.";
@@ -1043,7 +1075,9 @@ public class AutonomousHunterAgent
 
         // 3-3. 시스템 핵심 바이너리 명칭 위장 드로퍼 (T1036.005) (+50)
         string fullTarget = $"{targetNode.CommandLine} {decodedScript}".ToLowerInvariant();
-        bool isMasquerading = fullTarget.Contains(@"temp\svchost.exe") ||
+        bool isMasquerading = isPathMasqueraded ||
+                              fileAnomalyScore >= 80 ||
+                              fullTarget.Contains(@"temp\svchost.exe") ||
                               fullTarget.Contains(@"temp/svchost.exe") ||
                               fullTarget.Contains(@"temp\csrss.exe") ||
                               fullTarget.Contains(@"temp\lsass.exe");
@@ -1074,7 +1108,9 @@ public class AutonomousHunterAgent
         if (isMalicious)
         {
             verdictAction = MitigationCommand.Types.ActionType.ActionKill;
-            summaryTitle = "악성 오피스 매크로/LOLBAS를 통한 파일리스 C2 다운로더 침투 시도";
+            summaryTitle = isMasquerading
+                ? "시스템 핵심 바이너리 경로 위장(Masquerading T1036.005) 및 C2 침투 탐지"
+                : "악성 오피스 매크로/LOLBAS를 통한 파일리스 C2 다운로더 침투 시도";
             narrative = $"{DateTime.Now:HH시 mm분}, 시스템에서 실행된 '{rootCause}' 프로세스가 비정상 자식 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 은밀히 기동했습니다. " +
                         $"Phalanx 센서가 원자적으로 선제 동결을 집행하였으며, AI 에이전트의 심층 족보 역추적 및 메모리/페이로드 분석 결과 " +
                         $"{(extractedIp != null ? $"해외 악성 C2({extractedIp})" : "원격 C2 인프라")}와의 통신 및 파일리스 공격 시도가 확인되었습니다. " +
@@ -1082,9 +1118,11 @@ public class AutonomousHunterAgent
 
             if (mitreList.Count == 0)
             {
-                mitreList = hasUnbackedMemory
-                    ? new List<string> { "T1055", "T1071.001" }
-                    : new List<string> { "T1566.001", "T1059.001", "T1071.001" };
+                mitreList = isMasquerading
+                    ? new List<string> { "T1036.005", "T1059.001", "T1071.001" }
+                    : hasUnbackedMemory
+                        ? new List<string> { "T1055", "T1071.001" }
+                        : new List<string> { "T1566.001", "T1059.001", "T1071.001" };
             }
         }
         else
@@ -1219,6 +1257,17 @@ public class AutonomousHunterAgent
         }
 
         return false;
+    }
+
+    private static string? ExtractTargetFilePath(string? decodedScript, string commandLine)
+    {
+        string full = $"{commandLine} {decodedScript}";
+        var match = System.Text.RegularExpressions.Regex.Match(full, @"[a-zA-Z]:\\[^'""\s,;)]+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            return match.Value;
+        }
+        return null;
     }
     #endregion
 }

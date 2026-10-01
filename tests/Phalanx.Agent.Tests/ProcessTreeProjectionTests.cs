@@ -714,7 +714,8 @@ public class ProcessTreeProjectionTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
         var labRunner = new AttackLabScenarioRunner(treeManager, agent);
@@ -767,7 +768,8 @@ public class ProcessTreeProjectionTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
         var labRunner = new AttackLabScenarioRunner(treeManager, agent);

@@ -1,0 +1,264 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.Tasks;
+using Phalanx.Cockpit.Tools;
+using Xunit;
+
+namespace Phalanx.Agent.Tests;
+
+public class FileInspectionToolTests
+{
+    private readonly FileInspectionTool _tool = new();
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_RealSystemBinary_VerifiedSigned()
+    {
+        // 1. Arrange: 윈도우 실제 핵심 바이너리 (C:\Windows\System32\svchost.exe)
+        string sysDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        string svchostPath = Path.Combine(sysDir, "svchost.exe");
+
+        if (!File.Exists(svchostPath))
+        {
+            // 비Windows 또는 특수 환경 가드
+            return;
+        }
+
+        // 2. Act
+        var result = await _tool.ExecuteAsync(new() { ["filePath"] = svchostPath });
+
+        // 3. Assert
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+
+        Assert.True((bool)result.Data["Exists"]);
+        Assert.True((bool)result.Data["IsSigned"]);
+        Assert.False((bool)result.Data["IsPathMasqueraded"]);
+        Assert.False((bool)result.Data["IsDisguisedExecutable"]);
+
+        string status = (string)result.Data["SignatureStatus"];
+        Assert.Contains("Valid", status);
+
+        string subject = (string)result.Data["SignerSubject"];
+        Assert.Contains("Microsoft", subject);
+
+        int score = (int)result.Data["AnomalyScore"];
+        Assert.Equal(0, score);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_MasqueradedTempBinary_AnomalyScore100()
+    {
+        // 1. Arrange: Temp 디렉터리에 가짜 무서명 svchost.exe 생성
+        string tempDir = Path.GetTempPath();
+        string fakeSvchost = Path.Combine(tempDir, $"fake_svchost_{Guid.NewGuid():N}.exe");
+
+        // 유효하지 않은 임의 바이트 작성 (무서명)
+        byte[] dummyBytes = Encoding.UTF8.GetBytes("MZ_DUMMY_BINARY_PAYLOAD_NOT_SIGNED");
+        await File.WriteAllBytesAsync(fakeSvchost, dummyBytes);
+
+        // 테스트를 위해 시스템 바이너리 파일명 규칙 검증용 경로 생성
+        string masqueradedPath = Path.Combine(tempDir, "svchost.exe");
+        try
+        {
+            File.Copy(fakeSvchost, masqueradedPath, overwrite: true);
+
+            // 2. Act
+            var result = await _tool.ExecuteAsync(new() { ["filePath"] = masqueradedPath });
+
+            // 3. Assert
+            Assert.True(result.Success);
+            Assert.NotNull(result.Data);
+
+            Assert.True((bool)result.Data["Exists"]);
+            Assert.False((bool)result.Data["IsSigned"]);
+            Assert.True((bool)result.Data["IsPathMasqueraded"]);
+
+            int score = (int)result.Data["AnomalyScore"];
+            Assert.Equal(100, score); // 무서명 시스템 경로 위장은 즉시 100점
+            Assert.Contains("T1036.005", (string)result.Data["DiagnosticReason"]);
+        }
+        finally
+        {
+            try { File.Delete(fakeSvchost); } catch { }
+            try { File.Delete(masqueradedPath); } catch { }
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_DisguisedExecutable_Detected()
+    {
+        // 1. Arrange: .dat 확장자이나 내부에 유효한 MZ 및 PE\0\0 헤더를 가진 파일 작성
+        string tempFile = Path.Combine(Path.GetTempPath(), $"update_{Guid.NewGuid():N}.dat");
+
+        byte[] fakePe = new byte[256];
+        // DOS Header: MZ
+        fakePe[0] = 0x4D;
+        fakePe[1] = 0x5A;
+        // e_lfanew at 0x3C = 0x80 (128)
+        BitConverter.GetBytes(0x80).CopyTo(fakePe, 0x3C);
+        // PE Signature at 0x80: 'P', 'E', 0, 0
+        fakePe[0x80] = 0x50;
+        fakePe[0x81] = 0x45;
+        fakePe[0x82] = 0x00;
+        fakePe[0x83] = 0x00;
+
+        await File.WriteAllBytesAsync(tempFile, fakePe);
+
+        try
+        {
+            // 2. Act
+            var result = await _tool.ExecuteAsync(new() { ["filePath"] = tempFile });
+
+            // 3. Assert
+            Assert.True(result.Success);
+            Assert.NotNull(result.Data);
+
+            Assert.True((bool)result.Data["Exists"]);
+            Assert.True((bool)result.Data["IsDisguisedExecutable"]);
+
+            int score = (int)result.Data["AnomalyScore"];
+            Assert.True(score >= 40, $"이상 징후 점수가 40점 이상이어야 함: {score}");
+        }
+        finally
+        {
+            try { File.Delete(tempFile); } catch { }
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_HighEntropyPacked_Detected()
+    {
+        // 1. Arrange: 64KB 고엔트로피 난수 파일 생성 (> 7.2)
+        string tempFile = Path.Combine(Path.GetTempPath(), $"payload_{Guid.NewGuid():N}.bin");
+        byte[] randomBytes = new byte[65536];
+        RandomNumberGenerator.Fill(randomBytes);
+
+        await File.WriteAllBytesAsync(tempFile, randomBytes);
+
+        try
+        {
+            // 2. Act
+            var result = await _tool.ExecuteAsync(new() { ["filePath"] = tempFile });
+
+            // 3. Assert
+            Assert.True(result.Success);
+            Assert.NotNull(result.Data);
+
+            double entropy = (double)result.Data["Entropy"];
+            Assert.True(entropy > 7.2, $"난수 바이트의 엔트로피가 7.2 초과여야 함: {entropy}");
+
+            int score = (int)result.Data["AnomalyScore"];
+            Assert.True(score >= 25, $"고엔트로피로 인한 위험도 가산 확인: {score}");
+        }
+        finally
+        {
+            try { File.Delete(tempFile); } catch { }
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_ZeroByteFile_HandledGracefully()
+    {
+        // 1. Arrange: 0바이트 빈 파일 생성 (Division by Zero NaN 방어 검증)
+        string emptyFile = Path.Combine(Path.GetTempPath(), $"empty_{Guid.NewGuid():N}.tmp");
+        await File.WriteAllBytesAsync(emptyFile, Array.Empty<byte>());
+
+        try
+        {
+            // 2. Act
+            var result = await _tool.ExecuteAsync(new() { ["filePath"] = emptyFile });
+
+            // 3. Assert
+            Assert.True(result.Success);
+            Assert.NotNull(result.Data);
+
+            Assert.True((bool)result.Data["Exists"]);
+            Assert.Equal(0L, (long)result.Data["FileSizeBytes"]);
+
+            double entropy = (double)result.Data["Entropy"];
+            Assert.Equal(0.0, entropy);
+            Assert.False(double.IsNaN(entropy));
+            Assert.False((bool)result.Data["IsDisguisedExecutable"]);
+        }
+        finally
+        {
+            try { File.Delete(emptyFile); } catch { }
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_MissingAndInvalidArgs_HandledGracefully()
+    {
+        // 1. 빈 인자 전달 시
+        var res1 = await _tool.ExecuteAsync(new Dictionary<string, object>());
+        Assert.False(res1.Success);
+        Assert.Contains("누락", res1.Output);
+
+        // 2. 존재하지 않는 파일 경로 전달 시
+        string nonExistent = @"C:\NonExistent_Directory_12345\missing_file.exe";
+        var res2 = await _tool.ExecuteAsync(new() { ["filePath"] = nonExistent });
+
+        Assert.True(res2.Success);
+        Assert.NotNull(res2.Data);
+        Assert.False((bool)res2.Data["Exists"]);
+        Assert.Equal("FileNotFound", (string)res2.Data["SignatureStatus"]);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestFileInspection_SimulatedFileEntry_CleanRoom()
+    {
+        // 1. Arrange: 가상 모의 엔트리 주입
+        string mockPath = @"C:\Windows\Temp\mock_malware.exe";
+        var mockEntry = new FileInspectionTool.SimulatedFileEntry(
+            Exists: true,
+            FileSizeBytes: 204800L,
+            Sha256: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            Entropy: 7.8912,
+            IsSigned: false,
+            SignerSubject: string.Empty,
+            SignatureStatus: "NotSigned (Simulated)",
+            IsPathMasqueraded: true,
+            IsDisguisedExecutable: false,
+            AnomalyScore: 100,
+            DiagnosticReason: "모의 Clean-Room 위장 바이너리 검증"
+        );
+
+        FileInspectionTool.RegisterSimulatedFile(mockPath, mockEntry);
+
+        try
+        {
+            // 2. Act
+            var result = await _tool.ExecuteAsync(new() { ["filePath"] = mockPath });
+
+            // 3. Assert
+            Assert.True(result.Success);
+            Assert.NotNull(result.Data);
+
+            Assert.True((bool)result.Data["Exists"]);
+            Assert.Equal(204800L, (long)result.Data["FileSizeBytes"]);
+            Assert.Equal(7.8912, (double)result.Data["Entropy"]);
+            Assert.True((bool)result.Data["IsPathMasqueraded"]);
+            Assert.Equal(100, (int)result.Data["AnomalyScore"]);
+            Assert.Contains("Clean-Room Simulation", result.Output);
+        }
+        finally
+        {
+            FileInspectionTool.ClearSimulatedFiles();
+        }
+
+        // 초기화 후 조회 시 실제 디스크(없음)로 폴백 검증
+        var afterClear = await _tool.ExecuteAsync(new() { ["filePath"] = mockPath });
+        Assert.True(afterClear.Success);
+        Assert.False((bool)afterClear.Data!["Exists"]);
+    }
+}

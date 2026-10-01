@@ -321,6 +321,7 @@ public class AttackLabScenarioRunner
         finally
         {
             ProcessMemoryScanTool.ClearSimulatedMemory(targetPid);
+            FileInspectionTool.ClearSimulatedFiles();
 
             // 7. [안전망] 예외 또는 미종료 프로세스 강제 정리 (고아 프로세스 방지)
             if (realOsProcess != null && !realOsProcess.HasExited)

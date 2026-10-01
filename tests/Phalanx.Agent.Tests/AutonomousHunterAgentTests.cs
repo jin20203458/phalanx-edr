@@ -39,7 +39,8 @@ public class AutonomousHunterAgentTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
@@ -211,7 +212,8 @@ public class AutonomousHunterAgentTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(
@@ -299,7 +301,8 @@ public class AutonomousHunterAgentTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
 
         // API Key는 지정되어 있으나 네트워크가 죽어있는 환경
@@ -347,7 +350,8 @@ public class AutonomousHunterAgentTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
 
         // Phalanx 로컬 인증정보(Config/google-credentials.json 또는 AppSettings.json)로 실제 Vertex AI Gemini 클라이언트 자동 연결
@@ -511,7 +515,8 @@ public class AutonomousHunterAgentTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
@@ -713,7 +718,8 @@ public class AutonomousHunterAgentTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
 
         // 명시적 오프라인 모드 (geminiApiKey: string.Empty)
@@ -779,7 +785,8 @@ public class AutonomousHunterAgentTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);

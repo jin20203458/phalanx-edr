@@ -312,7 +312,8 @@ public class FullChainSystemTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiClient: geminiClient);
@@ -441,7 +442,8 @@ public class FullChainSystemTests
             new ProcessMemoryScanTool(),
             new ThreatReputationTool(),
             new MitreClassifierTool(),
-            new SystemFirewallTool()
+            new SystemFirewallTool(),
+            new FileInspectionTool()
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);

@@ -256,6 +256,22 @@ public static class AttackScenarioRegistry
                     IsSuspended = true,
                     Lifecycle = ProcessLifecycle.LifecycleSuspended
                 });
+
+                // Clean-Room 가상 주입 시 Temp\svchost.exe 모의 파일 텔레메트리 등록 (무서명 시스템 경로 위장 T1036.005)
+                FileInspectionTool.RegisterSimulatedFile(@"C:\Windows\Temp\svchost.exe", new FileInspectionTool.SimulatedFileEntry(
+                    Exists: true,
+                    FileSizeBytes: 124928L,
+                    Sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    Entropy: 7.4521,
+                    IsSigned: false,
+                    SignerSubject: string.Empty,
+                    SignatureStatus: "NotSigned (TRUST_E_NOSIGNATURE)",
+                    IsPathMasqueraded: true,
+                    IsDisguisedExecutable: false,
+                    AnomalyScore: 100,
+                    DiagnosticReason: "시스템 핵심 바이너리 파일명이 비인가 디렉터리(Temp)에 위치하며 유효한 Microsoft 서명이 결여됨 (T1036.005 Masquerading)"
+                ));
+
                 return batch;
             },
             GetSafeOsProcessInfo = () => new ProcessStartInfo

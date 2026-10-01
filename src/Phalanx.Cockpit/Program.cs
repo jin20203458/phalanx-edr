@@ -50,12 +50,13 @@ public static class Program
         builder.Services.AddSingleton<ProcessTreeProjectionManager>();
         builder.Services.AddSingleton(sp => new ForensicArchiveManager(dbPath));
 
-        // 5대 OS 수사 도구 등록
+        // 6대 OS 수사 도구 등록
         builder.Services.AddSingleton<IInvestigationTool, DecodePayloadTool>();
         builder.Services.AddSingleton<IInvestigationTool, ProcessMemoryScanTool>();
         builder.Services.AddSingleton<IInvestigationTool, ThreatReputationTool>();
         builder.Services.AddSingleton<IInvestigationTool, MitreClassifierTool>();
         builder.Services.AddSingleton<IInvestigationTool, SystemFirewallTool>();
+        builder.Services.AddSingleton<IInvestigationTool, FileInspectionTool>();
 
         builder.Services.AddSingleton<AutonomousHunterAgent>();
         builder.Services.AddSingleton<AttackLabScenarioRunner>();

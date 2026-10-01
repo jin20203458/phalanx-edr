@@ -1,7 +1,6 @@
 namespace Phalanx.Cockpit.Reporting;
 
 using System;
-using System.IO;
 using System.Linq;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -9,32 +8,20 @@ using QuestPDF.Infrastructure;
 using Phalanx.Cockpit.ViewModels;
 
 /// <summary>
-/// QuestPDF 기반 A4 인시던트 포렌식 수사 보고서 선언형 문서 레이아웃 구현체
-/// ArqaStatic의 조형미(4-Box Summary KPI Cards, 3px 수직 액센트 바, 다크 터미널 코드 컨테이너, 지브라 교차 테이블)를 벤치마킹하여
-/// 간결하고 정제된 엔터프라이즈 감사 품질로 구성된 레이아웃을 제공합니다.
+/// QuestPDF 기반 A4 인시던트 포렌식 수사 보고서 레이아웃 구현체.
+/// CrowdStrike/Mandiant/SANS DFIR 실무 보고서 표준에 준하는 간결한 기술 문서 형식.
 /// </summary>
 public class ForensicPdfReportDocument : IDocument
 {
     private readonly IncidentItemViewModel _incident;
 
-    // Phalanx EDR 정제된 비주얼 컬러 시스템
-    private const string ColorBrandPrimary = "#1E3A8A";    // Deep Navy
-    private const string ColorBrandSecondary = "#2563EB";  // Royal / Slate Blue
-    private const string ColorActionKill = "#DC2626";      // Crimson Red
-    private const string ColorActionResume = "#16A34A";    // Emerald Green
-    private const string ColorActionSuspended = "#D97706"; // Amber
-    private const string ColorTextPrimary = "#0F172A";     // Slate 900
-    private const string ColorTextSecondary = "#334155";   // Slate 700
-    private const string ColorTextMuted = "#64748B";       // Slate 500
-    private const string ColorCardBg = "#F8FAFC";          // Slate 50
-    private const string ColorBorder = "#E2E8F0";          // Slate 200
-    private const string ColorBorderLight = "#F1F5F9";     // Slate 100
-    private const string ColorTableHeader = "#1E293B";     // Dark Slate (헤더 전용)
-    private const string ColorCodeBg = "#0F172A";          // Dark Slate Terminal
-    private const string ColorCodeText = "#38BDF8";        // Sky Blue Terminal Text
-    private const string ColorMitreBg = "#EFF6FF";         // Ice Blue
-    private const string ColorMitreBorder = "#BFDBFE";     // Blue Border
-    private const string ColorMitreText = "#1D4ED8";       // Blue Text
+    // 6-color system: black/white + single accent
+    private const string ColorText = "#111827";         // Body text, headings
+    private const string ColorLabel = "#6B7280";        // Labels, secondary text
+    private const string ColorDanger = "#991B1B";       // Kill verdict, blocked IP
+    private const string ColorBgCode = "#F3F4F6";       // Code block, table header
+    private const string ColorBorder = "#D1D5DB";       // Dividers, borders
+    private const string ColorZebra = "#F9FAFB";        // Table alternating rows
 
     public ForensicPdfReportDocument(IncidentItemViewModel incident)
     {
@@ -43,11 +30,11 @@ public class ForensicPdfReportDocument : IDocument
 
     public DocumentMetadata GetMetadata() => new()
     {
-        Title = $"Phalanx Forensic Report - {_incident.IncidentId}",
-        Author = "Phalanx Autonomous EDR Defense System",
-        Subject = $"Forensic Incident Investigation Report for PID {_incident.TargetPid} ({_incident.TargetFileName})",
-        Keywords = "EDR, Forensic, Incident Report, MITRE ATT&CK, ReAct, Security",
-        Creator = "Phalanx Cockpit Reporting Engine v0.5.0-preview"
+        Title = $"Incident Response Report - {_incident.IncidentId}",
+        Author = "Phalanx EDR",
+        Subject = $"Forensic Investigation Report for PID {_incident.TargetPid}",
+        Keywords = "EDR, Forensic, Incident Report, MITRE ATT&CK",
+        Creator = "Phalanx Cockpit Reporting Engine"
     };
 
     public DocumentSettings GetSettings() => DocumentSettings.Default;
@@ -57,14 +44,13 @@ public class ForensicPdfReportDocument : IDocument
         container.Page(page =>
         {
             page.Size(PageSizes.A4);
-            page.Margin(20, Unit.Point);
+            page.Margin(40, Unit.Point);
             page.PageColor(Colors.White);
 
-            // 기본 폰트: Segoe UI (QuestPDF 내장 자동 CJK 폰트 폴백 메커니즘 활용)
             page.DefaultTextStyle(x => x
                 .FontFamily("Segoe UI")
-                .FontSize(8.5f)
-                .FontColor(ColorTextPrimary));
+                .FontSize(9)
+                .FontColor(ColorText));
 
             page.Header().Element(ComposeHeader);
             page.Content().Element(ComposeContent);
@@ -78,45 +64,38 @@ public class ForensicPdfReportDocument : IDocument
         {
             col.Item().Row(row =>
             {
-                // 좌측: 브랜딩 및 리포트 타이틀
-                row.RelativeItem().Column(brandCol =>
+                row.RelativeItem().Column(left =>
                 {
-                    brandCol.Item().Text("PHALANX EDR")
-                        .FontSize(17)
-                        .ExtraBold()
-                        .FontColor(ColorBrandPrimary)
-                        .LetterSpacing(0.3f);
+                    left.Item().Text("INCIDENT RESPONSE REPORT")
+                        .FontSize(11)
+                        .Bold()
+                        .FontColor(ColorText);
 
-                    brandCol.Item().PaddingTop(1).Text("Autonomous Threat Hunting & Forensic Investigation Report")
+                    left.Item().PaddingTop(1).Text("Phalanx EDR — Internal Use Only")
                         .FontSize(8)
-                        .SemiBold()
-                        .FontColor(ColorTextMuted);
+                        .FontColor(ColorLabel);
                 });
 
-                // 우측: 기밀 표기 및 발급 일시 메타데이터
-                row.AutoItem().Column(metaCol =>
+                row.AutoItem().AlignRight().Column(right =>
                 {
-                    metaCol.Item().AlignRight().Background(ColorActionKill).PaddingHorizontal(6).PaddingVertical(1.5f)
-                        .Text("CONFIDENTIAL & PROPRIETARY")
-                        .FontSize(6.8f)
-                        .Bold()
-                        .FontColor(Colors.White)
-                        .LetterSpacing(0.5f);
-
-                    metaCol.Item().PaddingTop(3).AlignRight().Text(text =>
+                    right.Item().AlignRight().Text(text =>
                     {
-                        text.Span("사건 번호: ").FontSize(7.5f).Bold().FontColor(ColorTextMuted);
-                        text.Span(_incident.IncidentId).FontSize(7.5f).Bold().FontColor(ColorBrandPrimary);
+                        text.Span("Document:  ").FontSize(8).FontColor(ColorLabel);
+                        text.Span(_incident.IncidentId ?? "N/A").FontSize(8).FontColor(ColorText);
                     });
 
-                    metaCol.Item().AlignRight().Text($"발행: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                        .FontSize(7)
-                        .FontColor(ColorTextMuted);
+                    right.Item().AlignRight().Text($"Date:  {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC")
+                        .FontSize(8)
+                        .FontColor(ColorLabel);
+
+                    right.Item().AlignRight().Text("Classification:  CONFIDENTIAL")
+                        .FontSize(8)
+                        .Bold()
+                        .FontColor(ColorDanger);
                 });
             });
 
-            // ArqaStatic 스타일의 1.5px 정제된 브랜드 구분선
-            col.Item().PaddingTop(6).PaddingBottom(6).LineHorizontal(1.5f).LineColor(ColorBrandPrimary);
+            col.Item().PaddingTop(6).PaddingBottom(8).LineHorizontal(1).LineColor(ColorBorder);
         });
     }
 
@@ -124,355 +103,311 @@ public class ForensicPdfReportDocument : IDocument
     {
         container.Column(col =>
         {
-            // 1. 4-Box Summary KPI Cards (ArqaStatic 벤치마킹 핵심)
-            col.Item().Element(ComposeSummaryKpiRow);
+            col.Spacing(14);
 
-            // 2. 프로세스 계통 및 명령줄 컨텍스트
-            col.Item().PaddingTop(8).Element(ComposeProcessLineage);
-
-            // 3. AI 자율 수사관 심층 서사 & MITRE ATT&CK
-            col.Item().PaddingTop(8).Element(ComposeNarrativeAndMitre);
-
-            // 4. ReAct 턴별 감사 추적표
-            col.Item().PaddingTop(8).Element(ComposeReActAuditTrail);
-
-            // 5. 침해 대응 런북 및 보안 조치
-            col.Item().PaddingTop(8).Element(ComposeRemediationRunbook);
+            col.Item().Element(ComposeIncidentSummary);
+            col.Item().Element(ComposeProcessContext);
+            col.Item().Element(ComposeAnalysisFindings);
+            col.Item().Element(ComposeInvestigationTrace);
+            col.Item().Element(ComposeResponseActions);
         });
     }
 
-    /// <summary>
-    /// ArqaStatic의 CreateSummaryBox 패턴을 Phalanx EDR 지표에 맞게 최적화한 4열 KPI 요약 행
-    /// </summary>
-    private void ComposeSummaryKpiRow(IContainer container)
+    // ── Section 1: Incident Summary ──────────────────────────────────────
+
+    private void ComposeIncidentSummary(IContainer container)
     {
-        string verdict = _incident.VerdictAction;
-        bool isKill = verdict.Equals("ACTION_KILL", StringComparison.OrdinalIgnoreCase);
-        bool isResume = verdict.Equals("ACTION_RESUME", StringComparison.OrdinalIgnoreCase);
-
-        string verdictColor = isKill ? ColorActionKill : (isResume ? ColorActionResume : ColorActionSuspended);
-        string verdictTitle = isKill ? "ACTION_KILL" : (isResume ? "ACTION_RESUME" : "SUSPENDED");
-        string verdictSub = isKill ? "사살 및 영구 격리" : (isResume ? "원자적 정상 복구" : "선제 동결 유지");
-
-        container.Row(row =>
+        container.Column(col =>
         {
-            row.Spacing(8);
+            CreateSectionHeader(col, "1. Incident Summary");
 
-            // Box 1: 최종 처분 (VERDICT)
-            CreateSummaryBox(row, "VERDICT (최종 처분)", verdictTitle, verdictColor, verdictSub);
+            string verdict = _incident.VerdictAction ?? "UNKNOWN";
+            bool isKill = verdict.Equals("ACTION_KILL", StringComparison.OrdinalIgnoreCase);
 
-            // Box 2: 판결 확신도 (AI CONFIDENCE)
-            CreateSummaryBox(row, "AI CONFIDENCE", _incident.ConfidenceDisplay, ColorBrandSecondary, $"심각도: {_incident.StatusSeverity}");
-
-            // Box 3: 수사 지연시간 (INVESTIGATION SLA)
-            string latencyMain = _incident.ElapsedMs > 0 ? $"{_incident.ElapsedMs:F1} ms" : "0.08 ms";
-            string latencySub = _incident.Traces.Count > 0 ? $"{_incident.Traces.Count} 턴 추론" : "Reflex 규칙";
-            CreateSummaryBox(row, "INVESTIGATION SLA", latencyMain, ColorTextPrimary, latencySub);
-
-            // Box 4: 타깃 프로세스 (TARGET IDENTIFIER)
-            string targetName = string.IsNullOrEmpty(_incident.TargetFileName) ? "Process" : _incident.TargetFileName;
-            CreateSummaryBox(row, "TARGET PROCESS", targetName, ColorTextPrimary, $"PID: {_incident.TargetPid}");
-        });
-    }
-
-    private void CreateSummaryBox(RowDescriptor row, string label, string value, string valueColor, string subText)
-    {
-        row.RelativeItem()
-            .Border(1).BorderColor(ColorBorder)
-            .Background(ColorCardBg)
-            .Padding(7)
-            .Column(box =>
+            col.Item().Table(table =>
             {
-                box.Item().Text(label)
-                    .FontSize(6.8f)
-                    .SemiBold()
-                    .FontColor(ColorTextMuted)
-                    .LetterSpacing(0.4f);
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.ConstantColumn(80);
+                    columns.RelativeColumn();
+                    columns.ConstantColumn(80);
+                    columns.RelativeColumn();
+                });
 
-                box.Item().PaddingTop(2).Text(value)
-                    .FontSize(11.5f)
-                    .Bold()
-                    .FontColor(valueColor);
+                // Row 1: Verdict / Confidence
+                AddSummaryLabel(table, "Verdict:");
+                AddSummaryValue(table, verdict, isKill ? ColorDanger : ColorText, true);
+                AddSummaryLabel(table, "Confidence:");
+                AddSummaryValue(table, _incident.ConfidenceDisplay ?? "N/A");
 
-                box.Item().PaddingTop(1).Text(subText)
-                    .FontSize(6.8f)
-                    .FontColor(ColorTextMuted);
+                // Row 2: Severity / Response Time
+                AddSummaryLabel(table, "Severity:");
+                string severity = _incident.StatusSeverity ?? "UNKNOWN";
+                bool isCritical = severity.Equals("CRITICAL", StringComparison.OrdinalIgnoreCase);
+                AddSummaryValue(table, severity, isCritical ? ColorDanger : ColorText);
+                AddSummaryLabel(table, "Response Time:");
+                AddSummaryValue(table, _incident.ElapsedMs > 0 ? $"{_incident.ElapsedMs:F1} ms" : "< 1 ms");
+
+                // Row 3: Target / Target PID
+                AddSummaryLabel(table, "Target:");
+                AddSummaryValue(table, string.IsNullOrEmpty(_incident.TargetFileName) ? "-" : _incident.TargetFileName);
+                AddSummaryLabel(table, "Target PID:");
+                AddSummaryValue(table, $"{_incident.TargetPid}");
+
+                // Row 4: Parent / Parent PID
+                AddSummaryLabel(table, "Parent:");
+                string parentName = string.IsNullOrEmpty(_incident.ParentImage) ? "-" : System.IO.Path.GetFileName(_incident.ParentImage);
+                AddSummaryValue(table, parentName);
+                AddSummaryLabel(table, "Parent PID:");
+                AddSummaryValue(table, $"{_incident.ParentPid}");
             });
+        });
     }
 
-    /// <summary>
-    /// ArqaStatic 시그니처 3px 수직 액센트 바 기반의 모던 섹션 헤더
-    /// </summary>
-    private void CreateSectionHeader(ColumnDescriptor col, string title)
+    private void AddSummaryLabel(TableDescriptor table, string label)
     {
-        col.Item().PaddingBottom(4).Row(row =>
+        table.Cell().PaddingVertical(2).Text(label)
+            .FontSize(8.5f).Bold().FontColor(ColorLabel);
+    }
+
+    private void AddSummaryValue(TableDescriptor table, string value, string? color = null, bool bold = false)
+    {
+        var cell = table.Cell().PaddingVertical(2);
+        var text = cell.Text(value).FontSize(9).FontColor(color ?? ColorText);
+        if (bold) text.Bold();
+    }
+
+    // ── Section 2: Process Context ───────────────────────────────────────
+
+    private void ComposeProcessContext(IContainer container)
+    {
+        container.Column(col =>
         {
-            row.AutoItem().Width(3).Height(11).Background(ColorBrandPrimary);
-            row.AutoItem().PaddingLeft(6).AlignMiddle()
-                .Text(title)
-                .FontSize(9.5f)
+            CreateSectionHeader(col, "2. Process Context");
+
+            // Target image full path
+            col.Item().Text(text =>
+            {
+                text.Span("Target Image:  ").FontSize(8.5f).Bold().FontColor(ColorLabel);
+                text.Span(string.IsNullOrEmpty(_incident.TargetImage) ? "-" : _incident.TargetImage)
+                    .FontSize(8.5f).FontColor(ColorText);
+            });
+
+            col.Item().PaddingTop(2).Text(text =>
+            {
+                text.Span("Parent Image:  ").FontSize(8.5f).Bold().FontColor(ColorLabel);
+                text.Span(string.IsNullOrEmpty(_incident.ParentImage) ? "-" : _incident.ParentImage)
+                    .FontSize(8.5f).FontColor(ColorText);
+            });
+
+            // Blocked IP (if present)
+            if (_incident.HasBlockedIp)
+            {
+                col.Item().PaddingTop(2).Text(text =>
+                {
+                    text.Span("Blocked Network:  ").FontSize(8.5f).Bold().FontColor(ColorDanger);
+                    text.Span(_incident.BlockedIp).FontSize(8.5f).FontColor(ColorDanger);
+                });
+            }
+
+            // Command line in light gray code block
+            col.Item().PaddingTop(6).Text("Command Line:")
+                .FontSize(8.5f).Bold().FontColor(ColorLabel);
+
+            string cmd = string.IsNullOrWhiteSpace(_incident.CommandLine)
+                ? "(no command line arguments recorded)"
+                : _incident.CommandLine;
+
+            col.Item().PaddingTop(2)
+                .Background(ColorBgCode)
+                .Border(0.5f).BorderColor(ColorBorder)
+                .Padding(8)
+                .Text(cmd)
+                .FontFamily("Consolas")
+                .FontSize(8.5f)
+                .FontColor(ColorText)
+                .BreakAnywhere();
+        });
+    }
+
+    // ── Section 3: Analysis & Findings ───────────────────────────────────
+
+    private void ComposeAnalysisFindings(IContainer container)
+    {
+        container.Column(col =>
+        {
+            CreateSectionHeader(col, "3. Analysis & Findings");
+
+            // Finding title
+            string title = string.IsNullOrWhiteSpace(_incident.SummaryTitle)
+                ? "Investigation Complete"
+                : _incident.SummaryTitle;
+
+            col.Item().Text(title)
+                .FontSize(10)
                 .Bold()
-                .FontColor(ColorTextPrimary)
-                .LetterSpacing(0.2f);
-        });
-    }
+                .FontColor(ColorText);
 
-    private void ComposeProcessLineage(IContainer container)
-    {
-        container.Column(col =>
-        {
-            CreateSectionHeader(col, "PROCESS EXECUTION LINEAGE (프로세스 계통 및 무결성)");
+            // Analysis narrative
+            string narrative = string.IsNullOrWhiteSpace(_incident.Narrative)
+                ? "No detailed analysis narrative was recorded for this incident."
+                : _incident.Narrative;
 
-            col.Item().Border(1).BorderColor(ColorBorder).Background(Colors.White).Padding(7).Column(inner =>
+            col.Item().PaddingTop(4).Text(narrative)
+                .FontSize(9)
+                .LineHeight(1.4f)
+                .FontColor(ColorText);
+
+            // MITRE ATT&CK references (plain inline text)
+            if (_incident.MitreTactics.Count > 0)
             {
-                // 2-Column 계통 메타데이터 그리드
-                inner.Item().Row(row =>
+                string mitre = string.Join(", ", _incident.MitreTactics);
+                col.Item().PaddingTop(6).Text(text =>
                 {
-                    row.RelativeItem(3).Text(text =>
-                    {
-                        text.Span("타깃 이미지: ").Bold().FontColor(ColorTextMuted).FontSize(7.8f);
-                        text.Span(string.IsNullOrEmpty(_incident.TargetImage) ? "-" : _incident.TargetImage).FontColor(ColorTextPrimary).FontSize(7.8f);
-                    });
-
-                    row.RelativeItem(1).AlignRight().Text(text =>
-                    {
-                        text.Span("Target PID: ").Bold().FontColor(ColorTextMuted).FontSize(7.8f);
-                        text.Span($"{_incident.TargetPid}").Bold().FontColor(ColorTextPrimary).FontSize(7.8f);
-                    });
+                    text.Span("MITRE ATT&CK Reference:  ").FontSize(8.5f).Bold().FontColor(ColorLabel);
+                    text.Span(mitre).FontSize(8.5f).FontColor(ColorText);
                 });
-
-                inner.Item().PaddingTop(3).Row(row =>
-                {
-                    row.RelativeItem(3).Text(text =>
-                    {
-                        text.Span("부모 프로세스: ").Bold().FontColor(ColorTextMuted).FontSize(7.8f);
-                        text.Span(string.IsNullOrEmpty(_incident.ParentImage) ? "-" : _incident.ParentImage).FontColor(ColorTextPrimary).FontSize(7.8f);
-                    });
-
-                    row.RelativeItem(1).AlignRight().Text(text =>
-                    {
-                        text.Span("Parent PID: ").Bold().FontColor(ColorTextMuted).FontSize(7.8f);
-                        text.Span($"{_incident.ParentPid}").Bold().FontColor(ColorTextPrimary).FontSize(7.8f);
-                    });
-                });
-
-                if (_incident.HasBlockedIp)
-                {
-                    inner.Item().PaddingTop(3).Row(row =>
-                    {
-                        row.AutoItem().Text("차단된 C2 네트워크: ").Bold().FontColor(ColorActionKill).FontSize(7.8f);
-                        row.AutoItem().Background("#FEE2E2").PaddingHorizontal(4).PaddingVertical(0.5f)
-                            .Text(_incident.BlockedIp).Bold().FontColor(ColorActionKill).FontSize(7.8f);
-                        row.RelativeItem().PaddingLeft(4).Text("(Windows Firewall Outbound Block Active)").FontSize(7.2f).FontColor(ColorTextMuted);
-                    });
-                }
-
-                // ArqaStatic 스타일 명령줄 코드 컨테이너
-                inner.Item().PaddingTop(6).Column(cmdCol =>
-                {
-                    cmdCol.Item().Row(r =>
-                    {
-                        r.AutoItem().Text("COMMAND LINE CONTEXT")
-                            .FontSize(6.8f)
-                            .Bold()
-                            .FontColor(ColorTextMuted)
-                            .LetterSpacing(0.6f);
-                    });
-
-                    string cmd = string.IsNullOrWhiteSpace(_incident.CommandLine) ? "(명령줄 인자 없음)" : _incident.CommandLine;
-                    cmdCol.Item().PaddingTop(2).Background(ColorCodeBg).Border(1).BorderColor(ColorTableHeader).Padding(6).Text(cmd)
-                        .FontFamily("Consolas")
-                        .FontSize(7.2f)
-                        .FontColor(ColorCodeText)
-                        .BreakAnywhere();
-                });
-            });
+            }
         });
     }
 
-    private void ComposeNarrativeAndMitre(IContainer container)
+    // ── Section 4: Investigation Trace ───────────────────────────────────
+
+    private void ComposeInvestigationTrace(IContainer container)
     {
         container.Column(col =>
         {
-            CreateSectionHeader(col, "AI THREAT NARRATIVE & MITRE ATT&CK (자율 수사관 심층 서사)");
-
-            col.Item().Border(1).BorderColor(ColorBorder).Background(ColorCardBg).Padding(7).Column(inner =>
-            {
-                // 사건 요약 제목
-                string title = string.IsNullOrWhiteSpace(_incident.SummaryTitle) ? "침해사고 심층 수사 완료" : _incident.SummaryTitle;
-                inner.Item().Text(title)
-                    .FontSize(9.5f)
-                    .Bold()
-                    .FontColor(ColorTextPrimary);
-
-                // AI 포렌식 서사 (Narrative)
-                string narrative = string.IsNullOrWhiteSpace(_incident.Narrative) ? "상세 수사 서사가 기록되지 않았습니다." : _incident.Narrative;
-                inner.Item().PaddingTop(3).Text(narrative)
-                    .FontSize(8.2f)
-                    .LineHeight(1.35f)
-                    .FontColor(ColorTextSecondary);
-
-                // MITRE ATT&CK 전술 캡슐 뱃지 행
-                if (_incident.MitreTactics.Count > 0)
-                {
-                    inner.Item().PaddingTop(6).Row(row =>
-                    {
-                        row.AutoItem().Text("MITRE ATT&CK: ")
-                            .FontSize(7.5f)
-                            .Bold()
-                            .FontColor(ColorTextMuted);
-
-                        row.RelativeItem().Row(badges =>
-                        {
-                            foreach (var tactic in _incident.MitreTactics)
-                            {
-                                badges.AutoItem()
-                                    .PaddingRight(4)
-                                    .Background(ColorMitreBg)
-                                    .Border(0.5f).BorderColor(ColorMitreBorder)
-                                    .PaddingHorizontal(5).PaddingVertical(1)
-                                    .Text(tactic)
-                                    .FontSize(7.2f)
-                                    .Bold()
-                                    .FontColor(ColorMitreText);
-                            }
-                        });
-                    });
-                }
-            });
-        });
-    }
-
-    private void ComposeReActAuditTrail(IContainer container)
-    {
-        container.Column(col =>
-        {
-            CreateSectionHeader(col, "STEP-BY-STEP FORENSIC AUDIT TRAIL (ReAct 턴별 수사 추적)");
+            CreateSectionHeader(col, "4. Investigation Trace");
 
             if (_incident.Traces.Count == 0)
             {
-                col.Item().Border(1).BorderColor(ColorBorder).Background(Colors.White).Padding(6)
-                    .Text("기록된 ReAct 수사 흔적이 없습니다. (선제 반사 차단 또는 오프라인 수사)")
-                    .FontSize(7.8f)
-                    .FontColor(ColorTextMuted);
+                col.Item().Text("No investigation trace recorded.")
+                    .FontSize(9)
+                    .FontColor(ColorLabel);
                 return;
             }
 
             col.Item().Table(table =>
             {
-                // 컬럼 정의: Turn(28pt), Tool(95pt), Thought(Relative 3), Observation(Relative 3), Latency(42pt)
                 table.ColumnsDefinition(columns =>
                 {
                     columns.ConstantColumn(28);
-                    columns.ConstantColumn(95);
+                    columns.ConstantColumn(90);
                     columns.RelativeColumn(3);
                     columns.RelativeColumn(3);
-                    columns.ConstantColumn(42);
+                    columns.ConstantColumn(40);
                 });
 
-                // ArqaStatic 스타일 다크 슬레이트 헤더
+                // Light header
                 table.Header(header =>
                 {
-                    header.Cell().Background(ColorTableHeader).Padding(3.5f).AlignCenter()
-                        .Text("Turn").FontSize(7.5f).Bold().FontColor(Colors.White);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4).AlignCenter()
+                        .Text("Step").FontSize(8).Bold().FontColor(ColorText);
 
-                    header.Cell().Background(ColorTableHeader).Padding(3.5f)
-                        .Text("Action Tool").FontSize(7.5f).Bold().FontColor(Colors.White);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4)
+                        .Text("Tool").FontSize(8).Bold().FontColor(ColorText);
 
-                    header.Cell().Background(ColorTableHeader).Padding(3.5f)
-                        .Text("Agent Thought (추론)").FontSize(7.5f).Bold().FontColor(Colors.White);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4)
+                        .Text("Reasoning").FontSize(8).Bold().FontColor(ColorText);
 
-                    header.Cell().Background(ColorTableHeader).Padding(3.5f)
-                        .Text("Tool Observation (실측 증거)").FontSize(7.5f).Bold().FontColor(Colors.White);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4)
+                        .Text("Observation").FontSize(8).Bold().FontColor(ColorText);
 
-                    header.Cell().Background(ColorTableHeader).Padding(3.5f).AlignRight()
-                        .Text("Latency").FontSize(7.5f).Bold().FontColor(Colors.White);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4).AlignRight()
+                        .Text("Latency").FontSize(8).Bold().FontColor(ColorText);
                 });
 
-                // 데이터 행: 홀/짝 지브라 교차 및 슬림 보더
                 int index = 0;
                 foreach (var trace in _incident.Traces)
                 {
-                    string rowBg = (index++ % 2 == 0) ? Colors.White : ColorCardBg;
+                    string rowBg = (index++ % 2 == 0) ? Colors.White : ColorZebra;
 
-                    table.Cell().Background(rowBg).BorderBottom(0.5f).BorderColor(ColorBorder).Padding(3.5f).AlignCenter()
-                        .Text($"#{trace.StepNumber}").FontSize(7.2f).Bold().FontColor(ColorTextMuted);
-
-                    table.Cell().Background(rowBg).BorderBottom(0.5f).BorderColor(ColorBorder).Padding(3.5f)
-                        .Text(trace.ActionTool).FontSize(7.2f).Bold().FontColor(ColorBrandSecondary);
-
-                    string thought = string.IsNullOrWhiteSpace(trace.Thought) ? "-" : trace.Thought;
-                    table.Cell().Background(rowBg).BorderBottom(0.5f).BorderColor(ColorBorder).Padding(3.5f)
-                        .Text(thought).FontSize(7.2f).FontColor(ColorTextPrimary).BreakAnywhere();
-
-                    string observation = string.IsNullOrWhiteSpace(trace.Observation) ? "-" : trace.Observation;
-                    table.Cell().Background(rowBg).BorderBottom(0.5f).BorderColor(ColorBorder).Padding(3.5f)
-                        .Text(observation).FontSize(7.2f).FontColor(ColorTextPrimary).BreakAnywhere();
-
-                    table.Cell().Background(rowBg).BorderBottom(0.5f).BorderColor(ColorBorder).Padding(3.5f).AlignRight()
-                        .Text($"{trace.ElapsedMs:F1}ms").FontSize(7.2f).FontColor(ColorTextMuted);
+                    AddTableCell(table, $"{trace.StepNumber}", rowBg, true, false, true);
+                    AddTableCell(table, trace.ActionTool ?? "-", rowBg, true);
+                    AddTableCell(table, string.IsNullOrWhiteSpace(trace.Thought) ? "-" : trace.Thought, rowBg);
+                    AddTableCell(table, string.IsNullOrWhiteSpace(trace.Observation) ? "-" : trace.Observation, rowBg);
+                    AddTableCell(table, $"{trace.ElapsedMs:F1}ms", rowBg, false, false, false, true);
                 }
             });
         });
     }
 
-    private void ComposeRemediationRunbook(IContainer container)
+    private void AddTableCell(TableDescriptor table, string text, string bg,
+        bool bold = false, bool breakAnywhere = true, bool center = false, bool right = false)
+    {
+        var cell = table.Cell()
+            .Background(bg)
+            .BorderBottom(0.5f).BorderColor(ColorBorder)
+            .Padding(4);
+
+        if (center) cell = cell.AlignCenter();
+        if (right) cell = cell.AlignRight();
+
+        var t = cell.Text(text).FontSize(8).FontColor(ColorText);
+        if (bold) t.Bold();
+        if (breakAnywhere) t.BreakAnywhere();
+    }
+
+    // ── Section 5: Response Actions ──────────────────────────────────────
+
+    private void ComposeResponseActions(IContainer container)
     {
         container.Column(col =>
         {
-            CreateSectionHeader(col, "INCIDENT REMEDIATION RUNBOOK (침해 대응 조치 내역)");
+            CreateSectionHeader(col, "5. Response Actions");
 
-            col.Item().Border(1).BorderColor(ColorBorder).Background(Colors.White).Padding(6).Column(inner =>
+            if (_incident.RemediationSteps.Count == 0)
             {
-                if (_incident.RemediationSteps.Count == 0)
-                {
-                    string defaultAction = _incident.IsCritical
-                        ? "1. 악성 프로세스 원자적 사살 완료 (NtTerminateProcess)\n2. 잔류 휘발성 메모리 VAD 정밀 소거\n3. EDR 중앙 관제 리포트 실시간 동기화"
-                        : "1. 정상 업무 프로세스 원자적 동결 해제 (NtResumeProcess)\n2. 시스템 감사 로그에 무해성 입증 기록 보관";
+                string defaultAction = _incident.IsCritical
+                    ? "1. Malicious process terminated.\n2. Residual volatile memory regions cleared.\n3. Incident record synchronized to central EDR database."
+                    : "1. Process unfrozen and restored to normal execution.\n2. Benign classification recorded in audit log.";
 
-                    inner.Item().Text(defaultAction)
-                        .FontSize(7.8f)
-                        .LineHeight(1.3f)
-                        .FontColor(ColorTextSecondary);
-                }
-                else
+                col.Item().Text(defaultAction)
+                    .FontSize(9)
+                    .LineHeight(1.4f)
+                    .FontColor(ColorText);
+            }
+            else
+            {
+                int stepNum = 1;
+                foreach (var step in _incident.RemediationSteps)
                 {
-                    foreach (var step in _incident.RemediationSteps)
-                    {
-                        inner.Item().PaddingBottom(2).Row(row =>
-                        {
-                            // 폰트 글리프 깨짐 방지: ArqaStatic 스타일 미니 사각 뱃지 사용
-                            row.AutoItem().PaddingTop(3).Width(3).Height(3).Background(ColorBrandSecondary);
-                            row.RelativeItem().PaddingLeft(6).Text(step).FontSize(7.8f).FontColor(ColorTextSecondary);
-                        });
-                    }
+                    col.Item().PaddingBottom(2).Text($"{stepNum++}. {step}")
+                        .FontSize(9)
+                        .FontColor(ColorText);
                 }
-            });
+            }
+        });
+    }
+
+    // ── Shared Components ────────────────────────────────────────────────
+
+    private void CreateSectionHeader(ColumnDescriptor col, string title)
+    {
+        col.Item().PaddingBottom(6).Column(inner =>
+        {
+            inner.Item().LineHorizontal(0.5f).LineColor(ColorBorder);
+            inner.Item().PaddingTop(4).Text(title)
+                .FontSize(10.5f)
+                .Bold()
+                .FontColor(ColorText);
         });
     }
 
     private void ComposeFooter(IContainer container)
     {
-        container.Column(col =>
+        container.PaddingTop(6).Row(row =>
         {
-            col.Item().PaddingTop(6).LineHorizontal(0.5f).LineColor(ColorBorder);
+            row.RelativeItem().Text("Phalanx EDR — Confidential")
+                .FontSize(7)
+                .FontColor(ColorLabel);
 
-            col.Item().PaddingTop(3).Row(row =>
+            row.AutoItem().Text(text =>
             {
-                // 좌측: 보안 인증 및 무결성 문구
-                row.RelativeItem().Text(text =>
-                {
-                    text.Span("Phalanx EDR Autonomous Security Engine • 본 문서는 침해사고 포렌식 증적 보존용으로 자동 생성되었습니다.").FontSize(6.8f).FontColor(ColorTextMuted);
-                });
-
-                // 우측: ArqaStatic 스타일의 동적 페이지 번호
-                row.AutoItem().Text(text =>
-                {
-                    text.Span("Page ").FontSize(6.8f).FontColor(ColorTextMuted);
-                    text.CurrentPageNumber().FontSize(6.8f).Bold().FontColor(ColorBrandPrimary);
-                    text.Span(" of ").FontSize(6.8f).FontColor(ColorTextMuted);
-                    text.TotalPages().FontSize(6.8f).Bold().FontColor(ColorBrandPrimary);
-                });
+                text.Span("Page ").FontSize(7).FontColor(ColorLabel);
+                text.CurrentPageNumber().FontSize(7).FontColor(ColorLabel);
+                text.Span(" of ").FontSize(7).FontColor(ColorLabel);
+                text.TotalPages().FontSize(7).FontColor(ColorLabel);
             });
         });
     }

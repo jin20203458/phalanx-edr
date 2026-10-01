@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Phalanx.Cockpit.Agent;
 using Phalanx.Cockpit.CQRS;
+using Phalanx.Cockpit.Reporting;
 using Phalanx.Cockpit.Services;
 using Phalanx.Cockpit.Storage;
 using Phalanx.Cockpit.Tools;
@@ -22,6 +23,9 @@ public static class Program
         Console.WriteLine("================================================================================");
         Console.WriteLine("   PHALANX COCKPIT - C# Enterprise EDR Threat Cockpit (Phase 4)                 ");
         Console.WriteLine("================================================================================");
+
+        // QuestPDF Community 라이선스 초기화
+        ForensicPdfReportGenerator.EnsureLicenseConfigured();
 
         var builder = WebApplication.CreateBuilder(args);
 
@@ -62,6 +66,7 @@ public static class Program
         builder.Services.AddSingleton<AutonomousHunterAgent>();
         builder.Services.AddSingleton<AttackLabScenarioRunner>();
         builder.Services.AddSingleton<PhalanxGrpcService>();
+        builder.Services.AddSingleton<IForensicReportGenerator, ForensicPdfReportGenerator>();
         builder.Services.AddSingleton<SettingsViewModel>();
         builder.Services.AddSingleton<MainViewModel>();
         builder.Services.AddSingleton<MainWindow>();

@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Phalanx.Cockpit.Agent;
 using Phalanx.Cockpit.CQRS;
+using Phalanx.Cockpit.Reporting;
 using Phalanx.Cockpit.Scenarios;
 using Phalanx.Cockpit.Services;
 using Phalanx.Cockpit.Storage;
@@ -42,6 +44,7 @@ public partial class MainViewModel : ObservableObject
     private readonly CockpitUiBridge _uiBridge;
     private readonly SensorProcessController _sensorController;
     private readonly AttackLabScenarioRunner _labRunner;
+    private readonly IForensicReportGenerator _reportGenerator;
     private readonly List<ScenarioExecutionResult> _recentLabResults = new();
 
     [ObservableProperty]
@@ -350,6 +353,13 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private IncidentItemViewModel? _selectedIncident;
 
+    partial void OnSelectedIncidentChanged(IncidentItemViewModel? value)
+    {
+        ExportForensicPdfCommand.NotifyCanExecuteChanged();
+    }
+
+    public bool CanExportForensicPdf => SelectedIncident != null && !SelectedIncident.IsInvestigating;
+
     public ObservableCollection<IncidentItemViewModel> Incidents { get; } = new();
     public ObservableCollection<IncidentItemViewModel> FilteredIncidents { get; } = new();
 
@@ -363,13 +373,15 @@ public partial class MainViewModel : ObservableObject
         CockpitUiBridge uiBridge,
         SensorProcessController sensorController,
         AttackLabScenarioRunner labRunner,
-        SettingsViewModel? settings = null)
+        SettingsViewModel? settings = null,
+        IForensicReportGenerator? reportGenerator = null)
     {
         _archiveManager = archiveManager;
         _treeManager = treeManager;
         _uiBridge = uiBridge;
         _sensorController = sensorController;
         _labRunner = labRunner;
+        _reportGenerator = reportGenerator ?? new ForensicPdfReportGenerator();
         Settings = settings ?? new SettingsViewModel(null, archiveManager, uiBridge, sensorController);
 
         // UI 브리지 및 센서 제어 이벤트 구독
@@ -410,6 +422,7 @@ public partial class MainViewModel : ObservableObject
         : this(archiveManager, treeManager, uiBridge,
                sensorController ?? SensorProcessController.Instance,
                new AttackLabScenarioRunner(treeManager, null),
+               null,
                null)
     {
     }
@@ -612,6 +625,7 @@ public partial class MainViewModel : ObservableObject
         ApplyFilter();
         SelectedIncident = existing;
         OnPropertyChanged(nameof(SelectedIncident));
+        ExportForensicPdfCommand.NotifyCanExecuteChanged();
     }
 
     private void StartInvestigationTimer()
@@ -1320,5 +1334,48 @@ public partial class MainViewModel : ObservableObject
     {
         SimulatorLog = $"[{DateTime.Now:HH:mm:ss}] 방어 검증 로그가 초기화되었습니다. 시나리오를 선택하여 주입하십시오.";
         _recentLabResults.Clear();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanExportForensicPdf))]
+    private async Task ExportForensicPdfAsync()
+    {
+        var incident = SelectedIncident;
+        if (incident == null || incident.IsInvestigating) return;
+
+        try
+        {
+            string exportDir = string.IsNullOrWhiteSpace(Settings.ReportExportPath)
+                ? Path.Combine(AppContext.BaseDirectory, "IncidentReports")
+                : (Path.IsPathRooted(Settings.ReportExportPath)
+                    ? Settings.ReportExportPath
+                    : Path.Combine(AppContext.BaseDirectory, Settings.ReportExportPath));
+
+            string savedPath = await Task.Run(() => _reportGenerator.ExportReportToFile(incident, exportDir));
+
+            SimulatorLog += $"\n[{DateTime.Now:HH:mm:ss}] [포렌식 PDF 리포트 생성 완료] 사건: {incident.IncidentId}\n" +
+                            $" ➔ 저장 경로: {savedPath}\n" +
+                            $" ➔ 처분: {incident.VerdictAction} (확신도: {incident.ConfidenceDisplay})";
+
+            if (Application.Current != null)
+            {
+                MessageBox.Show(
+                    $"A4 포렌식 보고서가 성공적으로 출력되었습니다.\n\n저장 경로:\n{savedPath}",
+                    "Phalanx 포렌식 리포트 출력 완료",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            SimulatorLog += $"\n[{DateTime.Now:HH:mm:ss}] [리포트 출력 오류] {ex.Message}";
+            if (Application.Current != null)
+            {
+                MessageBox.Show(
+                    $"보고서 출력 중 오류가 발생하였습니다:\n{ex.Message}",
+                    "리포트 출력 실패",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
     }
 }

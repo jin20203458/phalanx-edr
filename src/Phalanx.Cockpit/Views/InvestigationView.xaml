@@ -171,10 +171,10 @@
 
                     <Button
                         Padding="12,5"
+                        Command="{Binding ExportForensicPdfCommand}"
                         Content="A4 포렌식 리포트 출력"
-                        IsEnabled="False"
                         Style="{StaticResource CapsuleFilterButtonStyle}"
-                        ToolTip="준비 중 (QuestPDF 포렌식 리포트 엔진 연동 예정)" />
+                        ToolTip="선택된 침해사고의 AI ReAct 수사 기록 및 포렌식 증거를 A4 PDF 보고서로 내보냅니다." />
                 </StackPanel>
             </Grid>
         </Border>

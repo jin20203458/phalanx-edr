@@ -177,4 +177,88 @@ public class ProcessTreeProjectionTests
         Assert.False(oldNode.IsAlive);
         Assert.Equal("old_proc.exe", oldNode.ImageName);
     }
+
+    [Fact]
+    public void TestFlatTreeProjectionAndCollapseExpand()
+    {
+        var manager = new ProcessTreeProjectionManager();
+
+        // 1. Root: PID 4 (System)
+        // 2. Child: PID 100 (winword.exe)
+        // 3. Grandchild: PID 200 (powershell.exe)
+        // 4. Root 2: PID 500 (explorer.exe)
+        var snapshot = new List<ProcessEvent>
+        {
+            new ProcessEvent { ProcessId = 4, ParentProcessId = 0, ImageName = "System", Lifecycle = ProcessLifecycle.LifecycleSnapshot },
+            new ProcessEvent { ProcessId = 100, ParentProcessId = 4, ImageName = "winword.exe", Lifecycle = ProcessLifecycle.LifecycleSnapshot },
+            new ProcessEvent { ProcessId = 200, ParentProcessId = 100, ImageName = "powershell.exe", Lifecycle = ProcessLifecycle.LifecycleSnapshot },
+            new ProcessEvent { ProcessId = 500, ParentProcessId = 0, ImageName = "explorer.exe", Lifecycle = ProcessLifecycle.LifecycleSnapshot }
+        };
+
+        manager.ApplySnapshotBatch(snapshot);
+
+        // 검증: VisibleNodes가 DFS 전위 순서(Pre-order)로 평탄화되었는지 확인
+        Assert.Equal(4, manager.VisibleNodes.Count);
+        Assert.Equal((uint)4, manager.VisibleNodes[0].ProcessId);
+        Assert.Equal(0, manager.VisibleNodes[0].Depth);
+
+        Assert.Equal((uint)100, manager.VisibleNodes[1].ProcessId);
+        Assert.Equal(1, manager.VisibleNodes[1].Depth);
+        Assert.True(manager.VisibleNodes[1].HasChildren);
+
+        Assert.Equal((uint)200, manager.VisibleNodes[2].ProcessId);
+        Assert.Equal(2, manager.VisibleNodes[2].Depth);
+        Assert.False(manager.VisibleNodes[2].HasChildren);
+
+        Assert.Equal((uint)500, manager.VisibleNodes[3].ProcessId);
+        Assert.Equal(0, manager.VisibleNodes[3].Depth);
+
+        // winword.exe(PID 100) 접기 (Collapse) 테스트
+        var winword = manager.FindActiveNodeByPid(100)!;
+        manager.ToggleNodeExpanded(winword);
+
+        Assert.False(winword.IsExpanded);
+        Assert.Equal(3, manager.VisibleNodes.Count);
+        // powershell.exe(PID 200)가 VisibleNodes에서 제거되었는지 확인
+        Assert.DoesNotContain(manager.VisibleNodes, n => n.ProcessId == 200);
+
+        // winword.exe(PID 100) 다시 펼치기 (Expand) 테스트
+        manager.ToggleNodeExpanded(winword);
+
+        Assert.True(winword.IsExpanded);
+        Assert.Equal(4, manager.VisibleNodes.Count);
+        Assert.Equal((uint)200, manager.VisibleNodes[2].ProcessId);
+
+        // EnsureNodeVisible 테스트: winword 접힌 상태에서 powershell 가시화 요청 시 자동 언랩 검증
+        manager.ToggleNodeExpanded(winword);
+        Assert.False(winword.IsExpanded);
+        Assert.Equal(3, manager.VisibleNodes.Count);
+
+        var powershell = manager.FindActiveNodeByPid(200)!;
+        manager.EnsureNodeVisible(powershell);
+
+        Assert.True(winword.IsExpanded);
+        Assert.Contains(manager.VisibleNodes, n => n.ProcessId == 200);
+    }
+
+    [Fact]
+    public void TestSystemIdleProcessNormalization()
+    {
+        var manager = new ProcessTreeProjectionManager();
+
+        manager.ApplySnapshotBatch(new[]
+        {
+            new ProcessEvent
+            {
+                ProcessId = 0,
+                ParentProcessId = 0,
+                ImageName = "[System Process]",
+                Lifecycle = ProcessLifecycle.LifecycleSnapshot
+            }
+        });
+
+        var idleNode = manager.FindActiveNodeByPid(0);
+        Assert.NotNull(idleNode);
+        Assert.Equal("System Idle Process", idleNode.ImageName);
+    }
 }

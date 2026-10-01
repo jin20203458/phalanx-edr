@@ -6,7 +6,8 @@ using System.Windows.Interop;
 namespace Phalanx.Cockpit.Helpers;
 
 /// <summary>
-/// Windows DWM API를 활용하여 윈도우 타이틀바를 앱 테마와 일체화(Seamless)하는 Attached Behavior
+/// Windows DWM API를 활용하여 윈도우 창 프레임, 드롭 섀도우 및 시스템 메뉴(Alt+Space)를
+/// 심층 다크 모드(Immersive Dark Mode)로 일체화하는 Attached Behavior
 /// </summary>
 public static class WindowTitleBarBehavior
 {
@@ -16,8 +17,6 @@ public static class WindowTitleBarBehavior
     // DWM 속성 상수
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;     // Win 10 20H1+ 및 Win 11 다크 모드 강제
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19; // Win 10 1809 - 1909 호환
-    private const int DWMWA_CAPTION_COLOR = 35;               // Win 11 빌드 22000+ 타이틀바 배경색 (BGR)
-    private const int DWMWA_TEXT_COLOR = 36;                  // Win 11 빌드 22000+ 타이틀바 텍스트색 (BGR)
 
     public static readonly DependencyProperty EnableDarkTitleBarProperty =
         DependencyProperty.RegisterAttached(
@@ -53,24 +52,16 @@ public static class WindowTitleBarBehavior
 
             if (hwnd == IntPtr.Zero) return;
 
-            // 1. 창 전체 다크 모드 활성화 (비활성 시에도 흰색으로 풀리지 않도록 방지)
+            // 창 전체 심층 다크 모드 활성화 (Alt+Space 시스템 메뉴, DWM 창 그림자, 스냅 가이드 다크 렌더링)
             int useImmersiveDarkMode = 1;
             if (DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useImmersiveDarkMode, sizeof(int)) != 0)
             {
                 DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, ref useImmersiveDarkMode, sizeof(int));
             }
-
-            // 2. 타이틀바 배경색: Phalanx SurfaceBrush(#13161F) -> BGR(0x001F1613)
-            int captionColor = 0x001F1613;
-            DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref captionColor, sizeof(int));
-
-            // 3. 타이틀바 텍스트색: Phalanx TextPrimaryBrush(#F1F5F9) -> BGR(0x00F9F5F1)
-            int textColor = 0x00F9F5F1;
-            DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, ref textColor, sizeof(int));
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[WindowTitleBarBehavior] DWM 타이틀바 테마 적용 실패: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[WindowTitleBarBehavior] DWM 다크 모드 적용 실패: {ex.Message}");
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Phalanx.Shared.Protos;
 
@@ -9,6 +10,28 @@ namespace Phalanx.Cockpit.CQRS;
 /// </summary>
 public partial class ProcessNodeModel : ObservableObject
 {
+    [ObservableProperty]
+    private int _depth;
+
+    partial void OnDepthChanged(int value)
+    {
+        OnPropertyChanged(nameof(IndentMargin));
+    }
+
+    public Thickness IndentMargin => new Thickness(Depth * 18, 0, 0, 0);
+
+    [ObservableProperty]
+    private bool _isExpanded = true;
+
+    public bool HasChildren => Children.Count > 0;
+
+    public ProcessNodeModel()
+    {
+        Children.CollectionChanged += (s, e) =>
+        {
+            OnPropertyChanged(nameof(HasChildren));
+        };
+    }
     [ObservableProperty]
     private uint _processId;
 

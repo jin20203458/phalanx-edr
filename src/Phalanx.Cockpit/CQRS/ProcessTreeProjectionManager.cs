@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Runtime.InteropServices;
+using System.Windows;
 using Phalanx.Shared.Protos;
 
 namespace Phalanx.Cockpit.CQRS;
@@ -25,6 +27,11 @@ public class ProcessTreeProjectionManager
     /// </summary>
     public ObservableCollection<ProcessNodeModel> AllNodes { get; } = new();
 
+    /// <summary>
+    /// 1차원 플랫 가상화 렌더링용 활성 노드 컬렉션 (ListView VirtualizingStackPanel 최적화)
+    /// </summary>
+    public ObservableCollection<ProcessNodeModel> VisibleNodes { get; } = new();
+
     public event Action<ProcessNodeModel>? OnProcessSuspended;
     public event Action<ProcessNodeModel>? OnProcessTerminated;
     public event Action<ProcessNodeModel>? OnProcessStarted;
@@ -32,6 +39,42 @@ public class ProcessTreeProjectionManager
 
     public int ActiveCount => _activePidToGuid.Count;
     public int TotalCount => _nodesByGuid.Count;
+
+    public ProcessTreeProjectionManager()
+    {
+        var app = Application.Current;
+        if (app != null)
+        {
+            System.Windows.Data.BindingOperations.EnableCollectionSynchronization(RootNodes, _syncLock);
+            System.Windows.Data.BindingOperations.EnableCollectionSynchronization(AllNodes, _syncLock);
+            System.Windows.Data.BindingOperations.EnableCollectionSynchronization(VisibleNodes, _syncLock);
+        }
+    }
+
+    private static void DispatchUI(Action action)
+    {
+        var app = Application.Current;
+        if (app?.Dispatcher != null && !app.Dispatcher.CheckAccess())
+        {
+            app.Dispatcher.Invoke(action);
+        }
+        else
+        {
+            action();
+        }
+    }
+
+    /// <summary>
+    /// OS 특수 가상 프로세스(PID 0)의 표기를 작업 관리자 표준 명칭으로 정제
+    /// </summary>
+    public static string NormalizeProcessImageName(uint pid, string? imageName)
+    {
+        if (pid == 0 || string.Equals(imageName, "[System Process]", StringComparison.OrdinalIgnoreCase))
+        {
+            return "System Idle Process";
+        }
+        return imageName ?? string.Empty;
+    }
 
     /// <summary>
     /// 엔진 기동 또는 재연결 시 C++이 1회 일괄 전송한 기저 프로세스 스냅샷 배치 주입
@@ -46,13 +89,23 @@ public class ProcessTreeProjectionManager
             foreach (var ev in eventList)
             {
                 ulong guid = ev.ProcessGuid != 0 ? ev.ProcessGuid : ((ev.TimestampNs << 32) | ev.ProcessId);
+
+                if (_nodesByGuid.TryGetValue(guid, out var existing))
+                {
+                    existing.UpdateStatus(ProcessLifecycle.LifecycleSnapshot);
+                    if (!string.IsNullOrEmpty(ev.CommandLine)) existing.CommandLine = ev.CommandLine;
+                    if (ev.TokenElevationType != 0) existing.TokenElevationType = ev.TokenElevationType;
+                    tempMap[ev.ProcessId] = existing;
+                    continue;
+                }
+
                 var node = new ProcessNodeModel
                 {
                     ProcessId = ev.ProcessId,
                     ParentProcessId = ev.ParentProcessId,
                     ProcessGuid = guid,
                     ParentProcessGuid = ev.ParentProcessGuid,
-                    ImageName = ev.ImageName,
+                    ImageName = NormalizeProcessImageName(ev.ProcessId, ev.ImageName),
                     CommandLine = ev.CommandLine,
                     StartTimeNs = ev.TimestampNs,
                     SessionId = ev.SessionId,
@@ -67,20 +120,77 @@ public class ProcessTreeProjectionManager
             }
 
             // 부모-자식 트리 링크 구성
+            var rootNodesToAdd = new List<ProcessNodeModel>();
+            var allNodesToAdd = new List<ProcessNodeModel>();
+
             foreach (var node in tempMap.Values)
             {
                 if (node.ParentProcessId != 0 && tempMap.TryGetValue(node.ParentProcessId, out var parentNode))
                 {
-                    node.Parent = parentNode;
-                    node.ParentProcessGuid = parentNode.ProcessGuid;
-                    parentNode.Children.Add(node);
+                    if (node.Parent != parentNode)
+                    {
+                        node.Parent = parentNode;
+                        node.ParentProcessGuid = parentNode.ProcessGuid;
+                    }
+                    if (!parentNode.Children.Contains(node))
+                    {
+                        parentNode.Children.Add(node);
+                    }
                 }
                 else
                 {
+                    if (!RootNodes.Contains(node) && !rootNodesToAdd.Contains(node))
+                    {
+                        rootNodesToAdd.Add(node);
+                    }
+                }
+
+                if (!AllNodes.Contains(node) && !allNodesToAdd.Contains(node))
+                {
+                    allNodesToAdd.Add(node);
+                }
+            }
+
+            // 계층 깊이(Depth) 일괄 재계산
+            void UpdateDepths(ProcessNodeModel cur, int d)
+            {
+                cur.Depth = d;
+                foreach (var c in cur.Children)
+                {
+                    UpdateDepths(c, d + 1);
+                }
+            }
+
+            var allRoots = RootNodes.Concat(rootNodesToAdd).Distinct().ToList();
+            foreach (var r in allRoots)
+            {
+                UpdateDepths(r, 0);
+            }
+
+            // 가시화 플랫 리스트 생성
+            var flatList = new List<ProcessNodeModel>();
+            foreach (var r in allRoots)
+            {
+                CollectVisibleSubtree(r, flatList);
+            }
+
+            DispatchUI(() =>
+            {
+                foreach (var node in rootNodesToAdd)
+                {
                     RootNodes.Add(node);
                 }
-                AllNodes.Add(node);
-            }
+                foreach (var node in allNodesToAdd)
+                {
+                    AllNodes.Add(node);
+                }
+
+                VisibleNodes.Clear();
+                foreach (var node in flatList)
+                {
+                    VisibleNodes.Add(node);
+                }
+            });
         }
     }
 
@@ -153,7 +263,7 @@ public class ProcessTreeProjectionManager
             ParentProcessId = ev.ParentProcessId,
             ProcessGuid = guid,
             ParentProcessGuid = ev.ParentProcessGuid,
-            ImageName = ev.ImageName,
+            ImageName = NormalizeProcessImageName(ev.ProcessId, ev.ImageName),
             CommandLine = ev.CommandLine,
             StartTimeNs = ev.TimestampNs,
             SessionId = ev.SessionId,
@@ -173,20 +283,55 @@ public class ProcessTreeProjectionManager
         if (ev.ParentProcessGuid != 0 && _nodesByGuid.TryGetValue(ev.ParentProcessGuid, out parent))
         {
             node.Parent = parent;
-            parent.Children.Add(node);
         }
         else if (ev.ParentProcessId != 0 && _activePidToGuid.TryGetValue(ev.ParentProcessId, out ulong pGuid) &&
                  _nodesByGuid.TryGetValue(pGuid, out parent))
         {
             node.Parent = parent;
             node.ParentProcessGuid = pGuid;
-            parent.Children.Add(node);
         }
-        else
+
+        node.Depth = parent != null ? parent.Depth + 1 : 0;
+
+        DispatchUI(() =>
         {
-            RootNodes.Add(node);
-        }
-        AllNodes.Add(node);
+            if (parent != null)
+            {
+                if (!parent.Children.Contains(node))
+                {
+                    parent.Children.Add(node);
+                }
+
+                if (parent.IsExpanded)
+                {
+                    int insertIdx = FindLastVisibleDescendantIndex(parent);
+                    if (insertIdx >= 0 && !VisibleNodes.Contains(node))
+                    {
+                        VisibleNodes.Insert(insertIdx + 1, node);
+                    }
+                    else if (!VisibleNodes.Contains(node))
+                    {
+                        VisibleNodes.Add(node);
+                    }
+                }
+            }
+            else
+            {
+                if (!RootNodes.Contains(node))
+                {
+                    RootNodes.Add(node);
+                }
+                if (!VisibleNodes.Contains(node))
+                {
+                    VisibleNodes.Add(node);
+                }
+            }
+
+            if (!AllNodes.Contains(node))
+            {
+                AllNodes.Add(node);
+            }
+        });
 
         if (ev.IsTerminated || ev.Lifecycle == ProcessLifecycle.LifecycleTerminated)
         {
@@ -217,10 +362,13 @@ public class ProcessTreeProjectionManager
 
         if (targetNode != null)
         {
-            targetNode.IsAlive = false;
-            targetNode.ExitTimeNs = ev.TimestampNs;
-            targetNode.ExitCode = ev.ExitCode;
-            targetNode.UpdateStatus(ProcessLifecycle.LifecycleStop);
+            DispatchUI(() =>
+            {
+                targetNode.IsAlive = false;
+                targetNode.ExitTimeNs = ev.TimestampNs;
+                targetNode.ExitCode = ev.ExitCode;
+                targetNode.UpdateStatus(ProcessLifecycle.LifecycleStop);
+            });
             _activePidToGuid.TryRemove(ev.ProcessId, out _);
             OnProcessStopped?.Invoke(targetNode);
         }
@@ -296,8 +444,256 @@ public class ProcessTreeProjectionManager
         {
             _nodesByGuid.Clear();
             _activePidToGuid.Clear();
-            RootNodes.Clear();
-            AllNodes.Clear();
+            DispatchUI(() =>
+            {
+                RootNodes.Clear();
+                AllNodes.Clear();
+                VisibleNodes.Clear();
+            });
         }
     }
+
+    /// <summary>
+    /// 단일 서브트리를 DFS 전위 순회(Pre-Order)하며 가시화 노드를 평탄화 수집
+    /// </summary>
+    private void CollectVisibleSubtree(ProcessNodeModel node, List<ProcessNodeModel> output)
+    {
+        output.Add(node);
+        if (node.IsExpanded && node.Children.Count > 0)
+        {
+            foreach (var child in node.Children)
+            {
+                CollectVisibleSubtree(child, output);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 노드의 펼침/접힘 상태를 토글하고 가시화 플랫 컬렉션(VisibleNodes)을 부분 갱신 (VS Code splice 스타일)
+    /// </summary>
+    public void ToggleNodeExpanded(ProcessNodeModel node)
+    {
+        lock (_syncLock)
+        {
+            node.IsExpanded = !node.IsExpanded;
+
+            if (!node.IsExpanded)
+            {
+                // 접힘(Collapse): VisibleNodes에서 해당 노드의 모든 하위 자손을 제거
+                int nodeIdx = VisibleNodes.IndexOf(node);
+                if (nodeIdx < 0) return;
+
+                var descendantsToRemove = new List<ProcessNodeModel>();
+                for (int i = nodeIdx + 1; i < VisibleNodes.Count; i++)
+                {
+                    var candidate = VisibleNodes[i];
+                    if (IsDescendantOf(candidate, node))
+                    {
+                        descendantsToRemove.Add(candidate);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                DispatchUI(() =>
+                {
+                    foreach (var d in descendantsToRemove)
+                    {
+                        VisibleNodes.Remove(d);
+                    }
+                });
+            }
+            else
+            {
+                // 펼침(Expand): 자식 중 가시 상태인 노드들을 해당 노드 바로 뒤에 순차 삽입
+                int nodeIdx = VisibleNodes.IndexOf(node);
+                if (nodeIdx < 0) return;
+
+                var toInsert = new List<ProcessNodeModel>();
+                foreach (var child in node.Children)
+                {
+                    CollectVisibleSubtree(child, toInsert);
+                }
+
+                DispatchUI(() =>
+                {
+                    int currentIdx = VisibleNodes.IndexOf(node);
+                    if (currentIdx >= 0)
+                    {
+                        for (int i = 0; i < toInsert.Count; i++)
+                        {
+                            VisibleNodes.Insert(currentIdx + 1 + i, toInsert[i]);
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// 특정 노드가 화면(VisibleNodes)에 확실히 나타나도록 모든 상위 조상 노드를 펼치고 동기화
+    /// </summary>
+    public void EnsureNodeVisible(ProcessNodeModel node)
+    {
+        lock (_syncLock)
+        {
+            bool anyChange = false;
+            var cur = node.Parent;
+            while (cur != null)
+            {
+                if (!cur.IsExpanded)
+                {
+                    cur.IsExpanded = true;
+                    anyChange = true;
+                }
+                cur = cur.Parent;
+            }
+
+            if (anyChange || !VisibleNodes.Contains(node))
+            {
+                RebuildVisibleNodes();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 가시화 플랫 컬렉션(VisibleNodes) 전체 재구축
+    /// </summary>
+    public void RebuildVisibleNodes()
+    {
+        lock (_syncLock)
+        {
+            var list = new List<ProcessNodeModel>();
+            foreach (var root in RootNodes)
+            {
+                CollectVisibleSubtree(root, list);
+            }
+
+            DispatchUI(() =>
+            {
+                VisibleNodes.Clear();
+                foreach (var item in list)
+                {
+                    VisibleNodes.Add(item);
+                }
+            });
+        }
+    }
+
+    private int FindLastVisibleDescendantIndex(ProcessNodeModel parent)
+    {
+        int parentIdx = VisibleNodes.IndexOf(parent);
+        if (parentIdx < 0) return -1;
+        int idx = parentIdx;
+        for (int i = parentIdx + 1; i < VisibleNodes.Count; i++)
+        {
+            var current = VisibleNodes[i];
+            if (IsDescendantOf(current, parent))
+            {
+                idx = i;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return idx;
+    }
+
+    private static bool IsDescendantOf(ProcessNodeModel candidate, ProcessNodeModel ancestor)
+    {
+        var cur = candidate.Parent;
+        while (cur != null)
+        {
+            if (cur == ancestor) return true;
+            cur = cur.Parent;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Windows Win32 Toolhelp32 API를 활용하여 로컬 OS의 모든 프로세스를 0초 즉시 스냅샷 수집
+    /// (C++ 센서 연결 전 또는 오프라인 상태에서도 관제 콕핏에 전체 프로세스 트리를 즉각 렌더링)
+    /// </summary>
+    public void InitializeFromLocalOsSnapshot()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var events = new List<ProcessEvent>();
+        IntPtr hSnap = CreateToolhelp32Snapshot(0x00000002 /* TH32CS_SNAPPROCESS */, 0);
+        if (hSnap == IntPtr.Zero || hSnap == new IntPtr(-1)) return;
+
+        try
+        {
+            var pe = new PROCESSENTRY32();
+            pe.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+
+            if (Process32First(hSnap, ref pe))
+            {
+                ulong nowNs = (ulong)DateTime.UtcNow.Ticks * 100;
+                do
+                {
+                    uint pid = pe.th32ProcessID;
+                    uint ppid = pe.th32ParentProcessID;
+                    string img = pe.szExeFile;
+
+                    var ev = new ProcessEvent
+                    {
+                        ProcessId = pid,
+                        ParentProcessId = ppid,
+                        ImageName = NormalizeProcessImageName(pid, img),
+                        TimestampNs = nowNs,
+                        Lifecycle = ProcessLifecycle.LifecycleSnapshot,
+                        ProcessGuid = ((nowNs << 32) | pid),
+                        IsSuspended = false,
+                        IsTerminated = false
+                    };
+                    events.Add(ev);
+                } while (Process32Next(hSnap, ref pe));
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Local Snapshot Warning] {ex.Message}");
+        }
+        finally
+        {
+            CloseHandle(hSnap);
+        }
+
+        if (events.Count > 0)
+        {
+            ApplySnapshotBatch(events);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct PROCESSENTRY32
+    {
+        public uint dwSize;
+        public uint cntUsage;
+        public uint th32ProcessID;
+        public IntPtr th32DefaultHeapID;
+        public uint th32ModuleID;
+        public uint cntThreads;
+        public uint th32ParentProcessID;
+        public int pcPriClassBase;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szExeFile;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
 }

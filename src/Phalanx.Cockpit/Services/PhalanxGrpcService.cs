@@ -56,8 +56,22 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
                 var batch = requestStream.Current;
                 OnBatchReceived?.Invoke(batch);
 
-                // 1. 배치 내부 프로세스 이벤트들을 CQRS 프로젝션 트리에 투영
-                foreach (var ev in batch.ProcessEvents)
+                // 1. 기저 프로세스 스냅샷 배치 일괄 주입 (개별 분할 방지 및 부모-자식 트리 온전 보존)
+                var snapshotEvents = batch.ProcessEvents
+                    .Where(e => e.Lifecycle == ProcessLifecycle.LifecycleSnapshot)
+                    .ToList();
+
+                if (snapshotEvents.Count > 0)
+                {
+                    _treeManager.ApplySnapshotBatch(snapshotEvents);
+                }
+
+                // 2. 실시간 증분 델타 이벤트 처리
+                var deltaEvents = batch.ProcessEvents
+                    .Where(e => e.Lifecycle != ProcessLifecycle.LifecycleSnapshot)
+                    .ToList();
+
+                foreach (var ev in deltaEvents)
                 {
                     _treeManager.ApplyDeltaEvent(ev);
 
@@ -118,7 +132,7 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ [gRPC 스트림 예외] {ex.Message}");
+            Console.WriteLine($"⚠️ [gRPC 스트림 예외] {ex.Message}\n{ex.StackTrace}");
         }
         finally
         {

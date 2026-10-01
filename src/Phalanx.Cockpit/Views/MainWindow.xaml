@@ -3,17 +3,41 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:helpers="clr-namespace:Phalanx.Cockpit.Helpers"
+    xmlns:views="clr-namespace:Phalanx.Cockpit.Views"
     xmlns:vm="clr-namespace:Phalanx.Cockpit.ViewModels"
     Title="Phalanx EDR Cockpit"
     Width="1440"
     Height="900"
     MinWidth="1100"
     MinHeight="700"
+    FontFamily="Segoe UI Variable Text, Segoe UI, -apple-system, sans-serif"
     helpers:WindowTitleBarBehavior.EnableDarkTitleBar="True"
-    Background="#0B0D12"
-    Foreground="#F1F5F9"
+    Background="{StaticResource RootBackgroundBrush}"
+    Foreground="{StaticResource TextPrimaryBrush}"
     Icon="/Assets/phalanx.ico"
     WindowStartupLocation="CenterScreen">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome
+            CaptionHeight="48"
+            CornerRadius="0"
+            GlassFrameThickness="0"
+            NonClientFrameEdges="None"
+            ResizeBorderThickness="5"
+            UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Style>
+        <Style TargetType="Window">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Style.Triggers>
+                <Trigger Property="WindowState" Value="Maximized">
+                    <Setter Property="BorderThickness" Value="0" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Style>
 
     <Window.Resources>
         <ResourceDictionary>
@@ -24,21 +48,32 @@
     </Window.Resources>
 
     <Grid>
+        <Grid.Style>
+            <Style TargetType="Grid">
+                <Setter Property="Margin" Value="0" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=WindowState}" Value="Maximized">
+                        <Setter Property="Margin" Value="7" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Grid.Style>
+
         <Grid.RowDefinitions>
-            <!--  0: Global Top Navigation Bar  -->
-            <RowDefinition Height="54" />
-            <!--  1: Telemetry Metrics & Filter Bar  -->
-            <RowDefinition Height="46" />
-            <!--  2: Main Workspace (Worklist + Inspector)  -->
+            <!--  0: Global Top Unified Title Bar (48px)  -->
+            <RowDefinition Height="48" />
+            <!--  1: Multi-View Workspace (Nav Rail + Content)  -->
             <RowDefinition Height="*" />
+            <!--  2: Bottom Global Telemetry Status Bar (26px)  -->
+            <RowDefinition Height="26" />
         </Grid.RowDefinitions>
 
         <!--  =============================================================  -->
-        <!--  Row 0: Global Top Navigation Bar  -->
+        <!--  Row 0: Global Top Navigation Bar (Unified Title Bar)           -->
         <!--  =============================================================  -->
         <Border
             Grid.Row="0"
-            Padding="20,0"
+            Padding="16,0,0,0"
             Background="{StaticResource SurfaceBrush}"
             BorderBrush="{StaticResource BorderBrush}"
             BorderThickness="0,0,0,1">
@@ -49,29 +84,29 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!--  Brand / Logo  -->
+                <!--  Brand / Logo (Drag Caption Area)  -->
                 <StackPanel
                     Grid.Column="0"
                     VerticalAlignment="Center"
                     Orientation="Horizontal">
                     <Path
-                        Width="18"
-                        Height="18"
+                        Width="16"
+                        Height="16"
                         Margin="0,0,10,0"
                         Data="{StaticResource IconShield}"
-                        Fill="{StaticResource AccentBlueBrush}"
+                        Fill="{StaticResource AccentBrandBrush}"
                         Stretch="Uniform" />
                     <TextBlock
                         VerticalAlignment="Center"
-                        FontSize="15"
+                        FontSize="13"
                         FontWeight="Bold"
                         Foreground="{StaticResource TextPrimaryBrush}"
                         Text="PHALANX EDR" />
                     <TextBlock
                         Margin="8,0,0,0"
                         VerticalAlignment="Center"
-                        FontSize="12"
-                        FontWeight="SemiBold"
+                        FontSize="11"
+                        FontWeight="Normal"
                         Foreground="{StaticResource TextMutedBrush}"
                         Text="Enterprise Threat Cockpit" />
                 </StackPanel>
@@ -82,41 +117,38 @@
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Orientation="Horizontal">
-                    <!--  Status Dot (Green or Red)  -->
+                    <!--  Status Dot (Live: emerald, Offline: crimson)  -->
                     <Ellipse
-                        Width="8"
-                        Height="8"
-                        Margin="0,0,8,0">
+                        Width="6"
+                        Height="6"
+                        Margin="0,0,7,0">
                         <Ellipse.Style>
                             <Style TargetType="Ellipse">
-                                <Setter Property="Fill" Value="#EF4444" />
+                                <Setter Property="Fill" Value="{StaticResource DotCriticalBrush}" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding SensorConnected}" Value="True">
-                                        <Setter Property="Fill" Value="#22C55E" />
+                                        <Setter Property="Fill" Value="{StaticResource DotLiveBrush}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Ellipse.Style>
                     </Ellipse>
                     <TextBlock
-                        FontFamily="Cascadia Code, Consolas"
                         FontSize="11"
                         FontWeight="SemiBold"
-                        Foreground="{StaticResource TextSecondaryBrush}"
-                        Text="SENSOR IPC : 127.0.0.1:50051 " />
+                        Foreground="{StaticResource TextMutedBrush}"
+                        Text="SENSOR IPC 127.0.0.1:50051 " />
                     <TextBlock
-                        Margin="0,0,14,0"
-                        FontFamily="Cascadia Code, Consolas"
+                        Margin="0,0,12,0"
                         FontSize="11"
-                        FontWeight="Bold">
+                        FontWeight="Bold"
+                        Foreground="{StaticResource TextPrimaryBrush}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
-                                <Setter Property="Text" Value="[DISCONNECTED]" />
-                                <Setter Property="Foreground" Value="#EF4444" />
+                                <Setter Property="Text" Value="OFFLINE" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding SensorConnected}" Value="True">
-                                        <Setter Property="Text" Value="[CONNECTED]" />
-                                        <Setter Property="Foreground" Value="#22C55E" />
+                                        <Setter Property="Text" Value="LIVE" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -124,761 +156,281 @@
                     </TextBlock>
 
                     <!--  Sensor Live Toggle Button  -->
-                    <Button Command="{Binding ToggleSensorCommand}">
+                    <Button
+                        Command="{Binding ToggleSensorCommand}"
+                        WindowChrome.IsHitTestVisibleInChrome="True">
                         <Button.Style>
                             <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
-                                <Setter Property="Padding" Value="10,4" />
-                                <Setter Property="BorderBrush" Value="#3B82F6" />
-                                <Setter Property="Foreground" Value="#93C5FD" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SensorConnected}" Value="True">
-                                        <Setter Property="BorderBrush" Value="#EF4444" />
-                                        <Setter Property="Foreground" Value="#FCA5A5" />
-                                    </DataTrigger>
-                                </Style.Triggers>
+                                <Setter Property="Padding" Value="10,3" />
+                                <Setter Property="BorderBrush" Value="{StaticResource BorderLightBrush}" />
+                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
                             </Style>
                         </Button.Style>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock
-                                FontFamily="Cascadia Code, Consolas"
-                                FontSize="11"
-                                FontWeight="Bold"
-                                Text="{Binding SensorToggleText}" />
-                        </StackPanel>
+                        <TextBlock
+                            FontSize="10.5"
+                            FontWeight="Bold"
+                            Text="{Binding SensorToggleText}" />
                     </Button>
                 </StackPanel>
 
-                <!--  Right: Refresh & Utilities  -->
+                <!--  Right: Refresh & Window Caption Buttons  -->
                 <StackPanel
                     Grid.Column="2"
-                    VerticalAlignment="Center"
+                    VerticalAlignment="Stretch"
                     Orientation="Horizontal">
                     <Button
-                        Margin="0,0,8,0"
+                        Margin="0,0,10,0"
+                        VerticalAlignment="Center"
                         Command="{Binding RefreshFromDbCommand}"
-                        Style="{StaticResource CapsuleFilterButtonStyle}">
-                        <StackPanel Orientation="Horizontal">
-                            <Path
-                                Width="12"
-                                Height="12"
-                                Margin="0,0,6,0"
-                                Data="{StaticResource IconRefresh}"
-                                Fill="{StaticResource TextSecondaryBrush}"
-                                Stretch="Uniform" />
-                            <TextBlock Text="REFRESH DB" />
-                        </StackPanel>
+                        Style="{StaticResource CapsuleFilterButtonStyle}"
+                        WindowChrome.IsHitTestVisibleInChrome="True">
+                        <TextBlock FontSize="10.5" Text="REFRESH DB" />
+                    </Button>
+
+                    <!--  Caption Minimize, Maximize/Restore, Close Buttons  -->
+                    <Button
+                        Click="MinimizeButton_Click"
+                        Style="{StaticResource WindowCaptionButtonStyle}"
+                        ToolTip="최소화">
+                        <Path
+                            Width="10"
+                            Height="1"
+                            Data="{StaticResource IconWinMinimize}"
+                            Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                            StrokeThickness="1" />
+                    </Button>
+                    <Button
+                        Click="MaximizeButton_Click"
+                        Style="{StaticResource WindowCaptionButtonStyle}">
+                        <Button.ToolTip>
+                            <ToolTip Content="최대화 / 복원" />
+                        </Button.ToolTip>
+                        <Path
+                            Width="10"
+                            Height="10"
+                            Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                            StrokeThickness="1">
+                            <Path.Style>
+                                <Style TargetType="Path">
+                                    <Setter Property="Data" Value="{StaticResource IconWinMaximize}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=WindowState}" Value="Maximized">
+                                            <Setter Property="Data" Value="{StaticResource IconWinRestore}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Path.Style>
+                        </Path>
+                    </Button>
+                    <Button
+                        Click="CloseButton_Click"
+                        Style="{StaticResource WindowCaptionCloseButtonStyle}"
+                        ToolTip="닫기">
+                        <Path
+                            Width="10"
+                            Height="10"
+                            Data="{StaticResource IconWinClose}"
+                            Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                            StrokeThickness="1" />
                     </Button>
                 </StackPanel>
             </Grid>
         </Border>
 
         <!--  =============================================================  -->
-        <!--  Row 1: Telemetry Metrics & Filter Bar  -->
+        <!--  Row 1: Multi-View Workspace (52px Left Rail + Content)         -->
+        <!--  =============================================================  -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <!--  Column 0: 52px Slim Navigation Rail  -->
+                <ColumnDefinition Width="52" />
+                <!--  Column 1: Active Dedicated View Content  -->
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!--  =========================================================  -->
+            <!--  Left Navigation Rail (Linear / Obsidian Style)            -->
+            <!--  =========================================================  -->
+            <Border
+                Grid.Column="0"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,1,0">
+                <Grid>
+                    <!--  Top Primary Nav: 2 Core Workspaces  -->
+                    <StackPanel VerticalAlignment="Top" Margin="0,6">
+                        <!--  Button 1: Incidents View  -->
+                        <Button
+                            Command="{Binding SwitchViewCommand}"
+                            CommandParameter="Incidents"
+                            Style="{StaticResource NavRailButtonStyle}"
+                            ToolTip="사건 관제실 (Threats &amp; Incidents)">
+                            <Path
+                                Width="18"
+                                Height="18"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="{StaticResource IconNavIncidents}"
+                                Stretch="Uniform">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Fill" Value="{StaticResource TextMutedBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CurrentView}" Value="Incidents">
+                                                <Setter Property="Fill" Value="{StaticResource AccentBrandBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding CurrentView}" Value="Investigation">
+                                                <Setter Property="Fill" Value="{StaticResource AccentBrandBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                        </Button>
+
+                        <!--  Button 2: Process Tree DAG  -->
+                        <Button
+                            Command="{Binding SwitchViewCommand}"
+                            CommandParameter="ProcessGraph"
+                            Style="{StaticResource NavRailButtonStyle}"
+                            ToolTip="인메모리 프로세스 맵 (Process Tree DAG)">
+                            <Path
+                                Width="18"
+                                Height="18"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="{StaticResource IconNavProcessGraph}"
+                                Stroke="{Binding Path=Fill, RelativeSource={RelativeSource Self}}"
+                                StrokeThickness="1"
+                                Stretch="Uniform">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Fill" Value="{StaticResource TextMutedBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CurrentView}" Value="ProcessGraph">
+                                                <Setter Property="Fill" Value="{StaticResource AccentBrandBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                        </Button>
+                    </StackPanel>
+
+                    <!--  Bottom Companion Launcher: Attack Lab Window  -->
+                    <StackPanel VerticalAlignment="Bottom" Margin="0,6">
+                        <Button
+                            Command="{Binding OpenAttackLabCommand}"
+                            Style="{StaticResource NavRailButtonStyle}"
+                            ToolTip="모의 침해 시뮬레이터 랩 팝업 (Launch Attack Lab Companion)">
+                            <Path
+                                Width="18"
+                                Height="18"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="{StaticResource IconNavAttackLab}"
+                                Fill="{StaticResource TextMutedBrush}"
+                                Stretch="Uniform" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!--  =========================================================  -->
+            <!--  Main Content Area: Core Operational Views Switcher         -->
+            <!--  =========================================================  -->
+            <Grid Grid.Column="1">
+                <!--  View 1: Incidents & Quick Triage  -->
+                <views:IncidentsView>
+                    <views:IncidentsView.Style>
+                        <Style TargetType="views:IncidentsView">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding CurrentView}" Value="Incidents">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </views:IncidentsView.Style>
+                </views:IncidentsView>
+
+                <!--  View 2: Dedicated Deep Dive Investigation Room  -->
+                <views:InvestigationView>
+                    <views:InvestigationView.Style>
+                        <Style TargetType="views:InvestigationView">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding CurrentView}" Value="Investigation">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </views:InvestigationView.Style>
+                </views:InvestigationView>
+
+                <!--  View 3: Process Tree DAG Explorer  -->
+                <views:ProcessGraphView>
+                    <views:ProcessGraphView.Style>
+                        <Style TargetType="views:ProcessGraphView">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding CurrentView}" Value="ProcessGraph">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </views:ProcessGraphView.Style>
+                </views:ProcessGraphView>
+            </Grid>
+        </Grid>
+
+        <!--  =============================================================  -->
+        <!--  Row 2: Subtle Bottom Global Status Bar (26px)                  -->
         <!--  =============================================================  -->
         <Border
-            Grid.Row="1"
-            Padding="20,0"
-            Background="#0F121A"
+            Grid.Row="2"
+            Padding="14,0"
+            Background="#0A0A0A"
             BorderBrush="{StaticResource BorderBrush}"
-            BorderThickness="0,0,0,1">
+            BorderThickness="0,1,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!--  Metrics Counter  -->
+                <!--  Left Telemetry Counters  -->
                 <StackPanel
                     Grid.Column="0"
                     VerticalAlignment="Center"
                     Orientation="Horizontal">
-                    <TextBlock
-                        FontWeight="SemiBold"
-                        Foreground="{StaticResource TextMutedBrush}"
-                        Style="{StaticResource MonospaceDataStyle}"
-                        Text="MONITORED: " />
-                    <TextBlock
-                        Margin="0,0,16,0"
-                        FontWeight="Bold"
-                        Foreground="{StaticResource TextPrimaryBrush}"
-                        Style="{StaticResource MonospaceDataStyle}"
-                        Text="{Binding MonitoredProcessCount}" />
+                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" Text="MONITORED: " />
+                    <TextBlock Margin="0,0,12,0" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding MonitoredProcessCount}" />
 
-                    <TextBlock
-                        FontWeight="SemiBold"
-                        Foreground="{StaticResource TextMutedBrush}"
-                        Style="{StaticResource MonospaceDataStyle}"
-                        Text="FROZEN: " />
-                    <TextBlock
-                        Margin="0,0,16,0"
-                        FontWeight="Bold"
-                        Foreground="#FDE68A"
-                        Style="{StaticResource MonospaceDataStyle}"
-                        Text="{Binding ActiveSuspendedCount}" />
+                    <Ellipse Width="4" Height="4" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{StaticResource DotSuspendedBrush}" />
+                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" Text="FROZEN: " />
+                    <TextBlock Margin="0,0,12,0" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding ActiveSuspendedCount}" />
 
-                    <TextBlock
-                        FontWeight="SemiBold"
-                        Foreground="{StaticResource TextMutedBrush}"
-                        Style="{StaticResource MonospaceDataStyle}"
-                        Text="TERMINATED: " />
-                    <TextBlock
-                        Margin="0,0,16,0"
-                        FontWeight="Bold"
-                        Foreground="#FCA5A5"
-                        Style="{StaticResource MonospaceDataStyle}"
-                        Text="{Binding TotalTerminatedCount}" />
+                    <Ellipse Width="4" Height="4" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{StaticResource DotCriticalBrush}" />
+                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" Text="TERMINATED: " />
+                    <TextBlock Margin="0,0,12,0" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding TotalTerminatedCount}" />
 
-                    <TextBlock
-                        FontWeight="SemiBold"
-                        Foreground="{StaticResource TextMutedBrush}"
-                        Style="{StaticResource MonospaceDataStyle}"
-                        Text="RESTORED: " />
-                    <TextBlock
-                        FontWeight="Bold"
-                        Foreground="#86EFAC"
-                        Style="{StaticResource MonospaceDataStyle}"
-                        Text="{Binding TotalRestoredCount}" />
+                    <Ellipse Width="4" Height="4" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{StaticResource DotBenignBrush}" />
+                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" Text="RESTORED: " />
+                    <TextBlock FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding TotalRestoredCount}" />
                 </StackPanel>
 
-                <!--  Filters  -->
+                <!--  Right SLA Engine State  -->
                 <StackPanel
-                    Grid.Column="2"
+                    Grid.Column="1"
                     VerticalAlignment="Center"
                     Orientation="Horizontal">
                     <TextBlock
-                        Margin="0,0,10,0"
-                        VerticalAlignment="Center"
-                        FontWeight="SemiBold"
-                        Style="{StaticResource MonospaceDataStyle}"
-                        Text="FILTER:" />
-                    <Button
-                        Margin="0,0,4,0"
-                        Command="{Binding SetFilterCommand}"
-                        CommandParameter="ALL"
-                        Content="ALL"
-                        Style="{StaticResource CapsuleFilterButtonStyle}" />
-                    <Button
-                        Margin="0,0,4,0"
-                        Command="{Binding SetFilterCommand}"
-                        CommandParameter="CRITICAL"
-                        Content="CRITICAL"
-                        Style="{StaticResource CapsuleFilterButtonStyle}" />
-                    <Button
-                        Margin="0,0,4,0"
-                        Command="{Binding SetFilterCommand}"
-                        CommandParameter="BENIGN"
-                        Content="BENIGN"
-                        Style="{StaticResource CapsuleFilterButtonStyle}" />
-                    <Button
-                        Margin="0,0,12,0"
-                        Command="{Binding SetFilterCommand}"
-                        CommandParameter="SUSPENDED"
-                        Content="SUSPENDED"
-                        Style="{StaticResource CapsuleFilterButtonStyle}" />
-
-                    <!--  Search Input  -->
-                    <Border
-                        Width="180"
-                        Height="28"
-                        Background="#161922"
-                        BorderBrush="{StaticResource BorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="4">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="26" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Path
-                                Grid.Column="0"
-                                Width="11"
-                                Height="11"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Data="{StaticResource IconSearch}"
-                                Fill="{StaticResource TextMutedBrush}"
-                                Stretch="Uniform" />
-                            <TextBox
-                                Grid.Column="1"
-                                VerticalAlignment="Center"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                FontFamily="Segoe UI"
-                                FontSize="11"
-                                Foreground="{StaticResource TextPrimaryBrush}"
-                                Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" />
-                        </Grid>
-                    </Border>
+                        FontSize="10"
+                        Foreground="{StaticResource TextMutedBrush}"
+                        Text="SAFETY WATCHDOG: 10s SLA (+50s EXTEND TICKETS) • REAC HUNTER: READY" />
                 </StackPanel>
             </Grid>
         </Border>
-
-        <!--  =============================================================  -->
-        <!--  Row 2: Main Workspace (Worklist + Detail Inspector)  -->
-        <!--  =============================================================  -->
-        <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <!--  Worklist Column  -->
-                <ColumnDefinition Width="*" MinWidth="480" />
-                <!--  Splitter  -->
-                <ColumnDefinition Width="4" />
-                <!--  Detail Inspector Column  -->
-                <ColumnDefinition Width="1.3*" MinWidth="450" />
-            </Grid.ColumnDefinitions>
-
-            <!--  Left: Incident Worklist  -->
-            <Border
-                Grid.Column="0"
-                Padding="16"
-                Background="{StaticResource RootBackgroundBrush}">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <TextBlock
-                        Grid.Row="0"
-                        Margin="4,0,0,10"
-                        Style="{StaticResource SectionHeaderStyle}"
-                        Text="보안 침해사고 워크리스트" />
-
-                    <ScrollViewer
-                        Grid.Row="1"
-                        HorizontalScrollBarVisibility="Disabled"
-                        VerticalScrollBarVisibility="Auto">
-                        <ListBox
-                            Background="Transparent"
-                            BorderThickness="0"
-                            ItemsSource="{Binding FilteredIncidents}"
-                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                            SelectedItem="{Binding SelectedIncident}">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                    <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Margin" Value="0,0,0,8" />
-                                    <Setter Property="Background" Value="Transparent" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="ListBoxItem">
-                                                <ContentPresenter />
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate DataType="{x:Type vm:IncidentItemViewModel}">
-                                    <Border
-                                        x:Name="cardBorder"
-                                        Padding="14"
-                                        Background="{StaticResource CardBrush}"
-                                        BorderBrush="{StaticResource BorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="6"
-                                        Cursor="Hand">
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-
-                                            <!--  Card Header: Severity Badge + Time + Confidence  -->
-                                            <Grid Grid.Row="0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-
-                                                <!--  Verdict Severity Badge  -->
-                                                <Border
-                                                    Grid.Column="0"
-                                                    Margin="0,0,8,0"
-                                                    Padding="6,2"
-                                                    BorderThickness="1"
-                                                    CornerRadius="3">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="Background" Value="{StaticResource SeveritySuspendedBgBrush}" />
-                                                            <Setter Property="BorderBrush" Value="{StaticResource SeveritySuspendedBorderBrush}" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding StatusSeverity}" Value="CRITICAL">
-                                                                    <Setter Property="Background" Value="{StaticResource SeverityCriticalBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{StaticResource SeverityCriticalBorderBrush}" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding StatusSeverity}" Value="BENIGN">
-                                                                    <Setter Property="Background" Value="{StaticResource SeverityBenignBgBrush}" />
-                                                                    <Setter Property="BorderBrush" Value="{StaticResource SeverityBenignBorderBrush}" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <TextBlock
-                                                        FontFamily="Cascadia Code, Consolas"
-                                                        FontSize="10"
-                                                        FontWeight="Bold"
-                                                        Text="{Binding VerdictAction}">
-                                                        <TextBlock.Style>
-                                                            <Style TargetType="TextBlock">
-                                                                <Setter Property="Foreground" Value="{StaticResource SeveritySuspendedTextBrush}" />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding StatusSeverity}" Value="CRITICAL">
-                                                                        <Setter Property="Foreground" Value="{StaticResource SeverityCriticalTextBrush}" />
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding StatusSeverity}" Value="BENIGN">
-                                                                        <Setter Property="Foreground" Value="{StaticResource SeverityBenignTextBrush}" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </TextBlock.Style>
-                                                    </TextBlock>
-                                                </Border>
-
-                                                <!--  Target Process & PID  -->
-                                                <StackPanel
-                                                    Grid.Column="1"
-                                                    VerticalAlignment="Center"
-                                                    Orientation="Horizontal">
-                                                    <TextBlock
-                                                        FontSize="13"
-                                                        FontWeight="SemiBold"
-                                                        Foreground="{StaticResource TextPrimaryBrush}"
-                                                        Text="{Binding TargetImage}" />
-                                                    <TextBlock
-                                                        FontFamily="Cascadia Code, Consolas"
-                                                        FontSize="11"
-                                                        Foreground="{StaticResource TextMutedBrush}"
-                                                        Text=" (PID: " />
-                                                    <TextBlock
-                                                        FontFamily="Cascadia Code, Consolas"
-                                                        FontSize="11"
-                                                        Foreground="{StaticResource TextSecondaryBrush}"
-                                                        Text="{Binding TargetPid}" />
-                                                    <TextBlock
-                                                        FontFamily="Cascadia Code, Consolas"
-                                                        FontSize="11"
-                                                        Foreground="{StaticResource TextMutedBrush}"
-                                                        Text=")" />
-                                                </StackPanel>
-
-                                                <!--  Timestamp & Latency  -->
-                                                <StackPanel
-                                                    Grid.Column="2"
-                                                    VerticalAlignment="Center"
-                                                    Orientation="Horizontal">
-                                                    <TextBlock
-                                                        FontFamily="Cascadia Code, Consolas"
-                                                        FontSize="11"
-                                                        Foreground="{StaticResource TextMutedBrush}"
-                                                        Text="{Binding FormattedTime}" />
-                                                </StackPanel>
-                                            </Grid>
-
-                                            <!--  Card Body: 1-line Summary Title  -->
-                                            <TextBlock
-                                                Grid.Row="1"
-                                                Margin="0,8,0,6"
-                                                FontSize="12"
-                                                Foreground="{StaticResource TextSecondaryBrush}"
-                                                Text="{Binding SummaryTitle}"
-                                                TextTrimming="CharacterEllipsis"
-                                                TextWrapping="NoWrap" />
-
-                                            <!--  Card Footer: Lineage Breadcrumb & Confidence  -->
-                                            <Grid Grid.Row="2" Margin="0,4,0,0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-
-                                                <StackPanel
-                                                    Grid.Column="0"
-                                                    VerticalAlignment="Center"
-                                                    Orientation="Horizontal">
-                                                    <TextBlock
-                                                        FontSize="10"
-                                                        FontWeight="SemiBold"
-                                                        Foreground="{StaticResource TextMutedBrush}"
-                                                        Text="PARENT: " />
-                                                    <TextBlock
-                                                        Margin="0,0,12,0"
-                                                        FontFamily="Cascadia Code, Consolas"
-                                                        FontSize="11"
-                                                        Foreground="{StaticResource TextSecondaryBrush}"
-                                                        Text="{Binding ParentImage}" />
-
-                                                    <TextBlock
-                                                        FontSize="10"
-                                                        FontWeight="SemiBold"
-                                                        Foreground="{StaticResource TextMutedBrush}"
-                                                        Text="CONFIDENCE: " />
-                                                    <TextBlock
-                                                        FontFamily="Cascadia Code, Consolas"
-                                                        FontSize="11"
-                                                        Foreground="{StaticResource TextPrimaryBrush}"
-                                                        Text="{Binding ConfidenceDisplay}" />
-                                                </StackPanel>
-
-                                                <TextBlock
-                                                    Grid.Column="1"
-                                                    FontFamily="Cascadia Code, Consolas"
-                                                    FontSize="11"
-                                                    Foreground="{StaticResource TextMutedBrush}"
-                                                    Text="{Binding FormattedLatency}" />
-                                            </Grid>
-                                        </Grid>
-                                    </Border>
-                                    <DataTemplate.Triggers>
-                                        <DataTrigger Binding="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
-                                            <Setter TargetName="cardBorder" Property="Background" Value="{StaticResource CardSelectedBrush}" />
-                                            <Setter TargetName="cardBorder" Property="BorderBrush" Value="{StaticResource BorderFocusedBrush}" />
-                                        </DataTrigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="cardBorder" Property="BorderBrush" Value="#4B5568" />
-                                        </Trigger>
-                                    </DataTemplate.Triggers>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </ScrollViewer>
-                </Grid>
-            </Border>
-
-            <!--  Splitter  -->
-            <GridSplitter
-                Grid.Column="1"
-                Width="4"
-                HorizontalAlignment="Stretch"
-                Background="#1B202D"
-                ResizeBehavior="PreviousAndNext" />
-
-            <!--  Right: Detailed Forensic Inspector (Progressive Disclosure)  -->
-            <Border
-                Grid.Column="2"
-                Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1,0,0,0">
-                <!--  If No Incident Selected  -->
-                <Grid>
-                    <StackPanel
-                        Margin="40"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SelectedIncident}" Value="{x:Null}">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <Path
-                            Width="36"
-                            Height="36"
-                            Margin="0,0,0,16"
-                            HorizontalAlignment="Center"
-                            Data="{StaticResource IconTerminal}"
-                            Fill="#2B3245"
-                            Stretch="Uniform" />
-                        <TextBlock
-                            Margin="0,0,0,6"
-                            HorizontalAlignment="Center"
-                            FontSize="14"
-                            FontWeight="Bold"
-                            Foreground="{StaticResource TextMutedBrush}"
-                            Text="선택된 침해사고 없음" />
-                        <TextBlock
-                            MaxWidth="320"
-                            HorizontalAlignment="Center"
-                            FontSize="12"
-                            Foreground="{StaticResource TextMutedBrush}"
-                            Text="사고 워크리스트에서 항목을 선택하면 포렌식 아티팩트 및 ReAct 자율 수사 로그를 확인할 수 있습니다."
-                            TextAlignment="Center"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-
-                    <!--  When Incident Selected  -->
-                    <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
-                        <ScrollViewer.Style>
-                            <Style TargetType="ScrollViewer">
-                                <Setter Property="Visibility" Value="Visible" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SelectedIncident}" Value="{x:Null}">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ScrollViewer.Style>
-
-                        <StackPanel>
-                            <!--  Inspector Header  -->
-                            <Grid Margin="0,0,0,16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock
-                                        Margin="0,0,0,4"
-                                        Style="{StaticResource SectionHeaderStyle}"
-                                        Text="포렌식 수사 감사 인스펙터" />
-                                    <TextBlock
-                                        FontFamily="Cascadia Code, Consolas"
-                                        FontSize="18"
-                                        FontWeight="Bold"
-                                        Foreground="{StaticResource TextPrimaryBrush}"
-                                        Text="{Binding SelectedIncident.IncidentId}" />
-                                    <TextBlock
-                                        Margin="0,2,0,0"
-                                        FontFamily="Cascadia Code, Consolas"
-                                        FontSize="11"
-                                        Foreground="{StaticResource TextMutedBrush}"
-                                        Text="{Binding SelectedIncident.FormattedTime}" />
-                                </StackPanel>
-
-                                <Button
-                                    Grid.Column="1"
-                                    VerticalAlignment="Top"
-                                    Command="{Binding CloseInspectorCommand}"
-                                    Style="{StaticResource CapsuleFilterButtonStyle}">
-                                    <Path
-                                        Width="10"
-                                        Height="10"
-                                        Data="{StaticResource IconClose}"
-                                        Fill="{StaticResource TextSecondaryBrush}"
-                                        Stretch="Uniform" />
-                                </Button>
-                            </Grid>
-
-                            <!--  Metric Summary Tiles  -->
-                            <Grid Margin="0,0,0,16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-
-                                <!--  Tile 1: Verdict  -->
-                                <Border
-                                    Grid.Column="0"
-                                    Margin="0,0,8,0"
-                                    Padding="12"
-                                    Background="#181C26"
-                                    BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="4">
-                                    <StackPanel>
-                                        <TextBlock
-                                            Margin="0,0,0,4"
-                                            Style="{StaticResource SectionHeaderStyle}"
-                                            Text="VERDICT" />
-                                        <TextBlock
-                                            FontFamily="Cascadia Code, Consolas"
-                                            FontSize="13"
-                                            FontWeight="Bold"
-                                            Text="{Binding SelectedIncident.VerdictAction}">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{StaticResource SeveritySuspendedTextBrush}" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding SelectedIncident.StatusSeverity}" Value="CRITICAL">
-                                                            <Setter Property="Foreground" Value="{StaticResource SeverityCriticalTextBrush}" />
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding SelectedIncident.StatusSeverity}" Value="BENIGN">
-                                                            <Setter Property="Foreground" Value="{StaticResource SeverityBenignTextBrush}" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </Border>
-
-                                <!--  Tile 2: Confidence  -->
-                                <Border
-                                    Grid.Column="1"
-                                    Margin="0,0,8,0"
-                                    Padding="12"
-                                    Background="#181C26"
-                                    BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="4">
-                                    <StackPanel>
-                                        <TextBlock
-                                            Margin="0,0,0,4"
-                                            Style="{StaticResource SectionHeaderStyle}"
-                                            Text="CONFIDENCE" />
-                                        <TextBlock
-                                            FontFamily="Cascadia Code, Consolas"
-                                            FontSize="13"
-                                            FontWeight="Bold"
-                                            Foreground="{StaticResource TextPrimaryBrush}"
-                                            Text="{Binding SelectedIncident.ConfidenceDisplay}" />
-                                    </StackPanel>
-                                </Border>
-
-                                <!--  Tile 3: Latency / Budget  -->
-                                <Border
-                                    Grid.Column="2"
-                                    Padding="12"
-                                    Background="#181C26"
-                                    BorderBrush="{StaticResource BorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="4">
-                                    <StackPanel>
-                                        <TextBlock
-                                            Margin="0,0,0,4"
-                                            Style="{StaticResource SectionHeaderStyle}"
-                                            Text="LATENCY" />
-                                        <TextBlock
-                                            FontFamily="Cascadia Code, Consolas"
-                                            FontSize="13"
-                                            FontWeight="Bold"
-                                            Foreground="{StaticResource TextSecondaryBrush}"
-                                            Text="{Binding SelectedIncident.FormattedLatency}" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-
-                            <!--  Section: Executive Summary  -->
-                            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="종합 수사 요약" />
-                            <Border
-                                Margin="0,0,0,16"
-                                Padding="14"
-                                Background="#161923"
-                                BorderBrush="{StaticResource BorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="4">
-                                <StackPanel>
-                                    <TextBlock
-                                        Margin="0,0,0,8"
-                                        FontSize="14"
-                                        FontWeight="Bold"
-                                        Foreground="{StaticResource TextPrimaryBrush}"
-                                        Text="{Binding SelectedIncident.SummaryTitle}" />
-                                    <TextBlock
-                                        FontSize="12"
-                                        Foreground="{StaticResource TextSecondaryBrush}"
-                                        LineHeight="20"
-                                        Text="{Binding SelectedIncident.Narrative}"
-                                        TextWrapping="Wrap" />
-                                </StackPanel>
-                            </Border>
-
-                            <!--  Section: Process Execution Context (CLI)  -->
-                            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="실행 컨텍스트 및 명령줄" />
-                            <TextBox
-                                Height="64"
-                                Margin="0,0,0,16"
-                                Style="{StaticResource MonospaceCodeBoxStyle}"
-                                Text="{Binding SelectedIncident.CommandLine}" />
-
-                            <!--  Section: ReAct Audit Trail  -->
-                            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="자율 ReAct 수사 감사 추적" />
-                            <ItemsControl Margin="0,0,0,16" ItemsSource="{Binding SelectedIncident.Traces}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate DataType="{x:Type vm:ReActStepViewModel}">
-                                        <Border
-                                            Margin="0,0,0,10"
-                                            Padding="14"
-                                            Background="#161A24"
-                                            BorderBrush="{StaticResource BorderBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="4">
-                                            <StackPanel>
-                                                <!--  Phase Header  -->
-                                                <TextBlock
-                                                    Margin="0,0,0,6"
-                                                    FontFamily="Cascadia Code, Consolas"
-                                                    FontSize="11"
-                                                    FontWeight="Bold"
-                                                    Foreground="{StaticResource AccentBlueBrush}"
-                                                    Text="{Binding FormattedStep}" />
-
-                                                <!--  Investigator Hypothesis (Thought)  -->
-                                                <TextBlock
-                                                    Margin="0,4,0,2"
-                                                    FontSize="10"
-                                                    FontWeight="SemiBold"
-                                                    Foreground="{StaticResource TextMutedBrush}"
-                                                    Text="수사관 가설 [가설 및 추론]:" />
-                                                <TextBlock
-                                                    Margin="0,0,0,8"
-                                                    FontSize="12"
-                                                    Foreground="#CBD5E1"
-                                                    LineHeight="18"
-                                                    Text="{Binding Thought}"
-                                                    TextWrapping="Wrap" />
-
-                                                <!--  Tool Arguments  -->
-                                                <TextBlock
-                                                    Margin="0,2,0,2"
-                                                    FontSize="10"
-                                                    FontWeight="SemiBold"
-                                                    Foreground="{StaticResource TextMutedBrush}"
-                                                    Text="실행 도구 인자 [JSON]:" />
-                                                <TextBox
-                                                    MaxHeight="45"
-                                                    Margin="0,0,0,8"
-                                                    Style="{StaticResource MonospaceCodeBoxStyle}"
-                                                    Text="{Binding ActionArgsJson}" />
-
-                                                <!--  Forensic Observation  -->
-                                                <TextBlock
-                                                    Margin="0,2,0,2"
-                                                    FontSize="10"
-                                                    FontWeight="SemiBold"
-                                                    Foreground="{StaticResource TextMutedBrush}"
-                                                    Text="포렌식 관측 증거 [결과]:" />
-                                                <TextBox
-                                                    MaxHeight="60"
-                                                    Style="{StaticResource MonospaceCodeBoxStyle}"
-                                                    Text="{Binding Observation}" />
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <!--  Section: Remediation Runbook  -->
-                            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="대응 및 조치 런북" />
-                            <Border
-                                Margin="0,0,0,16"
-                                Padding="14"
-                                Background="#161923"
-                                BorderBrush="{StaticResource BorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="4">
-                                <ItemsControl ItemsSource="{Binding SelectedIncident.RemediationSteps}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Margin="0,3" Orientation="Horizontal">
-                                                <TextBlock
-                                                    FontSize="12"
-                                                    FontWeight="Bold"
-                                                    Foreground="{StaticResource AccentBlueBrush}"
-                                                    Text="• " />
-                                                <TextBlock
-                                                    FontFamily="Segoe UI"
-                                                    FontSize="12"
-                                                    Foreground="{StaticResource TextPrimaryBrush}"
-                                                    Text="{Binding}" />
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </Border>
-                        </StackPanel>
-                    </ScrollViewer>
-                </Grid>
-            </Border>
-        </Grid>
     </Grid>
 </Window>

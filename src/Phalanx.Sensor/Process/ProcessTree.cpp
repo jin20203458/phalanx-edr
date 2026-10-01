@@ -34,7 +34,12 @@ bool ProcessTree::InitializeFromSnapshot() {
         ProcessNode node;
         node.pid = static_cast<uint32_t>(pe.th32ProcessID);
         node.ppid = static_cast<uint32_t>(pe.th32ParentProcessID);
-        node.image_name = Common::Utf16ToUtf8(pe.szExeFile);
+        std::string raw_name = Common::Utf16ToUtf8(pe.szExeFile);
+        if (node.pid == 0 || raw_name == "[System Process]") {
+            node.image_name = "System Idle Process";
+        } else {
+            node.image_name = std::move(raw_name);
+        }
         node.guid = GenerateProcessGuid(node.pid, 0);
         node.is_alive = true;
         nodes_.emplace(node.pid, std::move(node));

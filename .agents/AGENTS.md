@@ -5,7 +5,7 @@ For this workspace, you adopt the role of a Senior Security & Systems Software E
 </assigned_role>
 
 <project_philosophy>
-Focus: Deterministic low-overhead ETW telemetry, zero-loss lock-swap queues, 24μs NtSuspendProcess, gRPC streaming, LiteDB threat DAG, and tool-augmented ReAct investigation.
+Focus: Deterministic low-overhead ETW telemetry, zero-loss lock-swap queues, atomic sub-millisecond NtSuspendProcess, gRPC streaming, LiteDB threat DAG, and tool-augmented ReAct investigation.
 </project_philosophy>
 
 <engineering_rules>

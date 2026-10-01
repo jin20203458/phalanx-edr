@@ -4,14 +4,14 @@ using Phalanx.Cockpit.ViewModels;
 namespace Phalanx.Cockpit.Views;
 
 /// <summary>
-/// MainWindow.xaml에 대한 상호 작용 논리
+/// AttackLabWindow.xaml에 대한 상호 작용 논리
+/// 독립된 보조 컴패니언 창으로 동작하여 메인 관제 화면과 나란히 띄워두고 공격을 주입하고 실시간 모니터링합니다.
 /// </summary>
-public partial class MainWindow : Window
+public partial class AttackLabWindow : Window
 {
-    public MainWindow(MainViewModel viewModel)
+    public AttackLabWindow()
     {
         InitializeComponent();
-        DataContext = viewModel;
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
@@ -33,6 +33,15 @@ public partial class MainWindow : Window
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
-        SystemCommands.CloseWindow(this);
+        Close();
+    }
+
+    private void ToggleTopmost_Click(object sender, RoutedEventArgs e)
+    {
+        Topmost = !Topmost;
+        if (sender is System.Windows.Controls.Button btn)
+        {
+            btn.Content = Topmost ? "PINNED (항상 위)" : "PIN (항상 위 고정)";
+        }
     }
 }

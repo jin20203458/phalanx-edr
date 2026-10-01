@@ -1,0 +1,653 @@
+<UserControl
+    x:Class="Phalanx.Cockpit.Views.InvestigationView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:Phalanx.Cockpit.ViewModels"
+    FontFamily="{StaticResource SansFontFamily}"
+    Foreground="{StaticResource TextPrimaryBrush}">
+
+    <Grid Background="{StaticResource RootBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <!--  0: Investigation Header Bar  -->
+            <RowDefinition Height="50" />
+            <!--  1: 3-Panel Deep Dive Workbench  -->
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!--  =============================================================  -->
+        <!--  Row 0: Investigation Top Action Bar                            -->
+        <!--  =============================================================  -->
+        <Border
+            Grid.Row="0"
+            Padding="16,0"
+            Background="{StaticResource SurfaceBrush}"
+            BorderBrush="{StaticResource BorderBrush}"
+            BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!--  Left: Prominent Back Button & Breadcrumb Navigation  -->
+                <StackPanel
+                    Grid.Column="0"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal">
+                    <Button
+                        Margin="0,0,16,0"
+                        Padding="12,6"
+                        Background="#202020"
+                        BorderBrush="{StaticResource BorderLightBrush}"
+                        BorderThickness="1"
+                        Command="{Binding ReturnToIncidentsCommand}"
+                        Cursor="Hand"
+                        ToolTip="실시간 사건 관제 목록(Triage)으로 돌아갑니다 (Esc)">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border
+                                                Padding="{TemplateBinding Padding}"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="3">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path
+                                                        Width="10"
+                                                        Height="10"
+                                                        Margin="0,0,7,0"
+                                                        VerticalAlignment="Center"
+                                                        Data="{StaticResource IconBack}"
+                                                        Fill="{StaticResource AccentBrandBrush}"
+                                                        Stretch="Uniform" />
+                                                    <TextBlock
+                                                        FontSize="11.5"
+                                                        FontWeight="Bold"
+                                                        Foreground="{StaticResource TextPrimaryBrush}"
+                                                        Text="◀ 사건 목록으로 복귀" />
+                                                </StackPanel>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#2C2C2C" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <!--  Breadcrumb hierarchy  -->
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="11.5"
+                        Foreground="{StaticResource TextMutedBrush}"
+                        Text="관제 콘솔" />
+                    <TextBlock
+                        Margin="6,0"
+                        VerticalAlignment="Center"
+                        FontSize="11"
+                        Foreground="{StaticResource TextSubtleBrush}"
+                        Text="›" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="11.5"
+                        FontWeight="SemiBold"
+                        Foreground="{StaticResource TextSecondaryBrush}"
+                        Text="심층 수사실" />
+                    <TextBlock
+                        Margin="6,0"
+                        VerticalAlignment="Center"
+                        FontSize="11"
+                        Foreground="{StaticResource TextSubtleBrush}"
+                        Text="›" />
+
+                    <Border
+                        Margin="0,0,8,0"
+                        Padding="6,2"
+                        Background="{StaticResource BadgeBgBrush}"
+                        BorderBrush="{StaticResource BadgeBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="2">
+                        <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                            <Ellipse
+                                Width="6"
+                                Height="6"
+                                Margin="0,0,5,0">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="{StaticResource DotSuspendedBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedIncident.StatusSeverity}" Value="CRITICAL">
+                                                <Setter Property="Fill" Value="{StaticResource DotCriticalBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SelectedIncident.StatusSeverity}" Value="BENIGN">
+                                                <Setter Property="Fill" Value="{StaticResource DotBenignBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock
+                                FontSize="10"
+                                FontWeight="Bold"
+                                Foreground="{StaticResource BadgeTextBrush}"
+                                Text="{Binding SelectedIncident.VerdictAction}" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontSize="13.5"
+                        FontWeight="Bold"
+                        Foreground="{StaticResource TextPrimaryBrush}"
+                        Text="{Binding SelectedIncident.TargetImage}" />
+
+                    <TextBlock
+                        Margin="6,0,0,0"
+                        VerticalAlignment="Center"
+                        FontSize="11"
+                        Foreground="{StaticResource TextMutedBrush}"
+                        Text="{Binding SelectedIncident.IncidentId, StringFormat='[{0}]'}" />
+                </StackPanel>
+
+                <!--  Right: Forensic Actions  -->
+                <StackPanel
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal">
+                    <TextBlock
+                        Margin="0,0,16,0"
+                        VerticalAlignment="Center"
+                        FontSize="11"
+                        Foreground="{StaticResource TextMutedBrush}"
+                        Text="{Binding SelectedIncident.FormattedLatency, StringFormat='수사 지연: {0}'}" />
+
+                    <Button
+                        Padding="12,5"
+                        Content="A4 포렌식 리포트 출력"
+                        IsEnabled="False"
+                        Style="{StaticResource CapsuleFilterButtonStyle}"
+                        ToolTip="준비 중 (QuestPDF 포렌식 리포트 엔진 연동 예정)" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!--  =============================================================  -->
+        <!--  Row 1: 3-Panel Deep Dive Workbench                             -->
+        <!--  =============================================================  -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <!--  Panel 1: Target Context & File Integrity (340px)  -->
+                <ColumnDefinition Width="340" MinWidth="300" />
+                <!--  Panel 2: ReAct Reasoning Studio (*)  -->
+                <ColumnDefinition Width="*" MinWidth="480" />
+                <!--  Panel 3: Lineage & Evidence Locker (340px)  -->
+                <ColumnDefinition Width="340" MinWidth="280" />
+            </Grid.ColumnDefinitions>
+
+            <!--  =========================================================  -->
+            <!--  Panel 1: Context & Remediation Runbook (Left)              -->
+            <!--  =========================================================  -->
+            <Border
+                Grid.Column="0"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,1,0">
+                <ScrollViewer Padding="16,14">
+                    <StackPanel>
+                        <!--  Section: Execution Metadata  -->
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="타깃 프로세스 메타데이터" />
+                        <Border
+                            Margin="0,0,0,14"
+                            Padding="12"
+                            Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="3">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="타깃 PID:" />
+                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding SelectedIncident.TargetPid}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="부모 PID:" />
+                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding SelectedIncident.ParentPid}" />
+                                </Grid>
+                                <!--  부모 프로세스 (파일명 우선 + 디렉터리 경로 2단 계층 분리)  -->
+                                <Border
+                                    Margin="0,0,0,6"
+                                    Padding="8,6"
+                                    Background="#101010"
+                                    BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="2">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="부모 프로세스:" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                FontSize="11.5"
+                                                FontWeight="Bold"
+                                                Foreground="{StaticResource TextPrimaryBrush}"
+                                                Text="{Binding SelectedIncident.ParentFileName}" />
+                                        </Grid>
+                                        <TextBlock
+                                            Margin="0,3,0,0"
+                                            FontSize="10"
+                                            FontFamily="{StaticResource CodeFontFamily}"
+                                            Foreground="{StaticResource TextMutedBrush}"
+                                            LineHeight="14"
+                                            Text="{Binding SelectedIncident.ParentDirectoryPath}"
+                                            TextWrapping="Wrap"
+                                            ToolTip="{Binding SelectedIncident.ParentImage}"
+                                            Visibility="{Binding SelectedIncident.HasParentDirectory, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    </StackPanel>
+                                </Border>
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="판정 확신도:" />
+                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding SelectedIncident.ConfidenceDisplay}" />
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="수사 상태:" />
+                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding SelectedIncident.StatusSeverity}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!--  Section: Remediation Runbook  -->
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="대응 및 조치 런북 (REMEDIATION)" />
+                        <Border
+                            Padding="12"
+                            Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="3">
+                            <ItemsControl ItemsSource="{Binding SelectedIncident.RemediationSteps}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock
+                                                Grid.Column="0"
+                                                Margin="0,0,6,0"
+                                                FontSize="11.5"
+                                                FontWeight="Bold"
+                                                Foreground="{StaticResource TextMutedBrush}"
+                                                Text="•" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                FontSize="11.5"
+                                                Foreground="{StaticResource TextSecondaryBrush}"
+                                                LineHeight="17"
+                                                Text="{Binding}"
+                                                TextWrapping="Wrap" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!--  =========================================================  -->
+            <!--  Panel 2: ReAct Autonomous Reasoning Studio (Center)        -->
+            <!--  =========================================================  -->
+            <ScrollViewer Grid.Column="1" Padding="24,16">
+                <StackPanel>
+                    <!--  Executive Summary Box  -->
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="사건 종합 수사 서사 (NARRATIVE)" />
+                    <Border
+                        Margin="0,0,0,16"
+                        Padding="14"
+                        Background="{StaticResource SurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="3">
+                        <StackPanel>
+                            <TextBlock
+                                Margin="0,0,0,6"
+                                FontSize="13.5"
+                                FontWeight="SemiBold"
+                                Foreground="{StaticResource TextPrimaryBrush}"
+                                Text="{Binding SelectedIncident.SummaryTitle}" />
+                            <TextBlock
+                                FontSize="12"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                LineHeight="19"
+                                Text="{Binding SelectedIncident.Narrative}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <!--  CLI Command Context Box  -->
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            Margin="0"
+                            Style="{StaticResource SectionHeaderStyle}"
+                            Text="프로세스 실행 명령줄 (COMMAND LINE)" />
+                        <Button
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Command="{Binding CopyTextCommand}"
+                            CommandParameter="{Binding SelectedIncident.CommandLine}"
+                            Style="{StaticResource UtilityCopyButtonStyle}"
+                            ToolTip="포렌식 분석용 명령줄 클립보드 복사 (Copy payload)">
+                            <Path
+                                Width="11"
+                                Height="11"
+                                Data="{StaticResource IconCopy}"
+                                Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                Stretch="Uniform" />
+                        </Button>
+                    </Grid>
+                    <TextBox
+                        Height="56"
+                        Margin="0,0,0,18"
+                        Style="{StaticResource MonospaceCodeBoxStyle}"
+                        Text="{Binding SelectedIncident.CommandLine}" />
+
+                    <!--  ReAct Autonomous Reasoning Trail: Collapsible CoT Accordions  -->
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="AI 자율 ReAct 수사 감사 추적 (STEP-BY-STEP REASONING TRAIL)" />
+
+                    <ItemsControl ItemsSource="{Binding SelectedIncident.Traces}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ReActStepViewModel}">
+                                <Expander
+                                    IsExpanded="False"
+                                    Style="{StaticResource CoTExpanderStyle}">
+                                    <!--  Expander Header: Step Number, Tool Name, Elapsed ms  -->
+                                    <Expander.Header>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock
+                                                Grid.Column="0"
+                                                VerticalAlignment="Center"
+                                                FontSize="11.5"
+                                                FontWeight="Bold"
+                                                Foreground="{StaticResource TextPrimaryBrush}"
+                                                Text="{Binding FormattedStep}" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                VerticalAlignment="Center"
+                                                FontSize="10.5"
+                                                FontFamily="{StaticResource CodeFontFamily}"
+                                                Foreground="{StaticResource TextMutedBrush}"
+                                                Text="{Binding ElapsedMs, StringFormat='{}{0:F1}ms'}" />
+                                        </Grid>
+                                    </Expander.Header>
+
+                                    <!--  Expander Body: Thought, Args JSON, Observation  -->
+                                    <StackPanel>
+                                        <!--  Investigator Hypothesis  -->
+                                        <TextBlock
+                                            Margin="0,0,0,3"
+                                            FontSize="10"
+                                            FontWeight="SemiBold"
+                                            Foreground="{StaticResource TextMutedBrush}"
+                                            Text="수사관 가설 및 추론 (THOUGHT):" />
+                                        <TextBlock
+                                            Margin="0,0,0,8"
+                                            FontSize="11.5"
+                                            Foreground="{StaticResource TextSecondaryBrush}"
+                                            LineHeight="17"
+                                            Text="{Binding Thought}"
+                                            TextWrapping="Wrap" />
+
+                                        <!--  Tool Arguments  -->
+                                        <TextBlock
+                                            Margin="0,0,0,3"
+                                            FontSize="10"
+                                            FontWeight="SemiBold"
+                                            Foreground="{StaticResource TextMutedBrush}"
+                                            Text="실행 도구 인자 (TOOL ARGUMENTS):" />
+                                        <TextBox
+                                            MaxHeight="45"
+                                            Margin="0,0,0,8"
+                                            Style="{StaticResource MonospaceCodeBoxStyle}"
+                                            Text="{Binding ActionArgsJson}" />
+
+                                        <!--  Forensic Observation  -->
+                                        <TextBlock
+                                            Margin="0,0,0,3"
+                                            FontSize="10"
+                                            FontWeight="SemiBold"
+                                            Foreground="{StaticResource TextMutedBrush}"
+                                            Text="포렌식 관측 증거 결과 (OBSERVATION):" />
+                                        <TextBox
+                                            MaxHeight="60"
+                                            Style="{StaticResource MonospaceCodeBoxStyle}"
+                                            Text="{Binding Observation}" />
+                                    </StackPanel>
+                                </Expander>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!--  =========================================================  -->
+            <!--  Panel 3: Lineage & Evidence Locker (Right)                 -->
+            <!--  =========================================================  -->
+            <Border
+                Grid.Column="2"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1,0,0,0">
+                <ScrollViewer Padding="16,14">
+                    <StackPanel>
+                        <!--  Section: Lineage Chain  -->
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="공격 계통도 (ATTACK LINEAGE)" />
+                        <Border
+                            Margin="0,0,0,14"
+                            Padding="12"
+                            Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="3">
+                            <StackPanel>
+                                <!--  Parent Process (2-Level Hierarchy)  -->
+                                <StackPanel Margin="0,2">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="10.5" Foreground="{StaticResource TextMutedBrush}" Text="부모:" />
+                                        <StackPanel Grid.Column="1" Margin="6,0,0,0" Orientation="Horizontal">
+                                            <TextBlock
+                                                FontSize="11.5"
+                                                FontWeight="SemiBold"
+                                                Foreground="{StaticResource TextPrimaryBrush}"
+                                                Text="{Binding SelectedIncident.ParentFileName}" />
+                                            <TextBlock
+                                                Margin="6,0,0,0"
+                                                FontSize="10"
+                                                Foreground="{StaticResource TextMutedBrush}"
+                                                Text="{Binding SelectedIncident.ParentPid, StringFormat='(PID: {0})'}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock
+                                        Margin="28,2,0,0"
+                                        FontSize="9.5"
+                                        FontFamily="{StaticResource CodeFontFamily}"
+                                        Foreground="{StaticResource TextSubtleBrush}"
+                                        Text="{Binding SelectedIncident.ParentDirectoryPath}"
+                                        TextTrimming="CharacterEllipsis"
+                                        ToolTip="{Binding SelectedIncident.ParentImage}"
+                                        Visibility="{Binding SelectedIncident.HasParentDirectory, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                </StackPanel>
+
+                                <TextBlock Margin="14,2" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="│" />
+                                <TextBlock Margin="14,0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="▼" />
+
+                                <!--  Target Process (2-Level Hierarchy)  -->
+                                <StackPanel Margin="0,2">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="10.5" Foreground="{StaticResource TextMutedBrush}" Text="타깃:" />
+                                        <StackPanel Grid.Column="1" Margin="6,0,6,0" Orientation="Horizontal">
+                                            <TextBlock
+                                                FontSize="11.5"
+                                                FontWeight="Bold"
+                                                Foreground="{StaticResource TextPrimaryBrush}"
+                                                Text="{Binding SelectedIncident.TargetFileName}" />
+                                            <TextBlock
+                                                Margin="6,0,0,0"
+                                                FontSize="10"
+                                                Foreground="{StaticResource TextMutedBrush}"
+                                                Text="{Binding SelectedIncident.TargetPid, StringFormat='(PID: {0})'}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="10.5" FontWeight="SemiBold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="(동결 수사 중)" />
+                                                    <Setter Property="Foreground" Value="{StaticResource DotSuspendedBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SelectedIncident.StatusSeverity}" Value="CRITICAL">
+                                                            <Setter Property="Text" Value="(격리 사살)" />
+                                                            <Setter Property="Foreground" Value="{StaticResource DotCriticalBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SelectedIncident.StatusSeverity}" Value="BENIGN">
+                                                            <Setter Property="Text" Value="(정상 복구)" />
+                                                            <Setter Property="Foreground" Value="{StaticResource DotBenignBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                    <TextBlock
+                                        Margin="28,2,0,0"
+                                        FontSize="9.5"
+                                        FontFamily="{StaticResource CodeFontFamily}"
+                                        Foreground="{StaticResource TextSubtleBrush}"
+                                        Text="{Binding SelectedIncident.TargetDirectoryPath}"
+                                        TextTrimming="CharacterEllipsis"
+                                        ToolTip="{Binding SelectedIncident.TargetImage}"
+                                        Visibility="{Binding SelectedIncident.HasTargetDirectory, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!--  Cross-Navigation to Process Tree  -->
+                        <Button
+                            Margin="0,0,0,14"
+                            Padding="10,6"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding FocusProcessInGraphCommand}"
+                            CommandParameter="{Binding SelectedIncident.TargetPid}"
+                            Style="{StaticResource CapsuleFilterButtonStyle}"
+                            ToolTip="300여 개 전역 OS 프로세스 트리 맵에서 이 프로세스의 위치를 탐색합니다">
+                            <StackPanel HorizontalAlignment="Center" Orientation="Horizontal">
+                                <Path
+                                    Width="12"
+                                    Height="12"
+                                    Margin="0,0,6,0"
+                                    VerticalAlignment="Center"
+                                    Data="{StaticResource IconNavProcessGraph}"
+                                    Fill="{StaticResource AccentBrandBrush}"
+                                    Stretch="Uniform" />
+                                <TextBlock FontSize="11" FontWeight="SemiBold" Text="전역 프로세스 트리에서 위치 확인 ➔" />
+                            </StackPanel>
+                        </Button>
+
+                        <!--  Section: MITRE ATT&CK TTP Tags  -->
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="식별된 MITRE ATT&amp;CK 기법" />
+                        <Border
+                            Margin="0,0,0,14"
+                            Padding="12"
+                            Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="3">
+                            <ItemsControl ItemsSource="{Binding SelectedIncident.MitreTactics}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border
+                                            Margin="0,0,6,6"
+                                            Padding="8,3"
+                                            Background="#101010"
+                                            BorderBrush="{StaticResource BorderLightBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="2">
+                                            <TextBlock FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding}" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+
+                        <!--  Section: Blocked C2 IoC  -->
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="차단된 네트워크 침해 지표 (C2 IOC)" />
+                        <Border
+                            Padding="12"
+                            Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="3">
+                            <StackPanel>
+                                <TextBlock FontSize="10" Foreground="{StaticResource TextMutedBrush}" Text="WFP 방화벽 인/아웃바운드 차단 IP:" />
+                                <TextBlock
+                                    Margin="0,4,0,0"
+                                    FontSize="12"
+                                    FontWeight="Bold"
+                                    Foreground="{StaticResource DotCriticalBrush}"
+                                    Text="{Binding SelectedIncident.BlockedIp}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

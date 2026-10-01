@@ -18,6 +18,9 @@ public partial class IncidentItemViewModel : ObservableObject
     private uint _targetPid;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TargetFileName))]
+    [NotifyPropertyChangedFor(nameof(TargetDirectoryPath))]
+    [NotifyPropertyChangedFor(nameof(HasTargetDirectory))]
     private string _targetImage = string.Empty;
 
     [ObservableProperty]
@@ -27,6 +30,9 @@ public partial class IncidentItemViewModel : ObservableObject
     private uint _parentPid;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ParentFileName))]
+    [NotifyPropertyChangedFor(nameof(ParentDirectoryPath))]
+    [NotifyPropertyChangedFor(nameof(HasParentDirectory))]
     private string _parentImage = string.Empty;
 
     [ObservableProperty]
@@ -61,6 +67,20 @@ public partial class IncidentItemViewModel : ObservableObject
 
     public string FormattedTime => Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
+    public string RelativeTime
+    {
+        get
+        {
+            var diff = DateTime.UtcNow - Timestamp;
+            if (diff.TotalMinutes < 1) return "방금 전";
+            if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}분 전";
+            if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}시간 전";
+            return $"{(int)diff.TotalDays}일 전";
+        }
+    }
+
+    public string PrimaryMitreTactic => MitreTactics.Count > 0 ? MitreTactics[0] : (IsCritical ? "T1059.001" : "T1218");
+
     public string FormattedLatency
     {
         get
@@ -87,4 +107,77 @@ public partial class IncidentItemViewModel : ObservableObject
     public bool IsBenign => StatusSeverity == "BENIGN";
     public bool IsSuspended => StatusSeverity == "SUSPENDED";
     public bool IsReflex => StatusSeverity == "REFLEX";
+
+    // 2단 계층 분리: 파일명 우선 (절대 안 잘림) + 디렉터리 경로 분리
+    public string ParentFileName
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(ParentImage)) return "-";
+            try
+            {
+                var name = System.IO.Path.GetFileName(ParentImage);
+                return string.IsNullOrEmpty(name) ? ParentImage : name;
+            }
+            catch
+            {
+                return ParentImage;
+            }
+        }
+    }
+
+    public string ParentDirectoryPath
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(ParentImage)) return string.Empty;
+            try
+            {
+                var dir = System.IO.Path.GetDirectoryName(ParentImage);
+                return string.IsNullOrEmpty(dir) ? string.Empty : dir;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+    }
+
+    public bool HasParentDirectory => !string.IsNullOrEmpty(ParentDirectoryPath);
+
+    public string TargetFileName
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(TargetImage)) return "-";
+            try
+            {
+                var name = System.IO.Path.GetFileName(TargetImage);
+                return string.IsNullOrEmpty(name) ? TargetImage : name;
+            }
+            catch
+            {
+                return TargetImage;
+            }
+        }
+    }
+
+    public string TargetDirectoryPath
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(TargetImage)) return string.Empty;
+            try
+            {
+                var dir = System.IO.Path.GetDirectoryName(TargetImage);
+                return string.IsNullOrEmpty(dir) ? string.Empty : dir;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+    }
+
+    public bool HasTargetDirectory => !string.IsNullOrEmpty(TargetDirectoryPath);
 }

@@ -22,5 +22,8 @@ public partial class ReActStepViewModel : ObservableObject
     [ObservableProperty]
     private string _observation = string.Empty;
 
+    [ObservableProperty]
+    private double _elapsedMs;
+
     public string FormattedStep => $"PHASE {StepNumber:D2} : {ActionTool.ToUpperInvariant()}";
 }

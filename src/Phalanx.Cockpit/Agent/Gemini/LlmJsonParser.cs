@@ -55,7 +55,7 @@ public static class LlmJsonParser
 
         if (endIndex > startIndex)
         {
-            return rawText.Substring(startIndex, endIndex - startIndex + 1);
+            return rawText[startIndex..(endIndex + 1)];
         }
 
         return null; // 괄호 짝이 맞지 않아 추출 실패

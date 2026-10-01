@@ -6,9 +6,9 @@
     xmlns:views="clr-namespace:Phalanx.Cockpit.Views"
     xmlns:vm="clr-namespace:Phalanx.Cockpit.ViewModels"
     FontFamily="{StaticResource SansFontFamily}"
-    Foreground="{StaticResource TextPrimaryBrush}">
+    Foreground="{DynamicResource TextPrimaryBrush}">
 
-    <Grid Background="{StaticResource RootBackgroundBrush}">
+    <Grid Background="{DynamicResource RootBackgroundBrush}">
         <Grid.RowDefinitions>
             <!--  0: Top Header  -->
             <RowDefinition Height="50" />
@@ -20,8 +20,8 @@
         <Border
             Grid.Row="0"
             Padding="16,0"
-            Background="{StaticResource SurfaceBrush}"
-            BorderBrush="{StaticResource BorderBrush}"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -35,19 +35,13 @@
                         Height="16"
                         Margin="0,0,10,0"
                         Data="{StaticResource IconNavProcessGraph}"
-                        Fill="{StaticResource AccentBrandBrush}"
+                        Fill="{DynamicResource AccentBrandBrush}"
                         Stretch="Uniform" />
                     <TextBlock
                         FontSize="13"
                         FontWeight="Bold"
-                        Foreground="{StaticResource TextPrimaryBrush}"
-                        Text="인메모리 프로세스 족보 탐색기 (PROCESS TREE DAG)" />
-                    <TextBlock
-                        Margin="10,0,0,0"
-                        VerticalAlignment="Center"
-                        FontSize="11"
-                        Foreground="{StaticResource TextMutedBrush}"
-                        Text="• C# RAM 0초 무지연 족보 투영" />
+                        Foreground="{DynamicResource TextPrimaryBrush}"
+                        Text="프로세스 트리 탐색기 (PROCESS TREE DAG)" />
                 </StackPanel>
 
                 <StackPanel
@@ -58,8 +52,14 @@
                         Margin="0,0,12,0"
                         VerticalAlignment="Center"
                         FontSize="11"
-                        Foreground="{StaticResource TextMutedBrush}"
+                        Foreground="{DynamicResource TextMutedBrush}"
                         Text="{Binding MonitoredProcessCount, StringFormat='활성 프로세스: {0}개'}" />
+                    <CheckBox
+                        Margin="0,0,14,0"
+                        VerticalAlignment="Center"
+                        Content="종료된 프로세스 숨기기"
+                        IsChecked="{Binding HideTerminatedProcesses, Mode=TwoWay}"
+                        ToolTip="이미 종료된 프로세스를 트리에서 감추고 현재 활성 프로세스만 표시합니다" />
                     <Button
                         Padding="10,4"
                         Command="{Binding RefreshProcessTreeCommand}"
@@ -79,8 +79,8 @@
             <!--  Left: Hierarchical Process TreeView  -->
             <Border
                 Grid.Column="0"
-                Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,1,0">
                 <ListView
                     x:Name="ProcessListView"
@@ -99,6 +99,7 @@
                         <Style TargetType="{x:Type ListViewItem}">
                             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                             <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                             <Setter Property="BorderThickness" Value="0" />
                             <Setter Property="Padding" Value="4,3" />
                             <Setter Property="Margin" Value="0,1" />
@@ -115,11 +116,10 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Bd" Property="Background" Value="#15FFFFFF" />
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource CardHoverBrush}" />
                                             </Trigger>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource CardSelectedBrush}" />
-                                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource CardSelectedBrush}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -166,7 +166,7 @@
                                         x:Name="ExpandChevron"
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
-                                        Fill="{StaticResource TextMutedBrush}">
+                                        Fill="{DynamicResource TextMutedBrush}">
                                         <Path.Style>
                                             <Style TargetType="Path">
                                                 <Setter Property="Data" Value="M 0 0 L 4 4 L 8 0 Z" />
@@ -194,17 +194,44 @@
                                         Width="5"
                                         Height="5"
                                         Margin="0,0,7,0"
-                                        VerticalAlignment="Center"
-                                        Fill="{StaticResource DotLiveBrush}" />
+                                        VerticalAlignment="Center">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="{DynamicResource DotLiveBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsAlive}" Value="False">
+                                                        <Setter Property="Fill" Value="{DynamicResource DotBenignBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsSuspended}" Value="True">
+                                                        <Setter Property="Fill" Value="{DynamicResource DotSuspendedBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsTerminated}" Value="True">
+                                                        <Setter Property="Fill" Value="{DynamicResource DotCriticalBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
                                     <TextBlock
                                         FontSize="12"
                                         FontWeight="SemiBold"
-                                        Foreground="{StaticResource TextPrimaryBrush}"
-                                        Text="{Binding ImageName}" />
+                                        Text="{Binding ImageName}"
+                                        ToolTip="{Binding FullImagePath}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsAlive}" Value="False">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                     <TextBlock
                                         Margin="6,0,0,0"
                                         FontSize="10.5"
-                                        Foreground="{StaticResource TextMutedBrush}"
+                                        Foreground="{DynamicResource TextMutedBrush}"
                                         Text="{Binding ProcessId, StringFormat='(PID: {0})'}" />
 
                                     <!--  Suspended / Terminated Badges  -->
@@ -215,16 +242,18 @@
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Visibility" Value="Collapsed" />
+                                                <Setter Property="Text" Value="" />
+                                                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsSuspended}" Value="True">
                                                         <Setter Property="Visibility" Value="Visible" />
                                                         <Setter Property="Text" Value="[동결]" />
-                                                        <Setter Property="Foreground" Value="{StaticResource ThreatCriticalBrush}" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource SeveritySuspendedTextBrush}" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsTerminated}" Value="True">
                                                         <Setter Property="Visibility" Value="Visible" />
                                                         <Setter Property="Text" Value="[사살]" />
-                                                        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -241,7 +270,7 @@
             <Border
                 Grid.Column="1"
                 Padding="16"
-                Background="{StaticResource RootBackgroundBrush}">
+                Background="{DynamicResource RootBackgroundBrush}">
                 <StackPanel>
                     <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="선택된 프로세스 정보 (PROCESS INSPECTOR)" />
 
@@ -249,8 +278,8 @@
                     <Border
                         Margin="0,0,0,16"
                         Padding="14"
-                        Background="{StaticResource SurfaceBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1"
                         CornerRadius="3">
                         <Border.Style>
@@ -267,12 +296,12 @@
                             <TextBlock
                                 FontSize="13.5"
                                 FontWeight="Bold"
-                                Foreground="{StaticResource TextPrimaryBrush}"
+                                Foreground="{DynamicResource TextPrimaryBrush}"
                                 Text="프로세스를 선택하십시오" />
                             <TextBlock
                                 Margin="0,4,0,0"
                                 FontSize="11"
-                                Foreground="{StaticResource TextMutedBrush}"
+                                Foreground="{DynamicResource TextMutedBrush}"
                                 Text="좌측 트리에서 프로세스 노드를 클릭하면 상세 계통과 명령줄, AI 수사 기록이 표시됩니다." />
                         </StackPanel>
                     </Border>
@@ -294,8 +323,8 @@
                         <Border
                             Margin="0,0,0,12"
                             Padding="14"
-                            Background="{StaticResource CardBrush}"
-                            BorderBrush="{StaticResource BorderBrush}"
+                            Background="{DynamicResource CardBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1"
                             CornerRadius="3">
                             <StackPanel>
@@ -310,21 +339,21 @@
                                         VerticalAlignment="Center"
                                         FontSize="15"
                                         FontWeight="Bold"
-                                        Foreground="{StaticResource TextPrimaryBrush}"
+                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                         Text="{Binding SelectedProcessNode.ImageName}"
                                         TextTrimming="CharacterEllipsis"
-                                        ToolTip="{Binding SelectedProcessNode.ImageName}" />
+                                        ToolTip="{Binding SelectedProcessNode.FullImagePath}" />
                                     <Border
                                         Grid.Column="1"
                                         Padding="6,2"
-                                        Background="#101010"
-                                        BorderBrush="{StaticResource BorderBrush}"
+                                        Background="{DynamicResource BadgeBgBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="2">
                                         <TextBlock
                                             FontSize="10"
                                             FontWeight="Bold"
-                                            Foreground="{StaticResource TextSecondaryBrush}"
+                                            Foreground="{DynamicResource TextSecondaryBrush}"
                                             Text="{Binding SelectedProcessNode.Status}" />
                                     </Border>
                                 </Grid>
@@ -334,42 +363,44 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="PID:" />
-                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding SelectedProcessNode.ProcessId}" />
+                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" Text="PID:" />
+                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding SelectedProcessNode.ProcessId}" />
                                 </Grid>
                                 <Grid Margin="0,0,0,5">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="부모 PID (PPID):" />
-                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding SelectedProcessNode.ParentProcessId}" />
+                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" Text="부모 PID (PPID):" />
+                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding SelectedProcessNode.ParentProcessId}" />
                                 </Grid>
                                 <Grid Margin="0,0,0,5">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="세션 ID (Session):" />
-                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding SelectedProcessNode.SessionId}" />
+                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" Text="세션 ID (Session):" />
+                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding SelectedProcessNode.SessionId}" />
                                 </Grid>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Text="관리자 권한 수준:" />
-                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
+                                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" Text="관리자 권한 수준:" />
+                                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" FontSize="11">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Text" Value="Medium (일반)" />
+                                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding SelectedProcessNode.TokenElevationType}" Value="2">
                                                         <Setter Property="Text" Value="High (관리자 UAC)" />
-                                                        <Setter Property="Foreground" Value="{StaticResource DotCriticalBrush}" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource DotCriticalBrush}" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding SelectedProcessNode.TokenElevationType}" Value="3">
                                                         <Setter Property="Text" Value="Low (격리)" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -391,8 +422,8 @@
                         <Border
                             Margin="0,0,0,12"
                             Padding="12"
-                            Background="#181313"
-                            BorderBrush="{StaticResource DotCriticalBrush}"
+                            Background="{DynamicResource SeverityCriticalBgBrush}"
+                            BorderBrush="{DynamicResource DotCriticalBrush}"
                             BorderThickness="1"
                             CornerRadius="3">
                             <Border.Style>
@@ -411,8 +442,8 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <TextBlock FontSize="11" FontWeight="Bold" Foreground="{StaticResource DotCriticalBrush}" Text="보안 침해 사고 및 AI 수사 기록 존재" />
-                                    <TextBlock Margin="0,2,0,0" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding SelectedProcessIncident.SummaryTitle}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock FontSize="11" FontWeight="Bold" Foreground="{DynamicResource DotCriticalBrush}" Text="보안 침해 사고 및 AI 수사 기록 존재" />
+                                    <TextBlock Margin="0,2,0,0" FontSize="10.5" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding SelectedProcessIncident.SummaryTitle}" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                                 <Button
                                     Grid.Column="1"
@@ -433,45 +464,71 @@
                                 <ColumnDefinition Width="10" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Button
-                                Grid.Column="0"
-                                Padding="8,6"
-                                Command="{Binding SuspendSelectedProcessCommand}"
-                                Content="원자적 동결 (Suspend)"
-                                Style="{StaticResource CapsuleFilterButtonStyle}"
-                                ToolTip="NtSuspendProcess 시스템 콜을 통해 프로세스를 즉각 동결합니다 (24μs)" />
+
+                            <!-- Column 0: Suspend <-> Resume Dynamic Toggle -->
+                            <Grid Grid.Column="0">
+                                <!-- Button 1: 원자적 동결 (IsSuspended == False 일 때 표시) -->
+                                <Button
+                                    Padding="8,6"
+                                    Command="{Binding SuspendSelectedProcessCommand}"
+                                    Content="원자적 동결 (Suspend)"
+                                    ToolTip="NtSuspendProcess 시스템 콜을 통해 프로세스를 즉각 동결합니다 (24μs)">
+                                    <Button.Style>
+                                        <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedProcessNode.IsSuspended}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SelectedProcessNode.IsAlive}" Value="False">
+                                                    <Setter Property="IsEnabled" Value="False" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+
+                                <!-- Button 2: 동결 해제 (IsSuspended == True 일 때 표시) -->
+                                <Button
+                                    Padding="8,6"
+                                    Command="{Binding ResumeSelectedProcessCommand}"
+                                    Content="동결 해제 (Resume)"
+                                    ToolTip="NtResumeProcess 시스템 콜을 통해 프로세스 실행을 즉각 재개합니다">
+                                    <Button.Style>
+                                        <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedProcessNode.IsSuspended}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SelectedProcessNode.IsAlive}" Value="False">
+                                                    <Setter Property="IsEnabled" Value="False" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </Grid>
+
+                            <!-- Column 2: 프로세스 사살 (Kill) -->
                             <Button
                                 Grid.Column="2"
                                 Padding="8,6"
                                 Command="{Binding TerminateSelectedProcessCommand}"
                                 Content="프로세스 사살 (Kill)"
-                                Style="{StaticResource DangerActionButtonStyle}"
-                                ToolTip="NtTerminateProcess 시스템 콜을 통해 프로세스를 강제 종료합니다" />
+                                ToolTip="NtTerminateProcess 시스템 콜을 통해 프로세스를 강제 종료합니다">
+                                <Button.Style>
+                                    <Style BasedOn="{StaticResource DangerActionButtonStyle}" TargetType="Button">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedProcessNode.IsAlive}" Value="False">
+                                                <Setter Property="IsEnabled" Value="False" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
                         </Grid>
                     </StackPanel>
-
-                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="프로세스 트리 아키텍처 특성" />
-                    <Border
-                        Padding="12"
-                        Background="{StaticResource SurfaceBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="3">
-                        <StackPanel>
-                            <TextBlock
-                                Margin="0,0,0,6"
-                                FontSize="11.5"
-                                FontWeight="SemiBold"
-                                Foreground="{StaticResource TextPrimaryBrush}"
-                                Text="• CQRS Read Model 로컬 투영" />
-                            <TextBlock
-                                FontSize="10.5"
-                                Foreground="{StaticResource TextSecondaryBrush}"
-                                LineHeight="16"
-                                Text="C++ 네이티브 센서의 In-Memory DAG를 gRPC 델타 이벤트로 C# 메모리에 100% 동기화하여, C++ 질의 없이 0초 만에 부모-자식 계통을 탐색합니다."
-                                TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </Border>
         </Grid>

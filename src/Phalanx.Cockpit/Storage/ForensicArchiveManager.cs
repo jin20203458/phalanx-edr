@@ -26,6 +26,7 @@ public class ForensicArchiveManager : IDisposable
         _traces = _db.GetCollection<ReActTraceRecord>("react_traces");
 
         _incidents.EnsureIndex(x => x.IncidentId, unique: true);
+        _incidents.EnsureIndex(x => x.Timestamp);
         _traces.EnsureIndex(x => x.IncidentId);
     }
 
@@ -45,16 +46,28 @@ public class ForensicArchiveManager : IDisposable
         _traces = _db.GetCollection<ReActTraceRecord>("react_traces");
 
         _incidents.EnsureIndex(x => x.IncidentId, unique: true);
+        _incidents.EnsureIndex(x => x.Timestamp);
         _traces.EnsureIndex(x => x.IncidentId);
     }
 
     public void SaveIncident(IncidentRecord incident, IEnumerable<ReActTraceRecord>? traces = null)
     {
-        _incidents.Upsert(incident);
-
-        if (traces != null)
+        _db.BeginTrans();
+        try
         {
-            _traces.InsertBulk(traces);
+            _incidents.Upsert(incident);
+
+            if (traces != null)
+            {
+                _traces.InsertBulk(traces);
+            }
+
+            _db.Commit();
+        }
+        catch
+        {
+            _db.Rollback();
+            throw;
         }
     }
 
@@ -71,6 +84,26 @@ public class ForensicArchiveManager : IDisposable
     public List<ReActTraceRecord> GetTracesForIncident(string incidentId)
     {
         return _traces.Query().Where(x => x.IncidentId == incidentId).OrderBy(x => x.StepNumber).ToList();
+    }
+
+    /// <summary>
+    /// 보관된 모든 침해사고 레코드 및 ReAct 추론 흔적을 원자적으로 삭제합니다.
+    /// </summary>
+    public int ClearAllIncidents()
+    {
+        _db.BeginTrans();
+        try
+        {
+            int deleted = _incidents.DeleteAll();
+            _traces.DeleteAll();
+            _db.Commit();
+            return deleted;
+        }
+        catch
+        {
+            _db.Rollback();
+            throw;
+        }
     }
 
     public void Dispose()

@@ -17,6 +17,10 @@ public class ProcessTreeProjectionManager
     private readonly ConcurrentDictionary<uint, ulong> _activePidToGuid = new();
     private readonly object _syncLock = new();
 
+    private readonly HashSet<ulong> _rootNodeGuids = new();
+    private readonly HashSet<ulong> _allNodeGuids = new();
+    private readonly HashSet<ulong> _visibleNodeGuids = new();
+
     /// <summary>
     /// UI 렌더링용 루트 노드 컬렉션 (부모가 없거나 기저 시스템 프로세스)
     /// </summary>
@@ -35,7 +39,7 @@ public class ProcessTreeProjectionManager
     public event Action<ProcessNodeModel>? OnProcessSuspended;
     public event Action<ProcessNodeModel>? OnProcessTerminated;
     public event Action<ProcessNodeModel>? OnProcessStarted;
-    public event Action<ProcessNodeModel>? OnProcessStopped;
+    public event Action<ProcessNodeModel, bool /* wasSuspended */, bool /* wasRestored */>? OnProcessStopped;
 
     public int ActiveCount => _activePidToGuid.Count;
     public int TotalCount => _nodesByGuid.Count;
@@ -54,9 +58,16 @@ public class ProcessTreeProjectionManager
     private static void DispatchUI(Action action)
     {
         var app = Application.Current;
-        if (app?.Dispatcher != null && !app.Dispatcher.CheckAccess())
+        if (app?.Dispatcher != null && app.Dispatcher.Thread.IsAlive && !app.Dispatcher.HasShutdownStarted && !app.Dispatcher.CheckAccess())
         {
-            app.Dispatcher.Invoke(action);
+            try
+            {
+                app.Dispatcher.Invoke(action);
+            }
+            catch (TaskCanceledException)
+            {
+                action();
+            }
         }
         else
         {
@@ -64,8 +75,10 @@ public class ProcessTreeProjectionManager
         }
     }
 
+    public bool HideTerminated { get; set; }
+
     /// <summary>
-    /// OS 특수 가상 프로세스(PID 0)의 표기를 작업 관리자 표준 명칭으로 정제
+    /// NT 디바이스 경로(\Device\HarddiskVolume...\git.exe) 및 Win32 경로를 순수 실행 파일명으로 정제
     /// </summary>
     public static string NormalizeProcessImageName(uint pid, string? imageName)
     {
@@ -73,7 +86,16 @@ public class ProcessTreeProjectionManager
         {
             return "System Idle Process";
         }
-        return imageName ?? string.Empty;
+        if (string.IsNullOrEmpty(imageName))
+        {
+            return string.Empty;
+        }
+        int lastSep = imageName.LastIndexOfAny(['\\', '/']);
+        if (lastSep >= 0 && lastSep < imageName.Length - 1)
+        {
+            return imageName[(lastSep + 1)..];
+        }
+        return imageName;
     }
 
     /// <summary>
@@ -94,6 +116,7 @@ public class ProcessTreeProjectionManager
                 {
                     existing.UpdateStatus(ProcessLifecycle.LifecycleSnapshot);
                     if (!string.IsNullOrEmpty(ev.CommandLine)) existing.CommandLine = ev.CommandLine;
+                    if (!string.IsNullOrEmpty(ev.ImageName)) existing.FullImagePath = ev.ImageName;
                     if (ev.TokenElevationType != 0) existing.TokenElevationType = ev.TokenElevationType;
                     tempMap[ev.ProcessId] = existing;
                     continue;
@@ -106,6 +129,7 @@ public class ProcessTreeProjectionManager
                     ProcessGuid = guid,
                     ParentProcessGuid = ev.ParentProcessGuid,
                     ImageName = NormalizeProcessImageName(ev.ProcessId, ev.ImageName),
+                    FullImagePath = ev.ImageName ?? string.Empty,
                     CommandLine = ev.CommandLine,
                     StartTimeNs = ev.TimestampNs,
                     SessionId = ev.SessionId,
@@ -139,13 +163,13 @@ public class ProcessTreeProjectionManager
                 }
                 else
                 {
-                    if (!RootNodes.Contains(node) && !rootNodesToAdd.Contains(node))
+                    if (_rootNodeGuids.Add(node.ProcessGuid))
                     {
                         rootNodesToAdd.Add(node);
                     }
                 }
 
-                if (!AllNodes.Contains(node) && !allNodesToAdd.Contains(node))
+                if (_allNodeGuids.Add(node.ProcessGuid))
                 {
                     allNodesToAdd.Add(node);
                 }
@@ -161,7 +185,10 @@ public class ProcessTreeProjectionManager
                 }
             }
 
-            var allRoots = RootNodes.Concat(rootNodesToAdd).Distinct().ToList();
+            var allRoots = new List<ProcessNodeModel>(RootNodes.Count + rootNodesToAdd.Count);
+            allRoots.AddRange(RootNodes);
+            allRoots.AddRange(rootNodesToAdd);
+
             foreach (var r in allRoots)
             {
                 UpdateDepths(r, 0);
@@ -186,9 +213,11 @@ public class ProcessTreeProjectionManager
                 }
 
                 VisibleNodes.Clear();
+                _visibleNodeGuids.Clear();
                 foreach (var node in flatList)
                 {
                     VisibleNodes.Add(node);
+                    _visibleNodeGuids.Add(node.ProcessGuid);
                 }
             });
         }
@@ -206,7 +235,7 @@ public class ProcessTreeProjectionManager
             switch (ev.Lifecycle)
             {
                 case ProcessLifecycle.LifecycleSnapshot:
-                    ApplySnapshotBatch(new[] { ev });
+                    ApplySnapshotBatch([ev]);
                     break;
 
                 case ProcessLifecycle.LifecycleStart:
@@ -264,6 +293,7 @@ public class ProcessTreeProjectionManager
             ProcessGuid = guid,
             ParentProcessGuid = ev.ParentProcessGuid,
             ImageName = NormalizeProcessImageName(ev.ProcessId, ev.ImageName),
+            FullImagePath = ev.ImageName ?? string.Empty,
             CommandLine = ev.CommandLine,
             StartTimeNs = ev.TimestampNs,
             SessionId = ev.SessionId,
@@ -305,11 +335,14 @@ public class ProcessTreeProjectionManager
                 if (parent.IsExpanded)
                 {
                     int insertIdx = FindLastVisibleDescendantIndex(parent);
-                    if (insertIdx >= 0 && !VisibleNodes.Contains(node))
+                    if (insertIdx >= 0)
                     {
-                        VisibleNodes.Insert(insertIdx + 1, node);
+                        if (_visibleNodeGuids.Add(node.ProcessGuid))
+                        {
+                            VisibleNodes.Insert(insertIdx + 1, node);
+                        }
                     }
-                    else if (!VisibleNodes.Contains(node))
+                    else if (_visibleNodeGuids.Add(node.ProcessGuid))
                     {
                         VisibleNodes.Add(node);
                     }
@@ -317,17 +350,17 @@ public class ProcessTreeProjectionManager
             }
             else
             {
-                if (!RootNodes.Contains(node))
+                if (_rootNodeGuids.Add(node.ProcessGuid))
                 {
                     RootNodes.Add(node);
                 }
-                if (!VisibleNodes.Contains(node))
+                if (_visibleNodeGuids.Add(node.ProcessGuid))
                 {
                     VisibleNodes.Add(node);
                 }
             }
 
-            if (!AllNodes.Contains(node))
+            if (_allNodeGuids.Add(node.ProcessGuid))
             {
                 AllNodes.Add(node);
             }
@@ -362,15 +395,29 @@ public class ProcessTreeProjectionManager
 
         if (targetNode != null)
         {
+            bool wasTerminated = targetNode.IsTerminated;
+            bool wasSuspended = targetNode.IsSuspended;
+            bool wasRestored = targetNode.IsRestored;
+
             DispatchUI(() =>
             {
                 targetNode.IsAlive = false;
+                targetNode.IsSuspended = false;
+                targetNode.IsRestored = false;
                 targetNode.ExitTimeNs = ev.TimestampNs;
                 targetNode.ExitCode = ev.ExitCode;
-                targetNode.UpdateStatus(ProcessLifecycle.LifecycleStop);
+                if (!wasTerminated)
+                {
+                    targetNode.UpdateStatus(ProcessLifecycle.LifecycleStop);
+                }
             });
             _activePidToGuid.TryRemove(ev.ProcessId, out _);
-            OnProcessStopped?.Invoke(targetNode);
+            OnProcessStopped?.Invoke(targetNode, wasSuspended, wasRestored);
+
+            if (HideTerminated)
+            {
+                RebuildVisibleNodes();
+            }
         }
     }
 
@@ -381,7 +428,7 @@ public class ProcessTreeProjectionManager
     {
         if (!_activePidToGuid.TryGetValue(pid, out ulong guid))
         {
-            return Array.Empty<ProcessNodeModel>();
+            return [];
         }
         return GetAncestryByGuid(guid, maxDepth, includeSelf);
     }
@@ -426,6 +473,12 @@ public class ProcessTreeProjectionManager
 
     public ProcessNodeModel? FindNodeByPid(uint pid)
     {
+        if (_activePidToGuid.TryGetValue(pid, out ulong guid) &&
+            _nodesByGuid.TryGetValue(guid, out var node))
+        {
+            return node;
+        }
+
         lock (_syncLock)
         {
             return AllNodes.FirstOrDefault(n => n.ProcessId == pid);
@@ -444,6 +497,9 @@ public class ProcessTreeProjectionManager
         {
             _nodesByGuid.Clear();
             _activePidToGuid.Clear();
+            _rootNodeGuids.Clear();
+            _allNodeGuids.Clear();
+            _visibleNodeGuids.Clear();
             DispatchUI(() =>
             {
                 RootNodes.Clear();
@@ -453,11 +509,28 @@ public class ProcessTreeProjectionManager
         }
     }
 
+    private static bool HasAliveDescendants(ProcessNodeModel node)
+    {
+        foreach (var child in node.Children)
+        {
+            if (child.IsAlive || HasAliveDescendants(child))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// <summary>
     /// 단일 서브트리를 DFS 전위 순회(Pre-Order)하며 가시화 노드를 평탄화 수집
     /// </summary>
     private void CollectVisibleSubtree(ProcessNodeModel node, List<ProcessNodeModel> output)
     {
+        if (HideTerminated && !node.IsAlive && !HasAliveDescendants(node))
+        {
+            return;
+        }
+
         output.Add(node);
         if (node.IsExpanded && node.Children.Count > 0)
         {
@@ -502,6 +575,7 @@ public class ProcessTreeProjectionManager
                     foreach (var d in descendantsToRemove)
                     {
                         VisibleNodes.Remove(d);
+                        _visibleNodeGuids.Remove(d.ProcessGuid);
                     }
                 });
             }
@@ -525,6 +599,7 @@ public class ProcessTreeProjectionManager
                         for (int i = 0; i < toInsert.Count; i++)
                         {
                             VisibleNodes.Insert(currentIdx + 1 + i, toInsert[i]);
+                            _visibleNodeGuids.Add(toInsert[i].ProcessGuid);
                         }
                     }
                 });
@@ -551,7 +626,7 @@ public class ProcessTreeProjectionManager
                 cur = cur.Parent;
             }
 
-            if (anyChange || !VisibleNodes.Contains(node))
+            if (anyChange || !_visibleNodeGuids.Contains(node.ProcessGuid))
             {
                 RebuildVisibleNodes();
             }
@@ -574,9 +649,11 @@ public class ProcessTreeProjectionManager
             DispatchUI(() =>
             {
                 VisibleNodes.Clear();
+                _visibleNodeGuids.Clear();
                 foreach (var item in list)
                 {
                     VisibleNodes.Add(item);
+                    _visibleNodeGuids.Add(item.ProcessGuid);
                 }
             });
         }
@@ -643,7 +720,7 @@ public class ProcessTreeProjectionManager
                     {
                         ProcessId = pid,
                         ParentProcessId = ppid,
-                        ImageName = NormalizeProcessImageName(pid, img),
+                        ImageName = img,
                         TimestampNs = nowNs,
                         Lifecycle = ProcessLifecycle.LifecycleSnapshot,
                         ProcessGuid = ((nowNs << 32) | pid),

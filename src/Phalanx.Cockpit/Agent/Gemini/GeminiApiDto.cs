@@ -7,8 +7,7 @@ public record GeminiRequest(
     [property: JsonPropertyName("contents")] List<Content> Contents,
     [property: JsonPropertyName("systemInstruction")] Content? SystemInstruction = null,
     [property: JsonPropertyName("generationConfig")] GenerationConfig? GenerationConfig = null,
-    [property: JsonPropertyName("safetySettings")] List<SafetySetting>? SafetySettings = null,
-    [property: JsonPropertyName("tools")] List<object>? Tools = null
+    [property: JsonPropertyName("safetySettings")] List<SafetySetting>? SafetySettings = null
 );
 
 public record Content(
@@ -18,19 +17,7 @@ public record Content(
 
 public record Part(
     [property: JsonPropertyName("text")] string? Text = null,
-    [property: JsonPropertyName("thought")] bool? Thought = null,
-    [property: JsonPropertyName("functionCall")] FunctionCallDto? FunctionCall = null,
-    [property: JsonPropertyName("functionResponse")] FunctionResponseDto? FunctionResponse = null
-);
-
-public record FunctionCallDto(
-    [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("args")] Dictionary<string, object>? Args
-);
-
-public record FunctionResponseDto(
-    [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("response")] Dictionary<string, object>? Response
+    [property: JsonPropertyName("thought")] bool? Thought = null
 );
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

@@ -1,10 +1,22 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Phalanx.Cockpit.Tools;
+
+public record SimulatedMemoryEntry(
+    long BaseAddress,
+    long RegionSize,
+    string Protect,
+    string MemoryType,
+    string? InjectedHeader,
+    List<string> ExtractedIps,
+    List<string> ExtractedUrls,
+    List<string> DetectedKeywords
+);
 
 /// <summary>
 /// 동결된 타깃 프로세스의 가상 메모리(RAM)를 VAD(Virtual Address Descriptor) 타깃 순회 기법으로 스캔하여
@@ -19,12 +31,24 @@ public class ProcessMemoryScanTool : IInvestigationTool
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(250);
     private static readonly Regex UrlRegex = new(@"https?://[a-zA-Z0-9\-\._~:/\?#\[\]@!\$&'\(\)\*\+,;=%]+", RegexOptions.Compiled, RegexTimeout);
     private static readonly Regex IpRegex = new(@"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b", RegexOptions.Compiled, RegexTimeout);
-    private static readonly string[] SuspiciousKeywords = { "invoke-expression", "iex", "downloadstring", "mimikatz", "beacon", "meterpreter", "shadows", "vssadmin", "virtualalloc", "createremotethread" };
+    private static readonly string[] SuspiciousKeywords = [ "invoke-expression", "iex", "downloadstring", "mimikatz", "beacon", "meterpreter", "shadows", "vssadmin", "virtualalloc", "createremotethread" ];
 
     private static readonly HashSet<string> ProtectedProcessNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "System", "Idle", "Registry", "smss", "csrss", "wininit", "services", "lsass"
     };
+
+    private static readonly ConcurrentDictionary<uint, SimulatedMemoryEntry> SimulatedMemoryDb = new();
+
+    public static void RegisterSimulatedMemory(uint pid, SimulatedMemoryEntry entry)
+    {
+        SimulatedMemoryDb[pid] = entry;
+    }
+
+    public static void ClearSimulatedMemory(uint pid)
+    {
+        SimulatedMemoryDb.TryRemove(pid, out _);
+    }
 
     private const int ChunkSize = 65536; // 64 KB
     private const long MaxScanBytes = 16 * 1024 * 1024; // 최대 16MB 안전 스캔 (SLA < 10ms 보장)
@@ -46,6 +70,39 @@ public class ProcessMemoryScanTool : IInvestigationTool
         if (pid == 0)
         {
             return Task.FromResult(new ToolResult(false, "유효한 'targetPid'가 제공되지 않았습니다."));
+        }
+
+        // 0. Clean-Room 모드 시뮬레이션 인젝션 메모리 검사
+        if (SimulatedMemoryDb.TryGetValue(pid, out var sim))
+        {
+            var sbSim = new StringBuilder();
+            sbSim.AppendLine($"[ProcessMemoryScanTool 완료 - PID: {pid}, 스캔 용량: {sim.RegionSize / 1024} KB, Unbacked 실행 영역: 1개]");
+            sbSim.AppendLine($"• 검출된 인젝션: BaseAddress: 0x{sim.BaseAddress:X16}, Size: {sim.RegionSize / 1024} KB, Protect: {sim.Protect} ({sim.MemoryType})");
+            if (!string.IsNullOrEmpty(sim.InjectedHeader))
+            {
+                sbSim.AppendLine($"• 메모리 헤더 시그니처: {sim.InjectedHeader}");
+            }
+            if (sim.ExtractedIps.Count > 0)
+            {
+                sbSim.AppendLine($"• 메모리 추출 IP: {string.Join(", ", sim.ExtractedIps)}");
+            }
+            if (sim.ExtractedUrls.Count > 0)
+            {
+                sbSim.AppendLine($"• 메모리 추출 URL: {string.Join(", ", sim.ExtractedUrls)}");
+            }
+
+            var simData = new Dictionary<string, object>
+            {
+                ["Pid"] = pid,
+                ["ScannedBytes"] = sim.RegionSize,
+                ["Urls"] = sim.ExtractedUrls,
+                ["Ips"] = sim.ExtractedIps,
+                ["SuspiciousKeywords"] = sim.DetectedKeywords,
+                ["DetectedInjections"] = new List<string> { $"BaseAddress: 0x{sim.BaseAddress:X16}, Protect: {sim.Protect}, Type: {sim.MemoryType}" },
+                ["UnbackedExecPages"] = 1
+            };
+
+            return Task.FromResult(new ToolResult(true, sbSim.ToString(), simData));
         }
 
         // 1. 시스템 보호 프로세스 가드
@@ -230,10 +287,9 @@ public class ProcessMemoryScanTool : IInvestigationTool
             }
             catch (RegexMatchTimeoutException) { }
 
-            string lower = text.ToLowerInvariant();
             foreach (var kw in SuspiciousKeywords)
             {
-                if (lower.Contains(kw))
+                if (text.Contains(kw, StringComparison.OrdinalIgnoreCase))
                 {
                     keywords.Add(kw);
                 }

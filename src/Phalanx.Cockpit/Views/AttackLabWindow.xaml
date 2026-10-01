@@ -4,21 +4,21 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:helpers="clr-namespace:Phalanx.Cockpit.Helpers"
     xmlns:vm="clr-namespace:Phalanx.Cockpit.ViewModels"
-    Title="Phalanx Attack Simulator Lab"
-    Width="1060"
-    Height="680"
-    MinWidth="880"
-    MinHeight="520"
-    FontFamily="Segoe UI Variable Text, Segoe UI, -apple-system, sans-serif"
+    Title="Phalanx Attack Lab"
+    Width="1180"
+    Height="740"
+    MinWidth="960"
+    MinHeight="580"
+    FontFamily="{StaticResource SansFontFamily}"
     helpers:WindowTitleBarBehavior.EnableDarkTitleBar="True"
-    Background="{StaticResource RootBackgroundBrush}"
-    Foreground="{StaticResource TextPrimaryBrush}"
+    Background="{DynamicResource RootBackgroundBrush}"
+    Foreground="{DynamicResource TextPrimaryBrush}"
     Icon="/Assets/phalanx.ico"
     WindowStartupLocation="CenterScreen">
 
     <WindowChrome.WindowChrome>
         <WindowChrome
-            CaptionHeight="42"
+            CaptionHeight="44"
             CornerRadius="0"
             GlassFrameThickness="0"
             NonClientFrameEdges="None"
@@ -29,7 +29,7 @@
     <Window.Style>
         <Style TargetType="Window">
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Style.Triggers>
                 <Trigger Property="WindowState" Value="Maximized">
                     <Setter Property="BorderThickness" Value="0" />
@@ -40,25 +40,57 @@
 
     <Window.Resources>
         <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/EnterpriseTheme.xaml" />
-            </ResourceDictionary.MergedDictionaries>
+
+            <Style x:Key="FormLabelStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="10" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+                <Setter Property="Margin" Value="0,0,0,3" />
+            </Style>
+
+            <Style x:Key="FormInputStyle" TargetType="TextBox">
+                <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="7,4" />
+                <Setter Property="FontSize" Value="10.5" />
+                <Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}" />
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
-    <Grid Background="{StaticResource RootBackgroundBrush}">
+    <Grid Background="{DynamicResource RootBackgroundBrush}">
+        <Grid.Style>
+            <Style TargetType="Grid">
+                <Setter Property="Margin" Value="0" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=WindowState}" Value="Maximized">
+                        <Setter Property="Margin" Value="7" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Grid.Style>
+
         <Grid.RowDefinitions>
-            <!--  0: Title Bar  -->
-            <RowDefinition Height="42" />
-            <!--  1: Content Area  -->
+            <!--  0: Clean Minimalist Title Bar (44px)  -->
+            <RowDefinition Height="44" />
+            <!--  1: Mode & Action Toolbar (40px)  -->
+            <RowDefinition Height="40" />
+            <!--  2: Architecture Guide Banner (Auto)  -->
+            <RowDefinition Height="Auto" />
+            <!--  3: Master-Detail Workspace Grid (*)  -->
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!--  Custom Dark Title Bar  -->
+        <!--  =============================================================  -->
+        <!--  Row 0: Clean Dark Title Bar (Aligned with MainWindow)          -->
+        <!--  =============================================================  -->
         <Border
             Grid.Row="0"
-            Background="{StaticResource SurfaceBrush}"
-            BorderBrush="{StaticResource BorderBrush}"
+            Padding="16,0,0,0"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -66,9 +98,9 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
+                <!--  Brand / Identity  -->
                 <StackPanel
                     Grid.Column="0"
-                    Margin="16,0,0,0"
                     VerticalAlignment="Center"
                     Orientation="Horizontal">
                     <Path
@@ -76,56 +108,39 @@
                         Height="14"
                         Margin="0,0,10,0"
                         Data="{StaticResource IconNavAttackLab}"
-                        Fill="{StaticResource AccentBrandBrush}"
+                        Fill="{DynamicResource AccentBrandBrush}"
                         Stretch="Uniform" />
                     <TextBlock
-                        FontSize="12.5"
+                        VerticalAlignment="Center"
+                        FontSize="13"
                         FontWeight="Bold"
-                        Foreground="{StaticResource TextPrimaryBrush}"
+                        Foreground="{DynamicResource TextPrimaryBrush}"
                         Text="PHALANX ATTACK LAB" />
-                    <Border
-                        Margin="10,0,10,0"
-                        Padding="6,2"
-                        Background="#1A1A1A"
-                        BorderBrush="{StaticResource BorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="2">
-                        <TextBlock
-                            FontSize="10"
-                            FontWeight="SemiBold"
-                            Foreground="{StaticResource TextMutedBrush}"
-                            Text="COMPANION TOOL" />
-                    </Border>
                     <TextBlock
+                        Margin="8,0,0,0"
                         VerticalAlignment="Center"
                         FontSize="11"
-                        Foreground="{StaticResource TextMutedBrush}"
-                        Text="• 7대 실무 공격 시나리오 실시간 주입 &amp; 메인 관제 콘솔 실시간 검증" />
+                        Foreground="{DynamicResource TextMutedBrush}"
+                        Text="Adversarial Emulation Studio" />
                 </StackPanel>
 
-                <!--  Window Controls & Topmost Pin  -->
+                <!--  Window Controls (Standard 3-Button)  -->
                 <StackPanel
                     Grid.Column="1"
                     VerticalAlignment="Center"
                     Orientation="Horizontal"
                     WindowChrome.IsHitTestVisibleInChrome="True">
                     <Button
-                        Margin="0,0,8,0"
-                        Padding="8,3"
-                        Click="ToggleTopmost_Click"
-                        Content="PIN (항상 위 고정)"
-                        FontSize="10.5"
-                        Style="{StaticResource CapsuleFilterButtonStyle}" />
-                    <Button
                         Click="MinimizeButton_Click"
                         Style="{StaticResource WindowCaptionButtonStyle}"
                         ToolTip="최소화">
                         <Path
                             Width="10"
-                            Height="1"
+                            Height="10"
                             Data="{StaticResource IconWinMinimize}"
                             Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                            StrokeThickness="1" />
+                            StrokeThickness="1"
+                            SnapsToDevicePixels="True" />
                     </Button>
                     <Button
                         Click="MaximizeButton_Click"
@@ -153,148 +168,1167 @@
             </Grid>
         </Border>
 
-        <!--  Main Content Area  -->
-        <Grid Grid.Row="1">
+        <!--  =============================================================  -->
+        <!--  Row 1: Mode & Global Control Toolbar                           -->
+        <!--  =============================================================  -->
+        <Border
+            Grid.Row="1"
+            Padding="16,0"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!--  Left: Segmented Mode Selector & Architecture Guide  -->
+                <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                    <TextBlock
+                        Margin="0,0,10,0"
+                        VerticalAlignment="Center"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Foreground="{DynamicResource TextMutedBrush}"
+                        Text="주입 모드:" />
+
+                    <Button
+                        Margin="0,0,4,0"
+                        Padding="9,3"
+                        Command="{Binding SetLabModeCommand}"
+                        CommandParameter="grpc"
+                        Content="가상 주입 (Clean-Room)"
+                        FontSize="10.5">
+                        <Button.Style>
+                            <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsModeGrpc}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource CardSelectedBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderFocusedBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.ToolTip>
+                            <ToolTip MaxWidth="340">
+                                <StackPanel Margin="3">
+                                    <TextBlock
+                                        Margin="0,0,0,3"
+                                        FontSize="11"
+                                        FontWeight="Bold"
+                                        Foreground="{DynamicResource TextPrimaryBrush}"
+                                        Text="가상 주입 (Clean-Room)" />
+                                    <TextBlock
+                                        FontSize="10"
+                                        Foreground="{DynamicResource TextSecondaryBrush}"
+                                        LineHeight="14"
+                                        Text="• 실제 프로세스를 띄우지 않고 가상 이벤트로 주입합니다.&#x0a;• AI 수사관의 탐지 및 차단 로직을 빠르고 안전하게 검증합니다."
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ToolTip>
+                        </Button.ToolTip>
+                    </Button>
+
+                    <Button
+                        Padding="9,3"
+                        Command="{Binding SetLabModeCommand}"
+                        CommandParameter="os"
+                        Content="OS 프로세스 연동"
+                        FontSize="10.5">
+                        <Button.Style>
+                            <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsModeOs}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource CardSelectedBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderFocusedBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.ToolTip>
+                            <ToolTip MaxWidth="340">
+                                <StackPanel Margin="3">
+                                    <TextBlock
+                                        Margin="0,0,0,3"
+                                        FontSize="11"
+                                        FontWeight="Bold"
+                                        Foreground="{DynamicResource TextPrimaryBrush}"
+                                        Text="OS 프로세스 연동 (하이브리드)" />
+                                    <TextBlock
+                                        FontSize="10"
+                                        Foreground="{DynamicResource TextSecondaryBrush}"
+                                        LineHeight="14"
+                                        Text="• 안전한 무해 프로세스를 띄워 시스템을 보호합니다.&#x0a;• 실제 프로세스 추적 및 AI 판결에 따른 프로세스 강제 종료를 검증합니다."
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ToolTip>
+                        </Button.ToolTip>
+                    </Button>
+
+                    <Button
+                        Margin="4,0,0,0"
+                        Padding="9,3"
+                        Command="{Binding SetLabModeCommand}"
+                        CommandParameter="live"
+                        Content="전문가 라이브 (Live)"
+                        FontSize="10.5">
+                        <Button.Style>
+                            <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsModeLive}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SeverityCriticalBgBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource SeverityCriticalBorderBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.ToolTip>
+                            <ToolTip MaxWidth="360">
+                                <StackPanel Margin="3">
+                                    <TextBlock
+                                        Margin="0,0,0,3"
+                                        FontSize="11"
+                                        FontWeight="Bold"
+                                        Foreground="{DynamicResource SeverityCriticalTextBrush}"
+                                        Text="전문가 라이브 실행 모드 (Live Execution)" />
+                                    <TextBlock
+                                        FontSize="10"
+                                        Foreground="{DynamicResource TextSecondaryBrush}"
+                                        LineHeight="14"
+                                        Text="• 실제 공격 명령줄과 프로세스를 직접 기동합니다.&#x0a;• 실제 파일 생성과 위장 공격에 따른 AI 수사 지연을 현장에서 검증합니다. (격리된 샌드박스/VM 환경 권장)"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ToolTip>
+                        </Button.ToolTip>
+                    </Button>
+
+                    <!--  Architecture & Scope Guide Toggle Button  -->
+                    <Button
+                        Margin="10,0,0,0"
+                        Padding="8,3"
+                        Command="{Binding ToggleArchitectureGuideCommand}"
+                        Content="ⓘ 아키텍처 가이드"
+                        FontSize="10.5">
+                        <Button.Style>
+                            <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsArchitectureGuideVisible}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource CardSelectedBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderFocusedBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.ToolTip>
+                            <ToolTip MaxWidth="340">
+                                <StackPanel Margin="3">
+                                    <TextBlock
+                                        Margin="0,0,0,3"
+                                        FontSize="11"
+                                        FontWeight="Bold"
+                                        Foreground="{DynamicResource TextPrimaryBrush}"
+                                        Text="어택랩 안내" />
+                                    <TextBlock
+                                        FontSize="10"
+                                        Foreground="{DynamicResource TextSecondaryBrush}"
+                                        LineHeight="14"
+                                        Text="• 센서의 실시간 차단과 AI 수사의 역할 안내&#x0a;• 전문가 모드: 실제 공격 프로세스를 실행하는 고위험 모드 (샌드박스 권장)"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ToolTip>
+                        </Button.ToolTip>
+                    </Button>
+                </StackPanel>
+
+                <!--  Right: Batch Actions & Clear  -->
+                <StackPanel
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal">
+                    <Button
+                        Margin="0,0,6,0"
+                        Padding="10,3"
+                        Command="{Binding RunAllScenariosBatchCommand}"
+                        Content="전체 일괄 회귀 테스트 ▶"
+                        FontSize="10.5"
+                        Style="{StaticResource CapsuleFilterButtonStyle}" />
+                    <Button
+                        Margin="0,0,6,0"
+                        Padding="9,3"
+                        Command="{Binding ExportAuditReportCommand}"
+                        Content="리포트 덤프"
+                        FontSize="10.5"
+                        Style="{StaticResource CapsuleFilterButtonStyle}" />
+                    <Button
+                        Padding="8,3"
+                        Command="{Binding ClearSimulatorLogCommand}"
+                        Content="로그 지우기"
+                        FontSize="10.5"
+                        Style="{StaticResource CapsuleFilterButtonStyle}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!--  =============================================================  -->
+        <!--  Row 2: Alert Banners (Live Warning & Architecture Guide)       -->
+        <!--  =============================================================  -->
+        <StackPanel Grid.Row="2">
+            <!--  Danger / Warning Banner for Live Expert Mode  -->
+            <Border
+                Margin="16,6,16,2"
+                Padding="14,8"
+                Background="{DynamicResource SeverityCriticalBgBrush}"
+                BorderBrush="{DynamicResource SeverityCriticalBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="3"
+                Visibility="{Binding IsModeLive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
+                            <Border
+                                Margin="0,0,8,0"
+                                Padding="5,1"
+                                Background="{DynamicResource CardBrush}"
+                                BorderBrush="{DynamicResource SeverityCriticalBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="2">
+                                <TextBlock
+                                    FontSize="9"
+                                    FontWeight="Bold"
+                                    Foreground="{DynamicResource SeverityCriticalTextBrush}"
+                                    Text="EXPERT LIVE MODE" />
+                            </Border>
+                            <TextBlock
+                                FontSize="11"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource SeverityCriticalTextBrush}"
+                                Text="실제 프로세스 기동 및 디스크 페이로드 실행 활성화됨" />
+                        </StackPanel>
+                        <TextBlock
+                            FontSize="10"
+                            Foreground="{DynamicResource TextSecondaryBrush}"
+                            LineHeight="14"
+                            TextWrapping="Wrap">
+                            • 실제 Windows 프로세스 및 디스크 쓰기가 실행됩니다. 백신 탐지나 프로세스 강제 종료가 발생할 수 있으므로 격리된 샌드박스(VM) 환경에서의 실행을 권장합니다.&#x0a;
+                         
+                        </TextBlock>
+                    </StackPanel>
+                    <Border
+                        Grid.Column="1"
+                        Padding="8,4"
+                        VerticalAlignment="Center"
+                        BorderThickness="1"
+                        CornerRadius="2">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{DynamicResource BadgeBgBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SensorConnected}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SeverityBenignBgBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource SeverityBenignBorderBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SensorConnected}" Value="False">
+                                        <Setter Property="Background" Value="{DynamicResource SeverityCriticalBgBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource SeverityCriticalBorderBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock FontSize="9.5" FontWeight="SemiBold">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="C++ 커널 센서 오프라인 (보호막 없음)" />
+                                    <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SensorConnected}" Value="True">
+                                            <Setter Property="Text" Value="C++ 커널 센서 온라인 (실시간 감시)" />
+                                            <Setter Property="Foreground" Value="{DynamicResource SeverityBenignTextBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!--  Architecture Guide Banner  -->
+            <Border
+                Margin="16,4,16,4"
+                Padding="14,10"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="3"
+                Visibility="{Binding IsArchitectureGuideVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                <!--  Banner Header + Close Button  -->
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Orientation="Horizontal">
+                        <Border
+                            Margin="0,0,8,0"
+                            Padding="5,1"
+                            Background="{DynamicResource BadgeBgBrush}"
+                            BorderBrush="{DynamicResource BadgeBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="2">
+                            <TextBlock
+                                FontSize="9"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource BadgeTextBrush}"
+                                Text="ARCHITECTURE NOTICE" />
+                        </Border>
+                        <TextBlock
+                            FontSize="11.5"
+                            FontWeight="Bold"
+                            Foreground="{DynamicResource TextPrimaryBrush}"
+                            Text="Phalanx 2-Tier 역할 분담 및 어택랩(AttackLab) 검증 범위" />
+                    </StackPanel>
+
+                    <Button
+                        Grid.Column="1"
+                        Padding="6,1"
+                        Command="{Binding CloseArchitectureGuideCommand}"
+                        Content="✕ 닫기"
+                        FontSize="10"
+                        Style="{StaticResource CapsuleFilterButtonStyle}" />
+                </Grid>
+
+                <!--  3-Column Architecture Guide Cards  -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!--  Card 1: Role Separation  -->
+                    <Border
+                        Grid.Column="0"
+                        Padding="10,8"
+                        Background="{DynamicResource CardBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="2">
+                        <StackPanel>
+                            <TextBlock
+                                Margin="0,0,0,4"
+                                FontSize="10.5"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                Text="1. 센서와 AI의 역할 분담" />
+                            <TextBlock
+                                FontSize="10"
+                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                LineHeight="14"
+                                TextWrapping="Wrap">
+                                • <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">커널 센서:</Run> 실시간 위협 수집, 즉각 차단 및 선제 동결 집행&#x0a;
+                                • <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">AI 수사관:</Run> 프로세스 행위를 심층 분석하여 최종 처분 결정
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  Card 2: AttackLab Verification Purpose  -->
+                    <Border
+                        Grid.Column="2"
+                        Padding="10,8"
+                        Background="{DynamicResource CardBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="2">
+                        <StackPanel>
+                            <TextBlock
+                                Margin="0,0,0,4"
+                                FontSize="10.5"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                Text="2. 어택랩의 검증 목적" />
+                            <TextBlock
+                                FontSize="10"
+                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                LineHeight="14"
+                                TextWrapping="Wrap">
+                                • 다양한 모의 침해 상황에서 AI 수사관의 탐지 정확도와 자율 대응 능력을 시험합니다.&#x0a;
+                                • 가상 이벤트 주입 및 실제 프로세스 연동을 통해 방어 체계를 단계별로 검증할 수 있습니다.
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  Card 3: Injection Modes & Expert Live  -->
+                    <Border
+                        Grid.Column="4"
+                        Padding="10,8"
+                        Background="{DynamicResource CardBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="2">
+                        <StackPanel>
+                            <TextBlock
+                                Margin="0,0,0,4"
+                                FontSize="10.5"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                Text="3. 주입 모드 안내" />
+                            <TextBlock
+                                FontSize="10"
+                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                LineHeight="14"
+                                TextWrapping="Wrap">
+                                • <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">가상 / OS 연동:</Run> 안전한 가상 이벤트 및 무해 프로세스로 시스템을 보호하며 테스트합니다.&#x0a;
+                                • <Run FontWeight="SemiBold" Foreground="{DynamicResource SeverityCriticalTextBrush}">전문가 라이브:</Run> 실제 프로세스를 기동하여 위장 공격과 AI 수사 병목을 실측합니다. (샌드박스 권장)
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+        </StackPanel>
+
+        <!--  =============================================================  -->
+        <!--  Row 3: Master-Detail Workspace Grid                            -->
+        <!--  =============================================================  -->
+        <Grid Grid.Row="3">
             <Grid.ColumnDefinitions>
-                <!--  Left: 7 Scenario Cards List  -->
-                <ColumnDefinition Width="*" MinWidth="460" />
-                <!--  Right: Real-time Execution Terminal  -->
-                <ColumnDefinition Width="420" MinWidth="340" />
+                <!--  Left Master: Scenario Explorer Rail (360px)  -->
+                <ColumnDefinition Width="360" MinWidth="300" MaxWidth="440" />
+                <!--  Right Detail: Inspector & Real-time Console (*)  -->
+                <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!--  Left: Scenario Cards  -->
-            <ScrollViewer
+            <!--  =========================================================  -->
+            <!--  Column 0: Sleek Scenario Explorer List (Master)            -->
+            <!--  =========================================================  -->
+            <Border
                 Grid.Column="0"
-                Padding="18,14"
-                Background="{StaticResource SurfaceBrush}">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="7대 실무 공격 및 정상 시연 시나리오 레지스트리" />
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,1,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <!--  Header  -->
+                        <RowDefinition Height="36" />
+                        <!--  Scenario List  -->
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-                    <ItemsControl ItemsSource="{Binding Scenarios}">
-                        <ItemsControl.ItemTemplate>
+                    <!--  Rail Header  -->
+                    <Border
+                        Grid.Row="0"
+                        Padding="14,0"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="0,0,0,1">
+                        <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                            <TextBlock
+                                FontSize="11"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                Text="시나리오 탐색기" />
+                            <TextBlock
+                                Margin="6,0,0,0"
+                                FontSize="10"
+                                Foreground="{DynamicResource TextMutedBrush}"
+                                Text="(8개 항목)" />
+                        </StackPanel>
+                    </Border>
+
+                    <!--  Scenario Items ListBox (Sleek Selection - Zero Red Buttons)  -->
+                    <ListBox
+                        Grid.Row="1"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ItemsSource="{Binding Scenarios}"
+                        ScrollViewer.CanContentScroll="False"
+                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                        SelectedItem="{Binding SelectedScenario, Mode=TwoWay}">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="BorderThickness" Value="0" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter />
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
                             <DataTemplate DataType="{x:Type vm:AttackScenarioItem}">
                                 <Border
-                                    Margin="0,0,0,10"
-                                    Padding="14,12"
-                                    Background="{StaticResource CardBrush}"
-                                    BorderBrush="{StaticResource BorderBrush}"
+                                    x:Name="cardBorder"
+                                    Margin="8,3,8,3"
+                                    Padding="10,8"
+                                    Background="{DynamicResource CardBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="3">
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
 
-                                        <!--  Header: Scenario ID, Name, Expected Action  -->
-                                        <Grid Grid.Row="0" Margin="0,0,0,6">
+                                        <!--  Line 1: ID Badge + Name + Expected Action  -->
+                                        <Grid Grid.Row="0" Margin="0,0,0,3">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
 
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Orientation="Horizontal">
+                                            <StackPanel
+                                                Grid.Column="0"
+                                                VerticalAlignment="Center"
+                                                Orientation="Horizontal">
                                                 <Border
-                                                    Margin="0,0,8,0"
-                                                    Padding="6,2"
-                                                    Background="#101010"
-                                                    BorderBrush="{StaticResource BorderBrush}"
+                                                    Margin="0,0,6,0"
+                                                    Padding="4,1"
+                                                    Background="{DynamicResource BadgeBgBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
                                                     BorderThickness="1"
                                                     CornerRadius="2">
-                                                    <TextBlock FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextMutedBrush}" Text="{Binding Id, StringFormat='SCENARIO {0}'}" />
+                                                    <TextBlock
+                                                        FontSize="9"
+                                                        FontWeight="Bold"
+                                                        Foreground="{DynamicResource TextMutedBrush}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="{Binding Id, StringFormat='#{0}'}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Id}" Value="99">
+                                                                        <Setter Property="Text" Value="STUDIO" />
+                                                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrandBrush}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
                                                 </Border>
-                                                <TextBlock FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding Name}" />
+
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="11"
+                                                    FontWeight="SemiBold"
+                                                    Foreground="{DynamicResource TextPrimaryBrush}"
+                                                    Text="{Binding Name}"
+                                                    TextTrimming="CharacterEllipsis" />
                                             </StackPanel>
 
+                                            <!--  Expected Action Pill  -->
                                             <Border
                                                 Grid.Column="1"
-                                                Padding="6,2"
-                                                Background="#181818"
-                                                BorderBrush="{StaticResource BorderBrush}"
+                                                Padding="5,1"
                                                 BorderThickness="1"
                                                 CornerRadius="2">
-                                                <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding ExpectedAction, StringFormat='기대 처분: {0}'}" />
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{DynamicResource BadgeBgBrush}" />
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ExpectedAction}" Value="ACTION_KILL">
+                                                                <Setter Property="Background" Value="{DynamicResource SeverityCriticalBgBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource SeverityCriticalBorderBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding ExpectedAction}" Value="ACTION_RESUME">
+                                                                <Setter Property="Background" Value="{DynamicResource SeverityBenignBgBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource SeverityBenignBorderBrush}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock
+                                                    FontSize="8.5"
+                                                    FontWeight="Bold">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                            <Setter Property="Text" Value="{Binding ExpectedAction}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ExpectedAction}" Value="ACTION_KILL">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
+                                                                    <Setter Property="Text" Value="KILL" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding ExpectedAction}" Value="ACTION_RESUME">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource SeverityBenignTextBrush}" />
+                                                                    <Setter Property="Text" Value="RESUME" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding ExpectedAction}" Value="CUSTOM">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource AccentBrandBrush}" />
+                                                                    <Setter Property="Text" Value="CUSTOM" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                             </Border>
                                         </Grid>
 
-                                        <!--  Description  -->
-                                        <TextBlock
-                                            Grid.Row="1"
-                                            Margin="0,0,0,10"
-                                            FontSize="11.5"
-                                            Foreground="{StaticResource TextSecondaryBrush}"
-                                            LineHeight="16"
-                                            Text="{Binding Description}"
-                                            TextWrapping="Wrap" />
+                                        <!--  Line 2: MITRE Tag + Target Process  -->
+                                        <Grid Grid.Row="1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
 
-                                        <!--  Action Button  -->
-                                        <Button
-                                            Grid.Row="2"
-                                            HorizontalAlignment="Left"
-                                            Padding="14,5"
-                                            Command="{Binding DataContext.RunScenarioCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                            CommandParameter="{Binding Id}"
-                                            Content="모의 침해 주입 (Inject Attack)"
-                                            Style="{StaticResource DangerActionButtonStyle}" />
+                                            <Border
+                                                Grid.Column="0"
+                                                Margin="0,0,6,0"
+                                                Padding="4,1"
+                                                Background="{DynamicResource BadgeBgBrush}"
+                                                BorderBrush="{DynamicResource BorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="2">
+                                                <TextBlock
+                                                    FontSize="9"
+                                                    FontWeight="SemiBold"
+                                                    Foreground="{DynamicResource TextMutedBrush}"
+                                                    Text="{Binding MitreTactic}" />
+                                            </Border>
+
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                VerticalAlignment="Center"
+                                                FontSize="10"
+                                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                                Text="{Binding TargetProcess, StringFormat='타깃: {0}'}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </Grid>
                                     </Grid>
                                 </Border>
+
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
+                                        <Setter TargetName="cardBorder" Property="Background" Value="{DynamicResource CardSelectedBrush}" />
+                                        <Setter TargetName="cardBorder" Property="BorderBrush" Value="{DynamicResource BorderFocusedBrush}" />
+                                    </DataTrigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="cardBorder" Property="BorderBrush" Value="{DynamicResource BorderLightBrush}" />
+                                    </Trigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </ScrollViewer>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
 
-            <!--  Right: Terminal Output & Quick Navigation  -->
-            <Border
-                Grid.Column="1"
-                Padding="16,14"
-                Background="{StaticResource RootBackgroundBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
-                BorderThickness="1,0,0,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+            <!--  =========================================================  -->
+            <!--  Column 1: Detail Inspector & Real-time Console (Detail)    -->
+            <!--  =========================================================  -->
+            <Grid Grid.Column="1" Background="{DynamicResource RootBackgroundBrush}">
+                <Grid.RowDefinitions>
+                    <!--  Row 0: Scenario Specification Inspector (Auto)  -->
+                    <RowDefinition Height="Auto" />
+                    <!--  Row 1: Real-time Diagnostics Strip (Auto)  -->
+                    <RowDefinition Height="Auto" />
+                    <!--  Row 2: Defense Audit Stream Log Terminal (*)  -->
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Style="{StaticResource SectionHeaderStyle}" Text="실시간 방어 검증 터미널 (DEFENSE AUDIT LOG)" />
-
-                    <TextBox
-                        Grid.Row="1"
-                        Margin="0,0,0,12"
-                        Style="{StaticResource MonospaceCodeBoxStyle}"
-                        Text="{Binding SimulatorLog}" />
-
-                    <!--  Bottom Navigation Prompt  -->
-                    <Border
-                        Grid.Row="2"
-                        Padding="12"
-                        Background="{StaticResource SurfaceBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="3">
-                        <Grid>
+                <!--  =====================================================  -->
+                <!--  Row 0: Scenario Specification & Primary Action Bar     -->
+                <!--  =====================================================  -->
+                <Border
+                    Grid.Row="0"
+                    Padding="16,12"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,0,1">
+                    <StackPanel>
+                        <!--  Header Line: Title + Badges + Single Injection Button  -->
+                        <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
+
+                            <!--  Left: Selected Scenario Identity  -->
                             <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Text="메인 관제 화면 실시간 연동" />
-                                <TextBlock FontSize="10.5" Foreground="{StaticResource TextMutedBrush}" Text="주입 후 메인 콘솔에서 사건 카드와 AI 수사 과정을 확인하십시오." />
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                    <Border
+                                        Margin="0,0,6,0"
+                                        Padding="5,1"
+                                        Background="{DynamicResource BadgeBgBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="2">
+                                        <TextBlock
+                                            FontSize="9.5"
+                                            FontWeight="Bold"
+                                            Foreground="{DynamicResource TextMutedBrush}"
+                                            Text="{Binding SelectedScenario.Id, StringFormat='#{0}'}" />
+                                    </Border>
+
+                                    <TextBlock
+                                        FontSize="13.5"
+                                        FontWeight="Bold"
+                                        Foreground="{DynamicResource TextPrimaryBrush}"
+                                        Text="{Binding SelectedScenario.Name}" />
+
+                                    <Border
+                                        Margin="8,0,0,0"
+                                        Padding="6,1"
+                                        BorderThickness="1"
+                                        CornerRadius="2">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{DynamicResource BadgeBgBrush}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SelectedScenario.ExpectedAction}" Value="ACTION_KILL">
+                                                        <Setter Property="Background" Value="{DynamicResource SeverityCriticalBgBrush}" />
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource SeverityCriticalBorderBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding SelectedScenario.ExpectedAction}" Value="ACTION_RESUME">
+                                                        <Setter Property="Background" Value="{DynamicResource SeverityBenignBgBrush}" />
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource SeverityBenignBorderBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock
+                                            FontSize="9.5"
+                                            FontWeight="SemiBold"
+                                            Text="{Binding SelectedScenario.ExpectedAction}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SelectedScenario.ExpectedAction}" Value="ACTION_KILL">
+                                                            <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SelectedScenario.ExpectedAction}" Value="ACTION_RESUME">
+                                                            <Setter Property="Foreground" Value="{DynamicResource SeverityBenignTextBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Border>
+                                </StackPanel>
+
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="{DynamicResource TextSecondaryBrush}"
+                                    LineHeight="15"
+                                    Text="{Binding SelectedScenario.Description}"
+                                    TextWrapping="Wrap" />
                             </StackPanel>
+
+                            <!--  Right: Single Primary Action Button  -->
                             <Button
                                 Grid.Column="1"
-                                Margin="10,0,0,0"
-                                Padding="12,6"
-                                Command="{Binding ReturnToIncidentsCommand}"
-                                Content="관제 콘솔로 이동 ➔"
-                                Style="{StaticResource CapsuleFilterButtonStyle}" />
+                                VerticalAlignment="Center"
+                                Margin="16,0,0,0"
+                                Padding="16,7"
+                                Command="{Binding RunCurrentScenarioCommand}"
+                                Content="모의 침해 주입 ▶"
+                                FontSize="11"
+                                FontWeight="Bold"
+                                Style="{StaticResource DangerActionButtonStyle}"
+                                ToolTip="현재 선택된 공격 시나리오를 주입하여 EDR 원자적 동결 및 AI 수사 체인을 검증합니다." />
                         </Grid>
-                    </Border>
+
+                        <!--  SPEC BODY A: Standard Golden Scenario View  -->
+                        <StackPanel Visibility="{Binding IsGoldenScenarioSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <!--  Metadata Key-Value Spec Grid  -->
+                            <Border
+                                Margin="0,0,0,8"
+                                Padding="10,6"
+                                Background="{DynamicResource CardBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="2">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!--  Col 0: Processes  -->
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock FontSize="9" Foreground="{DynamicResource TextMutedBrush}" Text="타깃 / 부모 프로세스" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                            <TextBlock FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding SelectedScenario.TargetProcess}" />
+                                            <TextBlock FontSize="10" Foreground="{DynamicResource TextMutedBrush}" Text=" (부모: " />
+                                            <TextBlock FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding SelectedScenario.ParentProcess}" />
+                                            <TextBlock FontSize="10" Foreground="{DynamicResource TextMutedBrush}" Text=")" />
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!--  Col 1: MITRE Tactic  -->
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock FontSize="9" Foreground="{DynamicResource TextMutedBrush}" Text="MITRE ATT&amp;CK 분류" />
+                                        <TextBlock Margin="0,2,0,0" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding SelectedScenario.MitreTactic}" />
+                                    </StackPanel>
+
+                                    <!--  Col 2: Active Injection Mode  -->
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock FontSize="9" Foreground="{DynamicResource TextMutedBrush}" Text="적용 실행 모드" />
+                                        <TextBlock Margin="0,2,0,0" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="가상 주입 (Clean-Room)" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsModeOs}" Value="True">
+                                                            <Setter Property="Text" Value="OS 프로세스 연동 (Hybrid)" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsModeLive}" Value="True">
+                                                            <Setter Property="Text" Value="전문가 라이브 (Live)" />
+                                                            <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!--  Attack Analysis & Real-world Context Reference Card  -->
+                            <Border
+                                Margin="0,0,0,8"
+                                Padding="12,8"
+                                Background="{DynamicResource CardBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="3">
+                                <StackPanel>
+                                    <!--  Attack Type Tag & Title  -->
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border
+                                            Grid.Column="0"
+                                            Margin="0,0,8,0"
+                                            Padding="5,1"
+                                            Background="{DynamicResource BadgeBgBrush}"
+                                            BorderBrush="{DynamicResource BadgeBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="2"
+                                            VerticalAlignment="Center">
+                                            <TextBlock FontSize="9" FontWeight="Bold" Foreground="{DynamicResource BadgeTextBrush}" Text="공격 유형" />
+                                        </Border>
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            FontSize="10.5"
+                                            FontWeight="SemiBold"
+                                            Foreground="{DynamicResource TextPrimaryBrush}"
+                                            Text="{Binding SelectedScenario.AttackType}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+
+                                    <!--  Context Scenario  -->
+                                    <StackPanel Margin="0,0,0,5">
+                                        <TextBlock FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" Text="침해 발생 맥락 (Attack Context)" Margin="0,0,0,2" />
+                                        <TextBlock
+                                            FontSize="10"
+                                            Foreground="{DynamicResource TextSecondaryBrush}"
+                                            LineHeight="14.5"
+                                            Text="{Binding SelectedScenario.ContextScenario}"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+
+                                    <!--  Defense Goal  -->
+                                    <StackPanel>
+                                        <TextBlock FontSize="9" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" Text="EDR 방어 및 AI 수사 목표" Margin="0,0,0,2" />
+                                        <TextBlock
+                                            FontSize="10"
+                                            Foreground="{DynamicResource TextSecondaryBrush}"
+                                            LineHeight="14.5"
+                                            Text="{Binding SelectedScenario.DefenseGoal}"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!--  Readonly CommandLine Box  -->
+                            <TextBlock Style="{StaticResource FormLabelStyle}" Text="페이로드 실행 명령줄 (CommandLine):" />
+                            <TextBox
+                                Height="34"
+                                FontFamily="{StaticResource CodeFontFamily}"
+                                FontSize="10.5"
+                                IsReadOnly="True"
+                                Style="{StaticResource MonospaceCodeBoxStyle}"
+                                Text="{Binding SelectedScenario.CommandLine}"
+                                VerticalScrollBarVisibility="Disabled" />
+                        </StackPanel>
+
+                        <!--  SPEC BODY B: Custom Payload Studio View  -->
+                        <StackPanel Visibility="{Binding IsCustomScenarioSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <!--  Presets Toolbar  -->
+                            <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                                <TextBlock
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"
+                                    FontSize="10"
+                                    FontWeight="SemiBold"
+                                    Foreground="{DynamicResource TextMutedBrush}"
+                                    Text="프리셋 빠른 로드:" />
+                                <Button
+                                    Margin="0,0,4,0"
+                                    Padding="7,2"
+                                    Command="{Binding ApplyCustomTemplateCommand}"
+                                    CommandParameter="powershell"
+                                    Content="PowerShell"
+                                    FontSize="10"
+                                    Style="{StaticResource CapsuleFilterButtonStyle}" />
+                                <Button
+                                    Margin="0,0,4,0"
+                                    Padding="7,2"
+                                    Command="{Binding ApplyCustomTemplateCommand}"
+                                    CommandParameter="certutil"
+                                    Content="CertUtil"
+                                    FontSize="10"
+                                    Style="{StaticResource CapsuleFilterButtonStyle}" />
+                                <Button
+                                    Margin="0,0,4,0"
+                                    Padding="7,2"
+                                    Command="{Binding ApplyCustomTemplateCommand}"
+                                    CommandParameter="rundll32"
+                                    Content="Rundll32"
+                                    FontSize="10"
+                                    Style="{StaticResource CapsuleFilterButtonStyle}" />
+                                <Button
+                                    Padding="7,2"
+                                    Command="{Binding ApplyCustomTemplateCommand}"
+                                    CommandParameter="benign"
+                                    Content="Admin Cmd"
+                                    FontSize="10"
+                                    Style="{StaticResource CapsuleFilterButtonStyle}" />
+                            </StackPanel>
+
+                            <!--  Custom Form 2-Column Grid  -->
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!--  Col 0: Target & MITRE  -->
+                                <StackPanel Grid.Column="0">
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="6" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Style="{StaticResource FormLabelStyle}" Text="타깃 프로세스:" />
+                                            <TextBox Style="{StaticResource FormInputStyle}" Text="{Binding CustomTargetImage, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Style="{StaticResource FormLabelStyle}" Text="부모 프로세스:" />
+                                            <TextBox Style="{StaticResource FormInputStyle}" Text="{Binding CustomParentImage, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+
+                                <!--  Col 2: MITRE & Expected Action  -->
+                                <StackPanel Grid.Column="2">
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="6" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Style="{StaticResource FormLabelStyle}" Text="MITRE 코드:" />
+                                            <TextBox Style="{StaticResource FormInputStyle}" Text="{Binding CustomMitreTactic, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Style="{StaticResource FormLabelStyle}" Text="기대 처분:" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                                                <Button
+                                                    Margin="0,0,3,0"
+                                                    Padding="8,3"
+                                                    Command="{Binding SetCustomExpectedActionCommand}"
+                                                    CommandParameter="ACTION_KILL"
+                                                    Content="KILL"
+                                                    FontSize="10">
+                                                    <Button.Style>
+                                                        <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CustomExpectedAction}" Value="ACTION_KILL">
+                                                                    <Setter Property="Background" Value="{DynamicResource SeverityCriticalBgBrush}" />
+                                                                    <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
+                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SeverityCriticalBorderBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
+                                                <Button
+                                                    Padding="8,3"
+                                                    Command="{Binding SetCustomExpectedActionCommand}"
+                                                    CommandParameter="ACTION_RESUME"
+                                                    Content="RESUME"
+                                                    FontSize="10">
+                                                    <Button.Style>
+                                                        <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CustomExpectedAction}" Value="ACTION_RESUME">
+                                                                    <Setter Property="Background" Value="{DynamicResource SeverityBenignBgBrush}" />
+                                                                    <Setter Property="Foreground" Value="{DynamicResource SeverityBenignTextBrush}" />
+                                                                    <Setter Property="BorderBrush" Value="{DynamicResource SeverityBenignBorderBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Grid>
+
+                            <!--  Custom CommandLine Box  -->
+                            <TextBlock Style="{StaticResource FormLabelStyle}" Text="커스텀 명령줄 인자 (CommandLine):" />
+                            <TextBox
+                                Height="42"
+                                FontFamily="{StaticResource CodeFontFamily}"
+                                FontSize="10.5"
+                                IsReadOnly="False"
+                                Style="{StaticResource MonospaceCodeBoxStyle}"
+                                Text="{Binding CustomCommandLine, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!--  =====================================================  -->
+                <!--  Row 1: Real-time Verification Diagnostics Strip        -->
+                <!--  =====================================================  -->
+                <Border
+                    Grid.Row="1"
+                    Padding="16,10"
+                    Background="{DynamicResource RootBackgroundBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="0,0,0,1">
+                    <StackPanel>
+                        <!--  Title & Status Badge Row  -->
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,1" Text="최근 검증 진단 프로파일러" />
+                                <TextBlock FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding LatestScenarioName}" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+
+                            <Border
+                                Grid.Column="1"
+                                Padding="7,2"
+                                Background="{DynamicResource BadgeBgBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="2">
+                                <TextBlock FontSize="10" FontWeight="Bold" Text="{Binding LatestVerdictStatus}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding LatestVerdictStatus}" Value="PASS">
+                                                    <Setter Property="Foreground" Value="{DynamicResource DotLiveBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding LatestVerdictStatus}" Value="BENIGN">
+                                                    <Setter Property="Foreground" Value="{DynamicResource DotLiveBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding LatestVerdictStatus}" Value="FAIL">
+                                                    <Setter Property="Foreground" Value="{DynamicResource DotCriticalBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding LatestVerdictStatus}" Value="IN_PROGRESS">
+                                                    <Setter Property="Foreground" Value="{DynamicResource DotSuspendedBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Border>
+                        </Grid>
+
+                        <!--  Compact Metrics Strip  -->
+                        <Border
+                            Margin="0,0,0,4"
+                            Padding="8,5"
+                            Background="{DynamicResource CardBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="2">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding LatestLatencyText, StringFormat='지연: {0}'}" />
+                                <TextBlock Grid.Column="1" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding LatestTurnCountText, StringFormat='턴수: {0}'}" />
+                                <TextBlock Grid.Column="2" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" Text="{Binding LatestConfidenceText, StringFormat='확신: {0}'}" />
+                                <TextBlock Grid.Column="3" FontSize="10" Foreground="{DynamicResource DotLiveBrush}" Text="SLA 준수" HorizontalAlignment="Right" />
+                            </Grid>
+                        </Border>
+
+                        <!--  Tool Chain Line  -->
+                        <TextBlock
+                            FontSize="9.5"
+                            Foreground="{DynamicResource TextMutedBrush}"
+                            Text="{Binding LatestToolsText, StringFormat='도구: {0}'}"
+                            TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Border>
+
+                <!--  =====================================================  -->
+                <!--  Row 2: Defense Audit Stream Log Terminal (Full Height) -->
+                <!--  =====================================================  -->
+                <Grid Grid.Row="2" Margin="16,10,16,12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" Text="방어 검증 스트림 로그" />
+
+                    <TextBox
+                        Grid.Row="1"
+                        FontFamily="{StaticResource CodeFontFamily}"
+                        FontSize="10.5"
+                        IsReadOnly="True"
+                        Style="{StaticResource MonospaceCodeBoxStyle}"
+                        Text="{Binding SimulatorLog}"
+                        VerticalScrollBarVisibility="Auto" />
                 </Grid>
-            </Border>
+            </Grid>
         </Grid>
     </Grid>
 </Window>

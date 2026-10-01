@@ -12,8 +12,8 @@
     MinHeight="700"
     FontFamily="Segoe UI Variable Text, Segoe UI, -apple-system, sans-serif"
     helpers:WindowTitleBarBehavior.EnableDarkTitleBar="True"
-    Background="{StaticResource RootBackgroundBrush}"
-    Foreground="{StaticResource TextPrimaryBrush}"
+    Background="{DynamicResource RootBackgroundBrush}"
+    Foreground="{DynamicResource TextPrimaryBrush}"
     Icon="/Assets/phalanx.ico"
     WindowStartupLocation="CenterScreen">
 
@@ -30,7 +30,7 @@
     <Window.Style>
         <Style TargetType="Window">
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Style.Triggers>
                 <Trigger Property="WindowState" Value="Maximized">
                     <Setter Property="BorderThickness" Value="0" />
@@ -39,13 +39,6 @@
         </Style>
     </Window.Style>
 
-    <Window.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/EnterpriseTheme.xaml" />
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Window.Resources>
 
     <Grid>
         <Grid.Style>
@@ -74,8 +67,8 @@
         <Border
             Grid.Row="0"
             Padding="16,0,0,0"
-            Background="{StaticResource SurfaceBrush}"
-            BorderBrush="{StaticResource BorderBrush}"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -94,20 +87,20 @@
                         Height="16"
                         Margin="0,0,10,0"
                         Data="{StaticResource IconShield}"
-                        Fill="{StaticResource AccentBrandBrush}"
+                        Fill="{DynamicResource AccentBrandBrush}"
                         Stretch="Uniform" />
                     <TextBlock
                         VerticalAlignment="Center"
                         FontSize="13"
                         FontWeight="Bold"
-                        Foreground="{StaticResource TextPrimaryBrush}"
+                        Foreground="{DynamicResource TextPrimaryBrush}"
                         Text="PHALANX EDR" />
                     <TextBlock
                         Margin="8,0,0,0"
                         VerticalAlignment="Center"
                         FontSize="11"
                         FontWeight="Normal"
-                        Foreground="{StaticResource TextMutedBrush}"
+                        Foreground="{DynamicResource TextMutedBrush}"
                         Text="Enterprise Threat Cockpit" />
                 </StackPanel>
 
@@ -124,10 +117,10 @@
                         Margin="0,0,7,0">
                         <Ellipse.Style>
                             <Style TargetType="Ellipse">
-                                <Setter Property="Fill" Value="{StaticResource DotCriticalBrush}" />
+                                <Setter Property="Fill" Value="{DynamicResource DotCriticalBrush}" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding SensorConnected}" Value="True">
-                                        <Setter Property="Fill" Value="{StaticResource DotLiveBrush}" />
+                                        <Setter Property="Fill" Value="{DynamicResource DotLiveBrush}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -136,13 +129,13 @@
                     <TextBlock
                         FontSize="11"
                         FontWeight="SemiBold"
-                        Foreground="{StaticResource TextMutedBrush}"
+                        Foreground="{DynamicResource TextMutedBrush}"
                         Text="SENSOR IPC 127.0.0.1:50051 " />
                     <TextBlock
                         Margin="0,0,12,0"
                         FontSize="11"
                         FontWeight="Bold"
-                        Foreground="{StaticResource TextPrimaryBrush}">
+                        Foreground="{DynamicResource TextPrimaryBrush}">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Text" Value="OFFLINE" />
@@ -162,8 +155,8 @@
                         <Button.Style>
                             <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
                                 <Setter Property="Padding" Value="10,3" />
-                                <Setter Property="BorderBrush" Value="{StaticResource BorderLightBrush}" />
-                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderLightBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
                             </Style>
                         </Button.Style>
                         <TextBlock
@@ -173,20 +166,11 @@
                     </Button>
                 </StackPanel>
 
-                <!--  Right: Refresh & Window Caption Buttons  -->
+                <!--  Right: Window Caption Buttons  -->
                 <StackPanel
                     Grid.Column="2"
                     VerticalAlignment="Stretch"
                     Orientation="Horizontal">
-                    <Button
-                        Margin="0,0,10,0"
-                        VerticalAlignment="Center"
-                        Command="{Binding RefreshFromDbCommand}"
-                        Style="{StaticResource CapsuleFilterButtonStyle}"
-                        WindowChrome.IsHitTestVisibleInChrome="True">
-                        <TextBlock FontSize="10.5" Text="REFRESH DB" />
-                    </Button>
-
                     <!--  Caption Minimize, Maximize/Restore, Close Buttons  -->
                     <Button
                         Click="MinimizeButton_Click"
@@ -194,10 +178,11 @@
                         ToolTip="최소화">
                         <Path
                             Width="10"
-                            Height="1"
+                            Height="10"
                             Data="{StaticResource IconWinMinimize}"
                             Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                            StrokeThickness="1" />
+                            StrokeThickness="1"
+                            SnapsToDevicePixels="True" />
                     </Button>
                     <Button
                         Click="MaximizeButton_Click"
@@ -253,8 +238,8 @@
             <!--  =========================================================  -->
             <Border
                 Grid.Column="0"
-                Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource BorderBrush}"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
                 BorderThickness="0,0,1,0">
                 <Grid>
                     <!--  Top Primary Nav: 2 Core Workspaces  -->
@@ -274,13 +259,13 @@
                                 Stretch="Uniform">
                                 <Path.Style>
                                     <Style TargetType="Path">
-                                        <Setter Property="Fill" Value="{StaticResource TextMutedBrush}" />
+                                        <Setter Property="Fill" Value="{DynamicResource TextMutedBrush}" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding CurrentView}" Value="Incidents">
-                                                <Setter Property="Fill" Value="{StaticResource AccentBrandBrush}" />
+                                                <Setter Property="Fill" Value="{DynamicResource AccentBrandBrush}" />
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding CurrentView}" Value="Investigation">
-                                                <Setter Property="Fill" Value="{StaticResource AccentBrandBrush}" />
+                                                <Setter Property="Fill" Value="{DynamicResource AccentBrandBrush}" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -305,10 +290,10 @@
                                 Stretch="Uniform">
                                 <Path.Style>
                                     <Style TargetType="Path">
-                                        <Setter Property="Fill" Value="{StaticResource TextMutedBrush}" />
+                                        <Setter Property="Fill" Value="{DynamicResource TextMutedBrush}" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding CurrentView}" Value="ProcessGraph">
-                                                <Setter Property="Fill" Value="{StaticResource AccentBrandBrush}" />
+                                                <Setter Property="Fill" Value="{DynamicResource AccentBrandBrush}" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -317,7 +302,7 @@
                         </Button>
                     </StackPanel>
 
-                    <!--  Bottom Companion Launcher: Attack Lab Window  -->
+                    <!--  Bottom Companion Launchers: Attack Lab & Settings Window  -->
                     <StackPanel VerticalAlignment="Bottom" Margin="0,6">
                         <Button
                             Command="{Binding OpenAttackLabCommand}"
@@ -329,7 +314,21 @@
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
                                 Data="{StaticResource IconNavAttackLab}"
-                                Fill="{StaticResource TextMutedBrush}"
+                                Fill="{DynamicResource TextMutedBrush}"
+                                Stretch="Uniform" />
+                        </Button>
+                        <Button
+                            Margin="0,4,0,0"
+                            Command="{Binding OpenSettingsCommand}"
+                            Style="{StaticResource NavRailButtonStyle}"
+                            ToolTip="환경 설정 (Settings &amp; Configuration)">
+                            <Path
+                                Width="17"
+                                Height="17"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="{StaticResource IconNavSettings}"
+                                Fill="{DynamicResource TextMutedBrush}"
                                 Stretch="Uniform" />
                         </Button>
                     </StackPanel>
@@ -390,8 +389,8 @@
         <Border
             Grid.Row="2"
             Padding="14,0"
-            Background="#0A0A0A"
-            BorderBrush="{StaticResource BorderBrush}"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,1,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -404,20 +403,20 @@
                     Grid.Column="0"
                     VerticalAlignment="Center"
                     Orientation="Horizontal">
-                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" Text="MONITORED: " />
-                    <TextBlock Margin="0,0,12,0" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding MonitoredProcessCount}" />
+                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" Text="MONITORED: " />
+                    <TextBlock Margin="0,0,12,0" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding MonitoredProcessCount}" />
 
-                    <Ellipse Width="4" Height="4" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{StaticResource DotSuspendedBrush}" />
-                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" Text="FROZEN: " />
-                    <TextBlock Margin="0,0,12,0" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding ActiveSuspendedCount}" />
+                    <Ellipse Width="4" Height="4" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{DynamicResource DotSuspendedBrush}" />
+                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" Text="FROZEN: " />
+                    <TextBlock Margin="0,0,12,0" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding ActiveSuspendedCount}" />
 
-                    <Ellipse Width="4" Height="4" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{StaticResource DotCriticalBrush}" />
-                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" Text="TERMINATED: " />
-                    <TextBlock Margin="0,0,12,0" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding TotalTerminatedCount}" />
+                    <Ellipse Width="4" Height="4" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{DynamicResource DotCriticalBrush}" />
+                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" Text="TERMINATED: " />
+                    <TextBlock Margin="0,0,12,0" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding TotalTerminatedCount}" />
 
-                    <Ellipse Width="4" Height="4" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{StaticResource DotBenignBrush}" />
-                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource TextMutedBrush}" Text="RESTORED: " />
-                    <TextBlock FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Text="{Binding TotalRestoredCount}" />
+                    <Ellipse Width="4" Height="4" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{DynamicResource DotBenignBrush}" />
+                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" Text="RESTORED: " />
+                    <TextBlock FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" Text="{Binding ActiveRestoredCount}" />
                 </StackPanel>
 
                 <!--  Right SLA Engine State  -->
@@ -427,7 +426,7 @@
                     Orientation="Horizontal">
                     <TextBlock
                         FontSize="10"
-                        Foreground="{StaticResource TextMutedBrush}"
+                        Foreground="{DynamicResource TextMutedBrush}"
                         Text="SAFETY WATCHDOG: 10s SLA (+50s EXTEND TICKETS) • REAC HUNTER: READY" />
                 </StackPanel>
             </Grid>

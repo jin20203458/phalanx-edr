@@ -25,6 +25,7 @@ public class ThreatReputationTool : IInvestigationTool
         ["evil-c2.darknet"] = new(99, "Fileless C2 Domain", "Lazarus Group", "난독화 매크로를 통한 2차 페이로드 다운로더"),
         ["malicious-download.com"] = new(90, "Dropper Server", "Generic Malware", "파워셸 인라인 스크립트 배포 서버"),
         ["c2-delivery.live"] = new(91, "Beacon Staging Node", "UNC2452", "공급망 공격 C2 엔드포인트"),
+        ["198.51.100.99"] = new(93, "Masquerading Dropper C2", "Generic Trojan/Dropper", "임시 디렉터리 내 시스템 바이너리 위장 드로퍼 배포 C2"),
 
         // 공공 DNS 및 합법적 인프라 화이트리스트 (Score 0)
         ["127.0.0.1"] = new(0, "Local Loopback", "Benign", "로컬 루프백 정상 주소"),
@@ -196,7 +197,8 @@ public class ThreatReputationTool : IInvestigationTool
 
         if (ip.AddressFamily == AddressFamily.InterNetwork)
         {
-            byte[] b = ip.GetAddressBytes();
+            Span<byte> b = stackalloc byte[4];
+            if (!ip.TryWriteBytes(b, out _)) return false;
             uint val = ((uint)b[0] << 24) | ((uint)b[1] << 16) | ((uint)b[2] << 8) | b[3];
 
             // 10.0.0.0/8 (0x0A000000)
@@ -230,7 +232,8 @@ public class ThreatReputationTool : IInvestigationTool
         {
             if (ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || ip.IsIPv6Multicast) return true;
 
-            byte[] b = ip.GetAddressBytes();
+            Span<byte> b = stackalloc byte[16];
+            if (!ip.TryWriteBytes(b, out _)) return false;
             // Unique Local Address (fc00::/7)
             if ((b[0] & 0xFE) == 0xFC) return true;
         }

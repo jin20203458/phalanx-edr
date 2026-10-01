@@ -48,6 +48,9 @@ public partial class ProcessNodeModel : ObservableObject
     private string _imageName = string.Empty;
 
     [ObservableProperty]
+    private string _fullImagePath = string.Empty;
+
+    [ObservableProperty]
     private string _commandLine = string.Empty;
 
     [ObservableProperty]
@@ -75,10 +78,17 @@ public partial class ProcessNodeModel : ObservableObject
     private bool _isTerminated;
 
     [ObservableProperty]
+    private bool _isRestored;
+
+    [ObservableProperty]
     private ProcessLifecycle _lifecycle = ProcessLifecycle.LifecycleUnknown;
 
     [ObservableProperty]
     private string _statusBadge = "[정상]";
+
+    public string Status => StatusBadge;
+
+    partial void OnStatusBadgeChanged(string value) => OnPropertyChanged(nameof(Status));
 
     public ObservableCollection<ProcessNodeModel> Children { get; } = new();
 
@@ -93,15 +103,18 @@ public partial class ProcessNodeModel : ObservableObject
         if (isTerminated || lifecycle == ProcessLifecycle.LifecycleTerminated)
         {
             IsAlive = false;
+            IsRestored = false;
             StatusBadge = "[현장 사살]";
         }
         else if (isSuspended || lifecycle == ProcessLifecycle.LifecycleSuspended)
         {
+            IsRestored = false;
             StatusBadge = "[원자적 동결 (수사 중)]";
         }
         else if (lifecycle == ProcessLifecycle.LifecycleStop)
         {
             IsAlive = false;
+            IsRestored = false;
             StatusBadge = "[정상 종료]";
         }
         else if (lifecycle == ProcessLifecycle.LifecycleSnapshot)

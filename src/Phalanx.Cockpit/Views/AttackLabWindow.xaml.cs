@@ -35,13 +35,4 @@ public partial class AttackLabWindow : Window
     {
         Close();
     }
-
-    private void ToggleTopmost_Click(object sender, RoutedEventArgs e)
-    {
-        Topmost = !Topmost;
-        if (sender is System.Windows.Controls.Button btn)
-        {
-            btn.Content = Topmost ? "PINNED (항상 위)" : "PIN (항상 위 고정)";
-        }
-    }
 }

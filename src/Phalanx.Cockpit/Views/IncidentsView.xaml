@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:Phalanx.Cockpit.ViewModels"
     FontFamily="{StaticResource SansFontFamily}"
-    Foreground="{StaticResource TextPrimaryBrush}">
+    Foreground="{DynamicResource TextPrimaryBrush}">
 
     <Grid>
         <Grid.ColumnDefinitions>
@@ -19,8 +19,8 @@
         <!--  =============================================================  -->
         <Border
             Grid.Column="0"
-            Background="{StaticResource SurfaceBrush}"
-            BorderBrush="{StaticResource BorderBrush}"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,0,1,0">
             <Grid>
                 <Grid.RowDefinitions>
@@ -34,7 +34,7 @@
                 <Border
                     Grid.Row="0"
                     Padding="14,10"
-                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="0,0,0,1">
                     <StackPanel>
                         <!--  Filters Bar  -->
@@ -68,8 +68,8 @@
                         <Border
                             Height="28"
                             Padding="8,0"
-                            Background="#181818"
-                            BorderBrush="{StaticResource BorderBrush}"
+                            Background="{DynamicResource InputBackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
                             BorderThickness="1"
                             CornerRadius="3">
                             <Grid>
@@ -84,16 +84,16 @@
                                     Margin="0,0,6,0"
                                     VerticalAlignment="Center"
                                     Data="{StaticResource IconSearch}"
-                                    Fill="{StaticResource TextMutedBrush}"
+                                    Fill="{DynamicResource TextMutedBrush}"
                                     Stretch="Uniform" />
                                 <TextBox
                                     Grid.Column="1"
                                     VerticalAlignment="Center"
                                     Background="Transparent"
                                     BorderThickness="0"
-                                    CaretBrush="{StaticResource TextPrimaryBrush}"
+                                    CaretBrush="{DynamicResource TextPrimaryBrush}"
                                     FontSize="11"
-                                    Foreground="{StaticResource TextPrimaryBrush}"
+                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                     Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" />
                             </Grid>
                         </Border>
@@ -131,8 +131,8 @@
                                 x:Name="cardBorder"
                                 Margin="10,4,10,2"
                                 Padding="12,10"
-                                Background="{StaticResource CardBrush}"
-                                BorderBrush="{StaticResource BorderBrush}"
+                                Background="{DynamicResource CardBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="3">
                                 <Grid>
@@ -159,13 +159,32 @@
                                                 Margin="0,0,8,0">
                                                 <Ellipse.Style>
                                                     <Style TargetType="Ellipse">
-                                                        <Setter Property="Fill" Value="{StaticResource DotSuspendedBrush}" />
+                                                        <Setter Property="Fill" Value="{DynamicResource DotSuspendedBrush}" />
                                                         <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsInvestigating}" Value="True">
+                                                                <Setter Property="Fill" Value="{DynamicResource DotSuspendedBrush}" />
+                                                                <DataTrigger.EnterActions>
+                                                                    <BeginStoryboard x:Name="PulseStoryboard">
+                                                                        <Storyboard AutoReverse="True" RepeatBehavior="Forever">
+                                                                            <DoubleAnimation
+                                                                                Duration="0:0:0.8"
+                                                                                From="0.35"
+                                                                                Storyboard.TargetProperty="Opacity"
+                                                                                To="1.0" />
+                                                                        </Storyboard>
+                                                                    </BeginStoryboard>
+                                                                </DataTrigger.EnterActions>
+                                                                <DataTrigger.ExitActions>
+                                                                    <StopStoryboard BeginStoryboardName="PulseStoryboard" />
+                                                                </DataTrigger.ExitActions>
+                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding StatusSeverity}" Value="CRITICAL">
-                                                                <Setter Property="Fill" Value="{StaticResource DotCriticalBrush}" />
+                                                                <Setter Property="Fill" Value="{DynamicResource DotCriticalBrush}" />
+                                                                <Setter Property="Opacity" Value="1.0" />
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding StatusSeverity}" Value="BENIGN">
-                                                                <Setter Property="Fill" Value="{StaticResource DotBenignBrush}" />
+                                                                <Setter Property="Fill" Value="{DynamicResource DotBenignBrush}" />
+                                                                <Setter Property="Opacity" Value="1.0" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
@@ -176,14 +195,14 @@
                                             <TextBlock
                                                 FontSize="12.5"
                                                 FontWeight="SemiBold"
-                                                Foreground="{StaticResource TextPrimaryBrush}"
+                                                Foreground="{DynamicResource TextPrimaryBrush}"
                                                 Text="{Binding TargetImage}" />
 
                                             <!--  PID badge  -->
                                             <TextBlock
                                                 Margin="6,0,0,0"
                                                 FontSize="10.5"
-                                                Foreground="{StaticResource TextMutedBrush}"
+                                                Foreground="{DynamicResource TextMutedBrush}"
                                                 Text="{Binding TargetPid, StringFormat='({0})'}" />
                                         </StackPanel>
 
@@ -192,11 +211,11 @@
                                             Grid.Column="1"
                                             VerticalAlignment="Center"
                                             FontSize="10.5"
-                                            Foreground="{StaticResource TextMutedBrush}"
+                                            Foreground="{DynamicResource TextMutedBrush}"
                                             Text="{Binding RelativeTime}" />
                                     </Grid>
 
-                                    <!--  Line 2: MITRE Tag + 1-Line Summary Title  -->
+                                    <!--  Line 2: MITRE Tag + 1-Line Summary Title / Live Investigation Status  -->
                                     <Grid Grid.Row="1">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
@@ -208,36 +227,48 @@
                                             Grid.Column="0"
                                             Margin="0,0,6,0"
                                             Padding="5,1"
-                                            Background="#141414"
-                                            BorderBrush="{StaticResource BorderBrush}"
+                                            Background="{DynamicResource BadgeBgBrush}"
+                                            BorderBrush="{DynamicResource BorderBrush}"
                                             BorderThickness="1"
                                             CornerRadius="2">
                                             <TextBlock
                                                 FontSize="9.5"
                                                 FontWeight="SemiBold"
-                                                Foreground="{StaticResource TextMutedBrush}"
+                                                Foreground="{DynamicResource TextMutedBrush}"
                                                 Text="{Binding PrimaryMitreTactic}" />
                                         </Border>
 
-                                        <!--  Summary Title  -->
+                                        <!--  Summary Title / Live Investigation Status  -->
                                         <TextBlock
                                             Grid.Column="1"
                                             VerticalAlignment="Center"
                                             FontSize="11"
-                                            Foreground="{StaticResource TextSecondaryBrush}"
-                                            Text="{Binding SummaryTitle}"
                                             TextTrimming="CharacterEllipsis"
-                                            TextWrapping="NoWrap" />
+                                            TextWrapping="NoWrap">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                    <Setter Property="Text" Value="{Binding SummaryTitle}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsInvestigating}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource DotSuspendedBrush}" />
+                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                            <Setter Property="Text" Value="{Binding InvestigationProgressText}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </Grid>
                                 </Grid>
                             </Border>
                             <DataTemplate.Triggers>
                                 <DataTrigger Binding="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=ListBoxItem}, Path=IsSelected}" Value="True">
-                                    <Setter TargetName="cardBorder" Property="Background" Value="{StaticResource CardSelectedBrush}" />
-                                    <Setter TargetName="cardBorder" Property="BorderBrush" Value="{StaticResource BorderFocusedBrush}" />
+                                    <Setter TargetName="cardBorder" Property="Background" Value="{DynamicResource CardSelectedBrush}" />
+                                    <Setter TargetName="cardBorder" Property="BorderBrush" Value="{DynamicResource BorderFocusedBrush}" />
                                 </DataTrigger>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="cardBorder" Property="BorderBrush" Value="{StaticResource BorderLightBrush}" />
+                                    <Setter TargetName="cardBorder" Property="BorderBrush" Value="{DynamicResource BorderLightBrush}" />
                                 </Trigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>
@@ -249,7 +280,7 @@
         <!--  =============================================================  -->
         <!--  Column 1: High-Value Quick Overview Panel                      -->
         <!--  =============================================================  -->
-        <Grid Grid.Column="1" Background="{StaticResource RootBackgroundBrush}">
+        <Grid Grid.Column="1" Background="{DynamicResource RootBackgroundBrush}">
             <!--  Placeholder when no incident is selected  -->
             <Grid>
                 <Grid.Style>
@@ -269,19 +300,19 @@
                         Margin="0,0,0,14"
                         HorizontalAlignment="Center"
                         Data="{StaticResource IconShield}"
-                        Fill="#222222"
+                        Fill="{DynamicResource BorderFocusedBrush}"
                         Stretch="Uniform" />
                     <TextBlock
                         HorizontalAlignment="Center"
                         FontSize="13.5"
                         FontWeight="SemiBold"
-                        Foreground="{StaticResource TextMutedBrush}"
+                        Foreground="{DynamicResource TextMutedBrush}"
                         Text="사건을 선택하면 개요 및 포렌식 요약이 표시됩니다" />
                     <TextBlock
                         Margin="0,4,0,0"
                         HorizontalAlignment="Center"
                         FontSize="11"
-                        Foreground="{StaticResource TextSubtleBrush}"
+                        Foreground="{DynamicResource TextSubtleBrush}"
                         Text="더블클릭하거나 하단 버튼을 통해 전용 포렌식 수사실로 진입할 수 있습니다." />
                 </StackPanel>
             </Grid>
@@ -312,8 +343,8 @@
                                 <Border
                                     Margin="0,0,8,0"
                                     Padding="8,3"
-                                    Background="{StaticResource BadgeBgBrush}"
-                                    BorderBrush="{StaticResource BadgeBorderBrush}"
+                                    Background="{DynamicResource BadgeBgBrush}"
+                                    BorderBrush="{DynamicResource BadgeBorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="3">
                                     <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
@@ -323,13 +354,13 @@
                                             Margin="0,0,6,0">
                                             <Ellipse.Style>
                                                 <Style TargetType="Ellipse">
-                                                    <Setter Property="Fill" Value="{StaticResource DotSuspendedBrush}" />
+                                                    <Setter Property="Fill" Value="{DynamicResource DotSuspendedBrush}" />
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding SelectedIncident.StatusSeverity}" Value="CRITICAL">
-                                                            <Setter Property="Fill" Value="{StaticResource DotCriticalBrush}" />
+                                                            <Setter Property="Fill" Value="{DynamicResource DotCriticalBrush}" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding SelectedIncident.StatusSeverity}" Value="BENIGN">
-                                                            <Setter Property="Fill" Value="{StaticResource DotBenignBrush}" />
+                                                            <Setter Property="Fill" Value="{DynamicResource DotBenignBrush}" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
@@ -338,7 +369,7 @@
                                         <TextBlock
                                             FontSize="10.5"
                                             FontWeight="Bold"
-                                            Foreground="{StaticResource BadgeTextBrush}"
+                                            Foreground="{DynamicResource BadgeTextBrush}"
                                             Text="{Binding SelectedIncident.VerdictAction}" />
                                     </StackPanel>
                                 </Border>
@@ -346,20 +377,20 @@
                                 <TextBlock
                                     VerticalAlignment="Center"
                                     FontSize="11"
-                                    Foreground="{StaticResource TextMutedBrush}"
+                                    Foreground="{DynamicResource TextMutedBrush}"
                                     Text="{Binding SelectedIncident.IncidentId, StringFormat='INCIDENT ID: {0}'}" />
                             </StackPanel>
 
                             <TextBlock
                                 FontSize="20"
                                 FontWeight="Bold"
-                                Foreground="{StaticResource TextPrimaryBrush}"
+                                Foreground="{DynamicResource TextPrimaryBrush}"
                                 Text="{Binding SelectedIncident.TargetImage}" />
 
                             <TextBlock
                                 Margin="0,3,0,0"
                                 FontSize="11"
-                                Foreground="{StaticResource TextMutedBrush}"
+                                Foreground="{DynamicResource TextMutedBrush}"
                                 Text="{Binding SelectedIncident.FormattedTime, StringFormat='발생 일시: {0}'}" />
                         </StackPanel>
 
@@ -382,8 +413,8 @@
                     <Border
                         Margin="0,0,0,16"
                         Padding="16"
-                        Background="{StaticResource SurfaceBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1"
                         CornerRadius="3">
                         <StackPanel>
@@ -391,11 +422,11 @@
                                 Margin="0,0,0,8"
                                 FontSize="13.5"
                                 FontWeight="SemiBold"
-                                Foreground="{StaticResource TextPrimaryBrush}"
+                                Foreground="{DynamicResource TextPrimaryBrush}"
                                 Text="{Binding SelectedIncident.SummaryTitle}" />
                             <TextBlock
                                 FontSize="12"
-                                Foreground="{StaticResource TextSecondaryBrush}"
+                                Foreground="{DynamicResource TextSecondaryBrush}"
                                 LineHeight="19"
                                 Text="{Binding SelectedIncident.Narrative}"
                                 TextWrapping="Wrap" />
@@ -439,8 +470,8 @@
                     <Border
                         Margin="0,0,0,24"
                         Padding="14"
-                        Background="{StaticResource SurfaceBrush}"
-                        BorderBrush="{StaticResource BorderBrush}"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
                         BorderThickness="1"
                         CornerRadius="3">
                         <Grid>
@@ -453,19 +484,19 @@
                             <StackPanel Grid.Column="0">
                                 <TextBlock
                                     FontSize="10.5"
-                                    Foreground="{StaticResource TextMutedBrush}"
+                                    Foreground="{DynamicResource TextMutedBrush}"
                                     Text="부모 프로세스 (PARENT)" />
                                 <TextBlock
                                     Margin="0,4,0,0"
                                     FontSize="12.5"
                                     FontWeight="SemiBold"
-                                    Foreground="{StaticResource TextPrimaryBrush}"
+                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                     Text="{Binding SelectedIncident.ParentFileName}" />
                                 <TextBlock
                                     Margin="0,2,0,0"
                                     FontSize="10"
                                     FontFamily="{StaticResource CodeFontFamily}"
-                                    Foreground="{StaticResource TextMutedBrush}"
+                                    Foreground="{DynamicResource TextMutedBrush}"
                                     Text="{Binding SelectedIncident.ParentDirectoryPath}"
                                     TextTrimming="CharacterEllipsis"
                                     ToolTip="{Binding SelectedIncident.ParentImage}"
@@ -475,26 +506,26 @@
                             <StackPanel Grid.Column="1">
                                 <TextBlock
                                     FontSize="10.5"
-                                    Foreground="{StaticResource TextMutedBrush}"
+                                    Foreground="{DynamicResource TextMutedBrush}"
                                     Text="수사 확신도 (CONFIDENCE)" />
                                 <TextBlock
                                     Margin="0,4,0,0"
                                     FontSize="12.5"
                                     FontWeight="SemiBold"
-                                    Foreground="{StaticResource TextPrimaryBrush}"
+                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                     Text="{Binding SelectedIncident.ConfidenceDisplay}" />
                             </StackPanel>
 
                             <StackPanel Grid.Column="2">
                                 <TextBlock
                                     FontSize="10.5"
-                                    Foreground="{StaticResource TextMutedBrush}"
+                                    Foreground="{DynamicResource TextMutedBrush}"
                                     Text="수사 소요 시간 (LATENCY)" />
                                 <TextBlock
                                     Margin="0,4,0,0"
                                     FontSize="12.5"
                                     FontWeight="SemiBold"
-                                    Foreground="{StaticResource TextSecondaryBrush}"
+                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                     Text="{Binding SelectedIncident.FormattedLatency}" />
                             </StackPanel>
                         </Grid>

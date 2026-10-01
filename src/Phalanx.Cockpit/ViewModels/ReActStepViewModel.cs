@@ -25,5 +25,10 @@ public partial class ReActStepViewModel : ObservableObject
     [ObservableProperty]
     private double _elapsedMs;
 
-    public string FormattedStep => $"PHASE {StepNumber:D2} : {ActionTool.ToUpperInvariant()}";
+    [ObservableProperty]
+    private bool _isExpanded;
+
+    public string FormattedStep => string.Equals(ActionTool, "None", StringComparison.OrdinalIgnoreCase)
+        ? $"PHASE {StepNumber:D2} : FINAL VERDICT"
+        : $"PHASE {StepNumber:D2} : {ActionTool.ToUpperInvariant()}";
 }

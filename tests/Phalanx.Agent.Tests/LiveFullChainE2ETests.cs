@@ -49,7 +49,7 @@ public class LiveFullChainE2ETests
     /// <summary>
     /// [라이브 E2E 실측 1] 악성 C2 다운로더 실제 프로세스 동결 ➔ gRPC ➔ AI 수사 ➔ 사살 ➔ 프로세스 강제 소멸 검증
     /// </summary>
-    [Fact]
+    [Fact(Timeout = 15000)]
     public async Task TestLiveE2E_RealProcess_Suspended_Investigated_And_Terminated()
     {
         const int Port = 50058;
@@ -199,7 +199,7 @@ public class LiveFullChainE2ETests
     /// <summary>
     /// [라이브 E2E 실측 2] 사내 정상 백업 스크립트 실제 프로세스 동결 ➔ gRPC ➔ FSM 조기 탈출 ➔ 복구(ACTION_RESUME) 실측
     /// </summary>
-    [Fact]
+    [Fact(Timeout = 15000)]
     public async Task TestLiveE2E_BenignProcess_Suspended_And_Resumed()
     {
         const int Port = 50059;

@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Phalanx.AttackSimulator.Logging;
-using Phalanx.AttackSimulator.Scenarios;
+using Phalanx.Cockpit.Scenarios;
 using Phalanx.Shared.Protos;
 
 namespace Phalanx.AttackSimulator;

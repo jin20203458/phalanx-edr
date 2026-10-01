@@ -28,13 +28,13 @@ public class GeminiRestClient
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private static readonly List<SafetySetting> DefaultSafetySettings = new()
-    {
+    private static readonly List<SafetySetting> DefaultSafetySettings =
+    [
         new("HARM_CATEGORY_HARASSMENT", BlockThreshold.BLOCK_NONE),
         new("HARM_CATEGORY_HATE_SPEECH", BlockThreshold.BLOCK_NONE),
         new("HARM_CATEGORY_SEXUALLY_EXPLICIT", BlockThreshold.BLOCK_NONE),
         new("HARM_CATEGORY_DANGEROUS_CONTENT", BlockThreshold.BLOCK_NONE)
-    };
+    ];
 
     /// <summary>
     /// Google AI Studio API Key 기반 생성자
@@ -65,26 +65,46 @@ public class GeminiRestClient
     }
 
     /// <summary>
-    /// <summary>
     /// Phalanx 자체 Config/google-credentials.json 및 AppSettings.json을 탐색하여 Vertex AI 클라이언트 생성
     /// </summary>
     public static GeminiRestClient? TryCreateFromLocalConfig(
         HttpClient? httpClient = null,
-        string? modelName = null)
+        string? modelName = null,
+        string? explicitCredentialsPath = null,
+        string? explicitProjectId = null,
+        string? explicitLocation = null)
     {
         try
         {
-            // 1. Google Cloud 표준 환경 변수 확인
-            string? envCredPath = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
             string? credentialsPath = null;
 
-            if (!string.IsNullOrWhiteSpace(envCredPath) && File.Exists(envCredPath))
+            // 0. 명시적 전달 경로 우선 확인
+            if (!string.IsNullOrWhiteSpace(explicitCredentialsPath))
             {
-                credentialsPath = envCredPath;
+                if (File.Exists(explicitCredentialsPath))
+                {
+                    credentialsPath = explicitCredentialsPath;
+                }
+                else
+                {
+                    string candidate = Path.Combine(AppContext.BaseDirectory, explicitCredentialsPath);
+                    if (File.Exists(candidate)) credentialsPath = candidate;
+                }
             }
-            else
+
+            // 1. Google Cloud 표준 환경 변수 확인
+            if (credentialsPath == null)
             {
-                // 2. Phalanx 자체 로컬 Config 디렉터리 순회 탐색
+                string? envCredPath = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
+                if (!string.IsNullOrWhiteSpace(envCredPath) && File.Exists(envCredPath))
+                {
+                    credentialsPath = envCredPath;
+                }
+            }
+
+            // 2. Phalanx 자체 로컬 Config 디렉터리 순회 탐색
+            if (credentialsPath == null)
+            {
                 string[] candidates = new[]
                 {
                     Path.Combine(AppContext.BaseDirectory, "Config", "google-credentials.json"),
@@ -109,50 +129,53 @@ public class GeminiRestClient
                 return null;
             }
 
-            string projectId = "grc0-494913";
-            string location = "global";
+            string projectId = !string.IsNullOrWhiteSpace(explicitProjectId) ? explicitProjectId : "grc0-494913";
+            string location = !string.IsNullOrWhiteSpace(explicitLocation) ? explicitLocation.ToLowerInvariant() : "global";
             string model = modelName ?? "gemini-3.7-flash";
 
-            // AppSettings.json 탐색
-            string[] appSettingsCandidates = new[]
+            // AppSettings.json 탐색 (명시적 인자가 누락되었을 때만 파일에서 보충)
+            if (string.IsNullOrWhiteSpace(explicitProjectId) || string.IsNullOrWhiteSpace(explicitLocation))
             {
-                Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
-                Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
-                Path.Combine(Directory.GetCurrentDirectory(), "src", "Phalanx.Cockpit", "AppSettings.json"),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json")),
-                Path.Combine(Path.GetDirectoryName(credentialsPath) ?? string.Empty, "..", "AppSettings.json")
-            };
-
-            foreach (var appSettingPath in appSettingsCandidates)
-            {
-                if (File.Exists(appSettingPath))
+                string[] appSettingsCandidates = new[]
                 {
-                    try
-                    {
-                        var json = File.ReadAllText(appSettingPath);
-                        using var doc = JsonDocument.Parse(json);
-                        var root = doc.RootElement;
-                        JsonElement geminiSection = root;
-                        if (root.TryGetProperty("Gemini", out var gSec))
-                        {
-                            geminiSection = gSec;
-                        }
+                    Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "src", "Phalanx.Cockpit", "AppSettings.json"),
+                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json")),
+                    Path.Combine(Path.GetDirectoryName(credentialsPath) ?? string.Empty, "..", "AppSettings.json")
+                };
 
-                        if (geminiSection.TryGetProperty("ProjectId", out var p) && !string.IsNullOrWhiteSpace(p.GetString()))
+                foreach (var appSettingPath in appSettingsCandidates)
+                {
+                    if (File.Exists(appSettingPath))
+                    {
+                        try
                         {
-                            projectId = p.GetString()!;
+                            var json = File.ReadAllText(appSettingPath);
+                            using var doc = JsonDocument.Parse(json);
+                            var root = doc.RootElement;
+                            JsonElement geminiSection = root;
+                            if (root.TryGetProperty("Gemini", out var gSec))
+                            {
+                                geminiSection = gSec;
+                            }
+
+                            if (string.IsNullOrWhiteSpace(explicitProjectId) && geminiSection.TryGetProperty("ProjectId", out var p) && !string.IsNullOrWhiteSpace(p.GetString()))
+                            {
+                                projectId = p.GetString()!;
+                            }
+                            if (string.IsNullOrWhiteSpace(explicitLocation) && geminiSection.TryGetProperty("Location", out var loc) && !string.IsNullOrWhiteSpace(loc.GetString()))
+                            {
+                                location = loc.GetString()!.ToLowerInvariant();
+                            }
+                            if (modelName == null && geminiSection.TryGetProperty("ModelName", out var m) && !string.IsNullOrWhiteSpace(m.GetString()))
+                            {
+                                model = m.GetString()!;
+                            }
+                            break;
                         }
-                        if (geminiSection.TryGetProperty("Location", out var loc) && !string.IsNullOrWhiteSpace(loc.GetString()))
-                        {
-                            location = loc.GetString()!.ToLowerInvariant();
-                        }
-                        if (geminiSection.TryGetProperty("ModelName", out var m) && !string.IsNullOrWhiteSpace(m.GetString()))
-                        {
-                            model = m.GetString()!;
-                        }
-                        break;
+                        catch { }
                     }
-                    catch { }
                 }
             }
 
@@ -285,7 +308,7 @@ public class GeminiRestClient
         var requestBody = new GeminiRequest(
             Contents: contents,
             SystemInstruction: !string.IsNullOrWhiteSpace(systemInstruction)
-                ? new Content("system", new List<Part> { new Part(systemInstruction) })
+                ? new Content("system", [new Part(systemInstruction)])
                 : null,
             GenerationConfig: new GenerationConfig(
                 Temperature: null,
@@ -333,10 +356,10 @@ public class GeminiRestClient
         int timeoutMs = 25000,
         ThinkingLevel thinkingLevel = ThinkingLevel.low)
     {
-        var contents = new List<Content>
-        {
-            new Content("user", new List<Part> { new Part(userPrompt) })
-        };
+        List<Content> contents =
+        [
+            new Content("user", [new Part(userPrompt)])
+        ];
         return GenerateContentAsync(contents, systemInstruction, cancellationToken, timeoutMs, thinkingLevel);
     }
 }

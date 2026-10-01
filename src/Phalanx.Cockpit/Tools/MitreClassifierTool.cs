@@ -19,8 +19,8 @@ public class MitreClassifierTool : IInvestigationTool
 
     private record MitreRule(Regex Pattern, MitreTechnique Technique);
 
-    private static readonly List<MitreRule> Rules = new()
-    {
+    private static readonly List<MitreRule> Rules =
+    [
         // 1. Initial Access (Order: 1)
         new(
             new Regex(@"\b(?:winword|excel|powerpnt|outlook)(?:\.exe)?\b.*?(?:->|spawn|\s).*?\b(?:powershell|cmd|mshta|wscript|cscript)(?:\.exe)?\b|\b(?:winword|excel|powerpnt|outlook)\b.*?\b(?:powershell|cmd|mshta|wscript)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
@@ -128,13 +128,13 @@ public class MitreClassifierTool : IInvestigationTool
             new Regex(@"\b(?:ransomware|encrypt.*files|\.locked|\.crypted|\.lockbit)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase, RegexTimeout),
             new MitreTechnique("T1486", "Data Encrypted for Impact", "Impact", "피해 시스템의 중요 문서를 비대칭/대칭 키로 암호화하여 금전을 요구하는 랜섬웨어 파괴 기법", 10)
         )
-    };
+    ];
 
     public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
     {
         string? behavior = null;
         var caseInsensitive = new Dictionary<string, object>(parameters, StringComparer.OrdinalIgnoreCase);
-        foreach (var key in new[] { "observedBehavior", "observed_behavior", "behavior", "command", "log" })
+        foreach (var key in (string[])[ "observedBehavior", "observed_behavior", "behavior", "command", "log" ])
         {
             if (caseInsensitive.TryGetValue(key, out var rawB) && rawB != null)
             {

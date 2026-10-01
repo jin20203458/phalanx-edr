@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -21,9 +22,18 @@ public class AutonomousHunterAgent
     private readonly ProcessTreeProjectionManager _treeManager;
     private readonly ForensicArchiveManager _archiveManager;
     private readonly Dictionary<string, IInvestigationTool> _tools = new(StringComparer.OrdinalIgnoreCase);
-    private readonly GeminiRestClient? _geminiClient;
+    private GeminiRestClient? _geminiClient;
+
+    public bool IsOnlineGemini => _geminiClient != null;
+    public string? CurrentModelName => _geminiClient?.ModelName;
+
+    public int MaxSteps { get; set; } = 5;
+    public int CtsTimeoutSec { get; set; } = 50;
+    public bool OfflineFallbackEnabled { get; set; } = true;
+    public bool FailSecureEnabled { get; set; } = true;
 
     public event Action<ProcessNodeModel, string>? OnInvestigationStarted;
+    public event Action<string /* incidentId */, ReActTraceRecord>? OnReActStepProgress;
     public event Action<InvestigationResult>? OnInvestigationCompleted;
 
     public AutonomousHunterAgent(
@@ -41,6 +51,8 @@ public class AutonomousHunterAgent
         {
             _tools[tool.Name] = tool;
         }
+
+        LoadSettingsFromAppSettings();
 
         if (geminiClient != null)
         {
@@ -65,6 +77,86 @@ public class AutonomousHunterAgent
                 _geminiClient = GeminiRestClient.TryCreateFromLocalConfig(clientHttp);
             }
         }
+    }
+
+    private void LoadSettingsFromAppSettings()
+    {
+        try
+        {
+            string[] candidates = new[]
+            {
+                Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
+                Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"))
+            };
+
+            foreach (var path in candidates)
+            {
+                if (File.Exists(path))
+                {
+                    var json = File.ReadAllText(path);
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    JsonElement geminiSec = root;
+                    if (root.TryGetProperty("Gemini", out var g)) geminiSec = g;
+
+                    if (geminiSec.TryGetProperty("MaxSteps", out var ms) && ms.TryGetInt32(out var msVal))
+                        MaxSteps = Math.Clamp(msVal, 1, 10);
+                    if (geminiSec.TryGetProperty("CtsTimeoutSec", out var ct) && ct.TryGetInt32(out var ctVal))
+                        CtsTimeoutSec = Math.Clamp(ctVal, 5, 120);
+                    if (geminiSec.TryGetProperty("OfflineFallback", out var of))
+                        OfflineFallbackEnabled = of.GetBoolean();
+                    if (geminiSec.TryGetProperty("FailSecure", out var fs))
+                        FailSecureEnabled = fs.GetBoolean();
+
+                    break;
+                }
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// 설정 변경 시 로컬 AppSettings.json 또는 지정된 파라미터로 Gemini 클라이언트를 재구성합니다.
+    /// </summary>
+    public bool ReloadConfiguration(
+        string? geminiApiKey = null,
+        string? modelName = null,
+        HttpClient? httpClient = null,
+        bool? useVertexAi = null,
+        int? maxSteps = null,
+        int? ctsTimeoutSec = null,
+        bool? offlineFallback = null,
+        bool? failSecure = null,
+        string? credentialsPath = null,
+        string? projectId = null,
+        string? location = null)
+    {
+        if (maxSteps.HasValue) MaxSteps = Math.Clamp(maxSteps.Value, 1, 10);
+        if (ctsTimeoutSec.HasValue) CtsTimeoutSec = Math.Clamp(ctsTimeoutSec.Value, 5, 120);
+        if (offlineFallback.HasValue) OfflineFallbackEnabled = offlineFallback.Value;
+        if (failSecure.HasValue) FailSecureEnabled = failSecure.Value;
+
+        var clientHttp = httpClient ?? new HttpClient();
+        bool preferVertex = useVertexAi ?? (geminiApiKey == null && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GEMINI_API_KEY")));
+
+        if (!preferVertex)
+        {
+            string? effectiveApiKey = geminiApiKey ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+            if (!string.IsNullOrWhiteSpace(effectiveApiKey))
+            {
+                _geminiClient = new GeminiRestClient(clientHttp, effectiveApiKey, modelName ?? "gemini-3.7-flash");
+                return true;
+            }
+        }
+
+        _geminiClient = GeminiRestClient.TryCreateFromLocalConfig(
+            clientHttp,
+            modelName,
+            explicitCredentialsPath: credentialsPath,
+            explicitProjectId: projectId,
+            explicitLocation: location);
+        return _geminiClient != null;
     }
 
     /// <summary>
@@ -92,7 +184,59 @@ public class AutonomousHunterAgent
             }
             catch (Exception ex)
             {
-                Trace.WriteLine($"[AutonomousHunterAgent] Gemini API 호출 실패 또는 타임아웃 발생 -> 오프라인 결정론적 엔진으로 자동 폴백: {ex.Message}");
+                Trace.WriteLine($"[AutonomousHunterAgent] Gemini API 호출 실패 또는 타임아웃 발생: {ex.Message}");
+                if (!OfflineFallbackEnabled)
+                {
+                    if (FailSecureEnabled)
+                    {
+                        var failRecord = new IncidentRecord
+                        {
+                            IncidentId = incidentId,
+                            Timestamp = DateTime.UtcNow,
+                            TargetPid = targetNode.ProcessId,
+                            TargetImage = targetNode.ImageName,
+                            CommandLine = targetNode.CommandLine,
+                            VerdictAction = "ACTION_KILL",
+                            ConfidenceScore = 0.99,
+                            SummaryTitle = "오프라인 폴백 비활성화 및 API 장애에 따른 Fail-Secure 사살",
+                            Narrative = $"Gemini API 호출에 실패하였으나, 오프라인 폴백이 비활성화되어 Fail-Secure 정책에 의해 선제 사살되었습니다: {ex.Message}",
+                            MitreTactics = new List<string> { "T1059" },
+                            BlockedIp = string.Empty,
+                            RootCauseProcess = targetNode.ImageName,
+                            TerminatedProcesses = new() { $"{targetNode.ImageName} (PID: {targetNode.ProcessId})" },
+                            RemediationStatus = "SECURED",
+                            RemediationSteps = new List<string> { "API 장애 발생", "Fail-Secure 선제 조치" },
+                            ElapsedMs = sw.Elapsed.TotalMilliseconds
+                        };
+                        _archiveManager.SaveIncident(failRecord, new List<ReActTraceRecord>());
+
+                        var failKill = new InvestigationResult(
+                            incidentId,
+                            MitigationCommand.Types.ActionType.ActionKill,
+                            0.99,
+                            failRecord.SummaryTitle,
+                            failRecord.Narrative,
+                            failRecord.MitreTactics,
+                            string.Empty,
+                            new List<ReActTraceRecord>(),
+                            sw.Elapsed,
+                            failRecord,
+                            failRecord.RemediationSteps
+                        );
+                        if (commandSender != null)
+                        {
+                            await commandSender(new MitigationCommand
+                            {
+                                TargetPid = targetNode.ProcessId,
+                                Action = MitigationCommand.Types.ActionType.ActionKill,
+                                Reason = "Gemini API 장애 및 Fail-Secure 집행"
+                            });
+                        }
+                        OnInvestigationCompleted?.Invoke(failKill);
+                        return failKill;
+                    }
+                    throw;
+                }
             }
         }
 
@@ -243,7 +387,7 @@ public class AutonomousHunterAgent
         // SLA 레이스 컨디션 차단: C++ 센서 기본 워치독(10초) + 타임아웃 1회 연장 티켓(50초) = 누적 60초까지 감시하므로,
         // 워치독 만료 10초 전 안전 마진을 두어 50초(50,000ms) 내에 멀티턴 수사를 완결하도록 제한
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(TimeSpan.FromMilliseconds(50000));
+        cts.CancelAfter(TimeSpan.FromSeconds(CtsTimeoutSec));
 
         var traces = new List<ReActTraceRecord>();
         var ancestry = _treeManager.GetAncestry(targetNode.ProcessId, maxDepth: 5, includeSelf: true);
@@ -357,11 +501,10 @@ public class AutonomousHunterAgent
             </final_instruction>
             """;
 
-        const int MaxSteps = 5;
-        var conversationHistory = new List<Content>
-        {
-            new Content("user", new List<Part> { new Part(userPrompt) })
-        };
+        List<Content> conversationHistory =
+        [
+            new Content("user", [new Part(userPrompt)])
+        ];
 
         AiInvestigationDecision? latestDecision = null;
         string? extractedIp = null;
@@ -388,12 +531,12 @@ public class AutonomousHunterAgent
             var actionArgs = decision.ActionArgs ?? new Dictionary<string, object>();
 
             // LLM 응답을 히스토리에 기록
-            conversationHistory.Add(new Content("model", new List<Part> { new Part(rawResponse) }));
+            conversationHistory.Add(new Content("model", [new Part(rawResponse)]));
 
             // 최종 판결 도달 시 루프 탈출
             if (decision.IsFinalVerdict || actionTool.Equals("None", StringComparison.OrdinalIgnoreCase))
             {
-                traces.Add(new ReActTraceRecord
+                var finalTrace = new ReActTraceRecord
                 {
                     IncidentId = incidentId,
                     StepNumber = step++,
@@ -403,7 +546,9 @@ public class AutonomousHunterAgent
                     Observation = $"최종 판결 도출: {decision.VerdictAction} (확신도 {decision.ConfidenceScore:P0})",
                     ElapsedMs = turnElapsedMs,
                     RawLlmResponse = rawResponse
-                });
+                };
+                traces.Add(finalTrace);
+                OnReActStepProgress?.Invoke(incidentId, finalTrace);
                 break;
             }
 
@@ -465,7 +610,7 @@ public class AutonomousHunterAgent
                 observationOutput = $"[도구 실행 오류]: 존재하지 않는 도구 '{actionTool}'입니다. 사용 가능한 5대 도구(DecodePayloadTool, ProcessMemoryScanTool, ThreatReputationTool, MitreClassifierTool, SystemFirewallTool) 중 하나를 선택하십시오.";
             }
 
-            traces.Add(new ReActTraceRecord
+            var stepTrace = new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
@@ -475,7 +620,9 @@ public class AutonomousHunterAgent
                 Observation = observationOutput,
                 ElapsedMs = turnElapsedMs,
                 RawLlmResponse = rawResponse
-            });
+            };
+            traces.Add(stepTrace);
+            OnReActStepProgress?.Invoke(incidentId, stepTrace);
 
             // 모델에게 도구 실행 결과(<tool_observation>) 피드백 전송
             string observationFeedback = $"""
@@ -483,7 +630,7 @@ public class AutonomousHunterAgent
                 {observationOutput}
                 </tool_observation>
                 """;
-            conversationHistory.Add(new Content("user", new List<Part> { new Part(observationFeedback) }));
+            conversationHistory.Add(new Content("user", [new Part(observationFeedback)]));
         }
 
         bool reachedFinal = latestDecision != null && latestDecision.IsFinalVerdict;
@@ -491,15 +638,19 @@ public class AutonomousHunterAgent
         // 루프 소진 시 Fail-Secure 안내 Trace 추가
         if (!reachedFinal)
         {
-            traces.Add(new ReActTraceRecord
+            var failTrace = new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
-                Thought = "멀티턴 ReAct 루프 최대 허용 단계(MaxSteps=5)에 도달하여 수사를 안전 종료합니다.",
+                Thought = $"멀티턴 ReAct 루프 최대 허용 단계(MaxSteps={MaxSteps})에 도달하여 수사를 안전 종료합니다.",
                 ActionTool = "None",
                 ActionArgsJson = "{}",
-                Observation = "Fail-Secure 정책 집행: 회색지대 의심 프로세스 사살(ACTION_KILL) 권고"
-            });
+                Observation = FailSecureEnabled 
+                    ? "Fail-Secure 정책 집행: 회색지대 의심 프로세스 사살(ACTION_KILL) 권고"
+                    : "Fail-Safe 정책 집행: 회색지대 의심 프로세스 동결 해제(ACTION_RESUME) 권고"
+            };
+            traces.Add(failTrace);
+            OnReActStepProgress?.Invoke(incidentId, failTrace);
         }
 
         // 1. ReAct 루프 종료 후 AI 판결 결정권(SSOT) 파이프라인
@@ -541,15 +692,26 @@ public class AutonomousHunterAgent
         }
         else
         {
-            // [경로 B: Fail-Secure 안전 가드 (최대 5턴 초과, 판결 미도출 또는 비정상 포맷 시 안전 격리)]
-            isMalicious = true;
-            verdictAction = MitigationCommand.Types.ActionType.ActionKill;
-            finalConfidence = 0.99;
-            summaryTitle = "AI 수사관: 멀티턴 수사 한도 초과에 따른 Fail-Secure 사살 격리";
-            narrative = $"{DateTime.UtcNow:HH시 mm분}, 회색지대 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})가 ReAct 최대 허용 단계(5턴) 내에 무해성을 증명하지 못하여 엔터프라이즈 안전 격리 정책(Fail-Secure)에 따라 선제 사살 조치되었습니다.";
-            if (mitreList.Count == 0)
+            // [경로 B: 한도 초과 시 Fail-Secure 사살 vs Fail-Safe 해제 분기]
+            if (FailSecureEnabled)
             {
-                mitreList = new List<string> { "T1059.001" };
+                isMalicious = true;
+                verdictAction = MitigationCommand.Types.ActionType.ActionKill;
+                finalConfidence = 0.99;
+                summaryTitle = "AI 수사관: 멀티턴 수사 한도 초과에 따른 Fail-Secure 사살 격리";
+                narrative = $"{DateTime.Now:HH시 mm분}, 회색지대 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})가 ReAct 최대 허용 단계({MaxSteps}턴) 내에 무해성을 증명하지 못하여 엔터프라이즈 안전 격리 정책(Fail-Secure)에 따라 선제 사살 조치되었습니다.";
+                if (mitreList.Count == 0)
+                {
+                    mitreList = new List<string> { "T1059.001" };
+                }
+            }
+            else
+            {
+                isMalicious = false;
+                verdictAction = MitigationCommand.Types.ActionType.ActionResume;
+                finalConfidence = 0.50;
+                summaryTitle = "AI 수사관: 멀티턴 수사 한도 초과 (Fail-Safe 정책에 따른 동결 해제)";
+                narrative = $"{DateTime.Now:HH시 mm분}, 회색지대 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})가 {MaxSteps}턴 내에 악성 여부를 확정하지 못하였으나, Fail-Secure 비활성화 설정에 따라 안전하게 동결 해제(ActionResume) 조치되었습니다.";
             }
         }
 
@@ -558,7 +720,7 @@ public class AutonomousHunterAgent
         {
             var fwThought = $"[Step {step} 추론] 식별된 외부 악성 C2 통신 IP '{extractedIp}'에 대해 방화벽 차단 룰을 집행합니다.";
             var fwRes = await fwTool.ExecuteAsync(new() { ["maliciousIp"] = extractedIp });
-            traces.Add(new ReActTraceRecord
+            var fwTrace = new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
@@ -566,7 +728,9 @@ public class AutonomousHunterAgent
                 ActionTool = fwTool.Name,
                 ActionArgsJson = JsonSerializer.Serialize(new { maliciousIp = extractedIp }),
                 Observation = fwRes.Output
-            });
+            };
+            traces.Add(fwTrace);
+            OnReActStepProgress?.Invoke(incidentId, fwTrace);
         }
 
         string blockedIp = (isMalicious ? extractedIp : string.Empty) ?? string.Empty;
@@ -657,7 +821,7 @@ public class AutonomousHunterAgent
             var thought1 = $"[Step {step} 추론] 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})가 부모 '{rootCause}'로부터 기동되었으며, 명령줄 인자 분석 및 다단계 난독화 해독을 수행합니다.";
             var res1 = await decodeTool.ExecuteAsync(new() { ["encodedCommand"] = cmd });
 
-            traces.Add(new ReActTraceRecord
+            var trace1 = new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
@@ -665,7 +829,9 @@ public class AutonomousHunterAgent
                 ActionTool = decodeTool.Name,
                 ActionArgsJson = JsonSerializer.Serialize(new { encodedCommand = cmd }),
                 Observation = res1.Output
-            });
+            };
+            traces.Add(trace1);
+            OnReActStepProgress?.Invoke(incidentId, trace1);
 
             if (res1.Data != null)
             {
@@ -683,10 +849,12 @@ public class AutonomousHunterAgent
                 IsKnownInternalOrTrusted(decodedScript, cmd, extractedIp))
             {
                 verdictAction = MitigationCommand.Types.ActionType.ActionResume;
-                summaryTitle = "사내 정상 관리 및 백업 스크립트 확인 (조기 복구)";
-                narrative = $"{DateTime.UtcNow:HH시 mm분}, 의뢰된 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})의 명령줄을 해독한 결과, " +
-                            $"외부 C2 통신 및 파괴 행위가 없는 사내 정상 관리/백업 작업으로 확인되었습니다. " +
-                            $"오프라인 FSM 엔진에 의해 1ms 이내 조기 정상 복구(ACTION_RESUME)를 완료했습니다.";
+                summaryTitle = targetNode.ImageName.Contains("curl", StringComparison.OrdinalIgnoreCase) || cmd.Contains("127.0.0.1") || cmd.Contains("localhost")
+                    ? "사내 개발 도구 루프백 통신 확인 (조기 복구)"
+                    : "사내 정상 관리 및 백업 스크립트 확인 (조기 복구)";
+                narrative = $"{DateTime.Now:HH시 mm분}, 의뢰된 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})의 명령줄을 해독한 결과, " +
+                            $"외부 C2 통신 및 파괴 행위가 없는 사내 정상 작업(루프백/내부 인프라)으로 확인되었습니다. " +
+                            $"오프라인 결정론적 추론 엔진에 의해 무해성을 확인하고 즉시 정상 복구(ACTION_RESUME)를 완료했습니다.";
 
                 if (commandSender != null)
                 {
@@ -745,7 +913,7 @@ public class AutonomousHunterAgent
             var thought2 = $"[Step {step} 추론] 동결된 프로세스의 메모리 영역을 P/Invoke VirtualQueryEx 및 ReadProcessMemory로 스캔하여 은닉된 통신 C2 IP 및 URL을 탐색합니다.";
             var res2 = await memTool.ExecuteAsync(new() { ["targetPid"] = targetNode.ProcessId });
 
-            traces.Add(new ReActTraceRecord
+            var trace2 = new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
@@ -753,7 +921,9 @@ public class AutonomousHunterAgent
                 ActionTool = memTool.Name,
                 ActionArgsJson = JsonSerializer.Serialize(new { targetPid = targetNode.ProcessId }),
                 Observation = res2.Output
-            });
+            };
+            traces.Add(trace2);
+            OnReActStepProgress?.Invoke(incidentId, trace2);
 
             if (res2.Data != null && res2.Data.TryGetValue("Ips", out var memIps) && memIps is List<string> mList && mList.Count > 0)
             {
@@ -768,7 +938,7 @@ public class AutonomousHunterAgent
             var thought3 = $"[Step {step} 추론] 발견된 통신 지표 '{reputationIndicator}'에 대해 내장 위협 인텔리전스 DB(IoC) 및 평판 점수를 조회합니다.";
             var res3 = await repTool.ExecuteAsync(new() { ["targetIndicator"] = reputationIndicator });
 
-            traces.Add(new ReActTraceRecord
+            var trace3 = new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
@@ -776,7 +946,9 @@ public class AutonomousHunterAgent
                 ActionTool = repTool.Name,
                 ActionArgsJson = JsonSerializer.Serialize(new { targetIndicator = reputationIndicator }),
                 Observation = res3.Output
-            });
+            };
+            traces.Add(trace3);
+            OnReActStepProgress?.Invoke(incidentId, trace3);
 
             if (res3.Data != null && res3.Data.TryGetValue("Score", out var sc) && sc is int scoreInt)
             {
@@ -789,13 +961,14 @@ public class AutonomousHunterAgent
         }
 
         // --- ReAct Step 4: MITRE ATT&CK TTP 분류 ---
-        string combinedBehavior = $"{rootCause} -> {targetNode.ImageName} {targetNode.CommandLine} {decodedScript}";
+        string memoryObservation = traces.FirstOrDefault(t => t.ActionTool == "ProcessMemoryScanTool")?.Observation ?? "";
+        string combinedBehavior = $"{rootCause} -> {targetNode.ImageName} {targetNode.CommandLine} {decodedScript} {memoryObservation}";
         if (_tools.TryGetValue("MitreClassifierTool", out var mitreTool))
         {
             var thought4 = $"[Step {step} 추론] 관찰된 침해 전술 체인을 MITRE ATT&CK Matrix TTP 기법으로 자동 분류합니다.";
             var res4 = await mitreTool.ExecuteAsync(new() { ["observedBehavior"] = combinedBehavior });
 
-            traces.Add(new ReActTraceRecord
+            var trace4 = new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
@@ -803,7 +976,9 @@ public class AutonomousHunterAgent
                 ActionTool = mitreTool.Name,
                 ActionArgsJson = JsonSerializer.Serialize(new { observedBehavior = combinedBehavior }),
                 Observation = res4.Output
-            });
+            };
+            traces.Add(trace4);
+            OnReActStepProgress?.Invoke(incidentId, trace4);
 
             if (res4.Data != null && res4.Data.TryGetValue("TacticIds", out var tids) && tids is List<string> list)
             {
@@ -817,7 +992,7 @@ public class AutonomousHunterAgent
             var thought5 = $"[Step {step} 추론] 위협 확신도 {threatScore:P0}에 도달함에 따라 악성 C2 IP '{extractedIp}'에 대한 네트워크 방화벽 차단을 집행합니다.";
             var res5 = await fwTool.ExecuteAsync(new() { ["maliciousIp"] = extractedIp });
 
-            traces.Add(new ReActTraceRecord
+            var trace5 = new ReActTraceRecord
             {
                 IncidentId = incidentId,
                 StepNumber = step++,
@@ -825,7 +1000,9 @@ public class AutonomousHunterAgent
                 ActionTool = fwTool.Name,
                 ActionArgsJson = JsonSerializer.Serialize(new { maliciousIp = extractedIp }),
                 Observation = res5.Output
-            });
+            };
+            traces.Add(trace5);
+            OnReActStepProgress?.Invoke(incidentId, trace5);
         }
 
         // --- 최종 판결(Verdict) 및 다차원 누적 위험도(Risk Score) FSM 평가 ---
@@ -843,11 +1020,36 @@ public class AutonomousHunterAgent
             riskScore += 35;
         }
 
-        // 3. Unbacked 실행 메모리 주입 또는 악성 위협 평판 (+40)
-        bool hasUnbackedMemory = traces.Any(t => t.ActionTool == "ProcessMemoryScanTool" && (t.Observation.Contains("PAGE_EXECUTE") || t.Observation.Contains("Unbacked")));
-        if (hasUnbackedMemory || threatScore >= 0.85)
+        // 3. Unbacked 실행 메모리 주입 (+50)
+        bool hasUnbackedMemory = traces.Any(t => t.ActionTool == "ProcessMemoryScanTool" && (t.Observation.Contains("PAGE_EXECUTE") || t.Observation.Contains("Unbacked") || t.Observation.Contains("Reflective DLL")));
+        if (hasUnbackedMemory)
+        {
+            riskScore += 50;
+        }
+
+        // 3-1. 악성 위협 평판 C2 지표 (+40)
+        if (threatScore >= 0.85)
         {
             riskScore += 40;
+        }
+
+        // 3-2. LOLBAS 프록시 악용 (rundll32, regsvr32, mshta 등) (+30)
+        string imgName = targetNode.ImageName.ToLowerInvariant();
+        bool isLolbinProxy = imgName.Contains("rundll32") || imgName.Contains("regsvr32") || imgName.Contains("mshta") || imgName.Contains("certutil");
+        if (isLolbinProxy && (HasInlineC2Pattern(decodedScript, targetNode.CommandLine) || threatScore >= 0.80))
+        {
+            riskScore += 30;
+        }
+
+        // 3-3. 시스템 핵심 바이너리 명칭 위장 드로퍼 (T1036.005) (+50)
+        string fullTarget = $"{targetNode.CommandLine} {decodedScript}".ToLowerInvariant();
+        bool isMasquerading = fullTarget.Contains(@"temp\svchost.exe") ||
+                              fullTarget.Contains(@"temp/svchost.exe") ||
+                              fullTarget.Contains(@"temp\csrss.exe") ||
+                              fullTarget.Contains(@"temp\lsass.exe");
+        if (isMasquerading)
+        {
+            riskScore += 50;
         }
 
         // 4. 랜섬웨어 파괴 명령 패턴: 시스템 복구 무력화 (+80 즉각 사살 트리거)
@@ -873,21 +1075,23 @@ public class AutonomousHunterAgent
         {
             verdictAction = MitigationCommand.Types.ActionType.ActionKill;
             summaryTitle = "악성 오피스 매크로/LOLBAS를 통한 파일리스 C2 다운로더 침투 시도";
-            narrative = $"{DateTime.UtcNow:HH시 mm분}, 시스템에서 실행된 '{rootCause}' 프로세스가 비정상 자식 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 은밀히 기동했습니다. " +
+            narrative = $"{DateTime.Now:HH시 mm분}, 시스템에서 실행된 '{rootCause}' 프로세스가 비정상 자식 프로세스 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 은밀히 기동했습니다. " +
                         $"Phalanx 센서가 원자적으로 선제 동결을 집행하였으며, AI 에이전트의 심층 족보 역추적 및 메모리/페이로드 분석 결과 " +
                         $"{(extractedIp != null ? $"해외 악성 C2({extractedIp})" : "원격 C2 인프라")}와의 통신 및 파일리스 공격 시도가 확인되었습니다. " +
                         $"누적 위험도 {riskScore}점(임계치 80점 이상)으로 즉각 사살(ACTION_KILL)을 하달하고 격리 조치를 완결했습니다.";
 
             if (mitreList.Count == 0)
             {
-                mitreList = new List<string> { "T1566.001", "T1059.001", "T1071.001" };
+                mitreList = hasUnbackedMemory
+                    ? new List<string> { "T1055", "T1071.001" }
+                    : new List<string> { "T1566.001", "T1059.001", "T1071.001" };
             }
         }
         else
         {
             verdictAction = MitigationCommand.Types.ActionType.ActionResume;
             summaryTitle = "정상 관리 도구 동작 확인 (오탐 방지 및 동결 해제)";
-            narrative = $"{DateTime.UtcNow:HH시 mm분}, 동결 수사 의뢰된 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 심층 분석한 결과, " +
+            narrative = $"{DateTime.Now:HH시 mm분}, 동결 수사 의뢰된 '{targetNode.ImageName}' (PID: {targetNode.ProcessId})를 심층 분석한 결과, " +
                         $"외부 악성 통신 및 파괴적 페이로드가 발견되지 않은 신뢰된 작업으로 확인되었습니다. " +
                         $"누적 위험도 {riskScore}점(임계치 80점 미만)으로 무해 판정을 도출하고 안전하게 정상 복구(ACTION_RESUME) 조치를 완료했습니다.";
         }
@@ -956,6 +1160,16 @@ public class AutonomousHunterAgent
     private static bool HasInlineC2Pattern(string? decodedScript, string commandLine)
     {
         string target = $"{commandLine} {decodedScript}".ToLowerInvariant();
+
+        // 127.0.0.1 또는 localhost 로컬 루프백만을 대상으로 하는 내부 개발/헬스체크 명령은 외부 C2 패턴에서 제외
+        bool isLoopbackOnly = (target.Contains("127.0.0.1") || target.Contains("localhost")) &&
+                              !target.Contains("185.220.") && !target.Contains("194.165.") &&
+                              !target.Contains("45.33.") && !target.Contains("198.51.");
+        if (isLoopbackOnly && (target.Contains("curl") || target.Contains("http://127.0.0.1") || target.Contains("http://localhost")))
+        {
+            return false;
+        }
+
         return target.Contains("downloadstring") ||
                target.Contains("downloadfile") ||
                target.Contains("net.webclient") ||
@@ -992,6 +1206,7 @@ public class AutonomousHunterAgent
                               target.Contains("restart-service") ||
                               target.Contains("get-wmiobject") ||
                               target.Contains("get-process") ||
+                              target.Contains("curl") ||
                               target.Contains("backup") ||
                               target.Contains("inventory");
 

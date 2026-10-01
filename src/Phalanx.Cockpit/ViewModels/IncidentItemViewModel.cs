@@ -65,6 +65,17 @@ public partial class IncidentItemViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<ReActStepViewModel> _traces = new();
 
+    [ObservableProperty]
+    private string _investigationProgressText = "원자적 동결 완료. AI 심층 수사 착수...";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FormattedLatency))]
+    private bool _isInvestigating;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FormattedLatency))]
+    private double _activeElapsedSeconds;
+
     public string FormattedTime => Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
     public string RelativeTime
@@ -85,6 +96,12 @@ public partial class IncidentItemViewModel : ObservableObject
     {
         get
         {
+            if (IsInvestigating)
+            {
+                string turnStr = Traces.Count > 0 ? $"Turn {Traces.Count}" : "수사 착수";
+                return $"수사 중: {ActiveElapsedSeconds:F1}s ({turnStr})";
+            }
+
             if (ElapsedMs <= 0 && (VerdictAction == "SUSPENDED" || string.IsNullOrEmpty(VerdictAction)))
                 return "Investigating...";
 

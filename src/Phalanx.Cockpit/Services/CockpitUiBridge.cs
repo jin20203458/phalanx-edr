@@ -12,18 +12,24 @@ namespace Phalanx.Cockpit.Services;
 /// </summary>
 public class CockpitUiBridge
 {
-    private static CockpitUiBridge? _instance;
-    public static CockpitUiBridge Instance => _instance ??= new CockpitUiBridge();
+    public static CockpitUiBridge Instance { get; } = new();
 
     // UI 알림 이벤트
     public event Action<bool>? SensorConnectionChanged;
     public event Action<int>? ProcessCountUpdated;
     public event Action<ProcessNodeModel, string>? InvestigationStarted;
+    public event Action<string, ReActTraceRecord>? ReActStepCompleted;
     public event Action<InvestigationResult>? InvestigationCompleted;
     public event Action<MitigationCommand>? CommandDispatched;
+    public event Action? IncidentsDatabaseCleared;
 
     // 수동 제어 역방향 명령 대리자 (MainWindow -> gRPC 서비스)
     public Func<MitigationCommand, Task>? ManualCommandSender { get; set; }
+
+    public void NotifyIncidentsDatabaseCleared()
+    {
+        Dispatch(() => IncidentsDatabaseCleared?.Invoke());
+    }
 
     public void NotifySensorConnected(bool isConnected)
     {
@@ -38,6 +44,11 @@ public class CockpitUiBridge
     public void NotifyInvestigationStarted(ProcessNodeModel targetNode, string incidentId)
     {
         Dispatch(() => InvestigationStarted?.Invoke(targetNode, incidentId));
+    }
+
+    public void NotifyReActStepCompleted(string incidentId, ReActTraceRecord trace)
+    {
+        Dispatch(() => ReActStepCompleted?.Invoke(incidentId, trace));
     }
 
     public void NotifyInvestigationCompleted(InvestigationResult result)
@@ -58,10 +69,10 @@ public class CockpitUiBridge
         }
     }
 
-    private static void Dispatch(Action action)
+    private void Dispatch(Action action)
     {
         var app = Application.Current;
-        if (app?.Dispatcher != null && !app.Dispatcher.CheckAccess())
+        if (ReferenceEquals(this, Instance) && app?.Dispatcher != null && !app.Dispatcher.CheckAccess() && app.Dispatcher.Thread.IsAlive && !app.Dispatcher.HasShutdownStarted)
         {
             _ = app.Dispatcher.InvokeAsync(action);
         }

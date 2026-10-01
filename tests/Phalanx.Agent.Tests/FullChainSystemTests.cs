@@ -41,7 +41,7 @@ public class FullChainSystemTests
         public T Current => _current ?? throw new InvalidOperationException("No current item");
 
         public void Push(T item) => _channel.Writer.TryWrite(item);
-        public void Complete() => _channel.Writer.Complete();
+        public void Complete() => _channel.Writer.TryComplete();
 
         public async Task<bool> MoveNext(CancellationToken cancellationToken)
         {
@@ -543,9 +543,10 @@ public class FullChainSystemTests
         _output.WriteLine($"✅ [시나리오 3 통과] C++ 24μs 동결 ➔ 오프라인 23ms 수사 ➔ C++ 사살 풀체인 완벽 실증 ({sw.ElapsedMilliseconds}ms)");
     }
 
-    [Fact]
+    [Fact(Timeout = 10000)]
     public async Task TestPhalanxGrpcService_MultiClientConcurrentStreams_MaintainsConnectionState()
     {
+        _output.WriteLine("[테스트 시작] MultiClientConcurrentStreams_MaintainsConnectionState");
         var treeManager = new ProcessTreeProjectionManager();
         var archiveManager = ForensicArchiveManager.CreateInMemory();
         var agent = new AutonomousHunterAgent(treeManager, archiveManager, Array.Empty<IInvestigationTool>(), geminiApiKey: string.Empty);
@@ -557,57 +558,121 @@ public class FullChainSystemTests
         uiBridge.SensorConnectionChanged += connected =>
         {
             lastReportedConnection = connected;
+            _output.WriteLine($"[UiBridge 이벤트] SensorConnectionChanged => {connected} (ActiveClients: {grpcService.ActiveConnectionCount})");
         };
 
-        // Client 1 (C++ 센서) 연결
         var req1 = new MockAsyncStreamReader<TelemetryBatch>();
         var res1 = new MockServerStreamWriter<MitigationCommand>();
         using var cts1 = new CancellationTokenSource();
-        var task1 = Task.Run(() => grpcService.StreamTelemetry(req1, res1, new MockServerCallContext(cts1.Token)));
+        Task? task1 = null;
 
-        for (int i = 0; i < 20 && !lastReportedConnection; i++)
-        {
-            await Task.Delay(25);
-        }
-        Assert.True(lastReportedConnection);
-        Assert.Equal(1, grpcService.ActiveConnectionCount);
-
-        // Client 2 (공격 시뮬레이터) 연결
         var req2 = new MockAsyncStreamReader<TelemetryBatch>();
         var res2 = new MockServerStreamWriter<MitigationCommand>();
         using var cts2 = new CancellationTokenSource();
-        var task2 = Task.Run(() => grpcService.StreamTelemetry(req2, res2, new MockServerCallContext(cts2.Token)));
+        Task? task2 = null;
 
-        for (int i = 0; i < 20 && grpcService.ActiveConnectionCount < 2; i++)
+        try
         {
-            await Task.Delay(25);
+            // 1. Client 1 (C++ 센서) 연결
+            _output.WriteLine("[단계 1] Client 1 (C++ 센서) 연결 시작");
+            task1 = Task.Run(() => grpcService.StreamTelemetry(req1, res1, new MockServerCallContext(cts1.Token)));
+
+            await WaitForConditionAsync(
+                () => lastReportedConnection && grpcService.ActiveConnectionCount == 1,
+                TimeSpan.FromSeconds(5),
+                $"Client 1 연결 확정 실패 (lastReported={lastReportedConnection}, ActiveCount={grpcService.ActiveConnectionCount})");
+
+            Assert.True(lastReportedConnection, "Client 1 연결 시 UI에 연결 상태(true)가 보고되어야 함");
+            Assert.Equal(1, grpcService.ActiveConnectionCount);
+            _output.WriteLine($"[단계 1 성공] Client 1 활성화 확인 (연결 수: {grpcService.ActiveConnectionCount})");
+
+            // 2. Client 2 (공격 시뮬레이터) 연결
+            _output.WriteLine("[단계 2] Client 2 (공격 시뮬레이터) 연결 시작");
+            task2 = Task.Run(() => grpcService.StreamTelemetry(req2, res2, new MockServerCallContext(cts2.Token)));
+
+            await WaitForConditionAsync(
+                () => grpcService.ActiveConnectionCount == 2,
+                TimeSpan.FromSeconds(5),
+                $"Client 2 연결 확정 실패 (ActiveCount={grpcService.ActiveConnectionCount})");
+
+            Assert.True(lastReportedConnection, "다중 클라이언트 연결 중에도 UI 연결 상태는 true 유지");
+            Assert.Equal(2, grpcService.ActiveConnectionCount);
+            _output.WriteLine($"[단계 2 성공] Client 2 활성화 확인 (총 연결 수: {grpcService.ActiveConnectionCount})");
+
+            // 3. Client 2 연결 종료 (시뮬레이터 완료)
+            _output.WriteLine("[단계 3] Client 2 종료 및 단일 잔여 연결 상태 유지 검증");
+            req2.Complete();
+            await task2;
+
+            await WaitForConditionAsync(
+                () => grpcService.ActiveConnectionCount == 1,
+                TimeSpan.FromSeconds(5),
+                $"Client 2 연결 종료 후 ActiveCount가 1로 감소해야 함 (현재={grpcService.ActiveConnectionCount})");
+
+            // Client 1이 여전히 연결되어 있으므로 UI 상태는 true로 유지되어야 함
+            Assert.True(lastReportedConnection, "Client 1이 남아있는 동안 UI 상태는 true로 유지되어야 함");
+            Assert.Equal(1, grpcService.ActiveConnectionCount);
+            _output.WriteLine($"[단계 3 성공] Client 2 분리 후 잔여 연결 1개 정상 유지 확인");
+
+            // 4. 명령 전송 시 남아있는 Client 1로 정상 전달 검증
+            _output.WriteLine("[단계 4] 잔여 Client 1 대상 방어 명령 전송");
+            await grpcService.SendCommandAsync(new MitigationCommand
+            {
+                Action = MitigationCommand.Types.ActionType.ActionKill,
+                TargetPid = 9999,
+                Reason = "Multi-client routing test"
+            });
+            Assert.Single(res1.Written);
+            _output.WriteLine("[단계 4 성공] Client 1로 명령 정상 하달 확인");
+
+            // 5. Client 1 연결 종료
+            _output.WriteLine("[단계 5] Client 1 최종 연결 해제");
+            req1.Complete();
+            await task1;
+
+            await WaitForConditionAsync(
+                () => !lastReportedConnection && grpcService.ActiveConnectionCount == 0,
+                TimeSpan.FromSeconds(5),
+                $"모든 클라이언트 해제 후 disconnected 보고 대기 실패 (lastReported={lastReportedConnection}, ActiveCount={grpcService.ActiveConnectionCount})");
+
+            // 모든 클라이언트가 종료되었을 때만 false로 전이
+            Assert.False(lastReportedConnection, "모든 클라이언트 분리 시 UI 상태가 false로 전이되어야 함");
+            Assert.Equal(0, grpcService.ActiveConnectionCount);
+            _output.WriteLine("[단계 5 성공] 전체 클라이언트 해제 및 disconnected 정상 전이 확인");
         }
-        Assert.True(lastReportedConnection);
-        Assert.Equal(2, grpcService.ActiveConnectionCount);
-
-        // Client 2 연결 종료 (시뮬레이터 완료)
-        req2.Complete();
-        await task2;
-
-        // Client 1이 여전히 연결되어 있으므로 UI 상태는 true로 유지되어야 함 (자꾸 DISCONNECTED로 바뀌는 버그 차단)
-        Assert.True(lastReportedConnection);
-        Assert.Equal(1, grpcService.ActiveConnectionCount);
-
-        // 명령 전송 시 남아있는 Client 1로 정상 전달되어야 함
-        await grpcService.SendCommandAsync(new MitigationCommand
+        catch (Exception ex)
         {
-            Action = MitigationCommand.Types.ActionType.ActionKill,
-            TargetPid = 9999,
-            Reason = "Multi-client routing test"
-        });
-        Assert.Single(res1.Written);
+            _output.WriteLine($"[테스트 예외 발생] {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            throw;
+        }
+        finally
+        {
+            req1.Complete();
+            req2.Complete();
+            cts1.Cancel();
+            cts2.Cancel();
 
-        // Client 1 연결 종료
-        req1.Complete();
-        await task1;
+            if (task1 != null)
+            {
+                try { await task1; } catch { }
+            }
+            if (task2 != null)
+            {
+                try { await task2; } catch { }
+            }
+            _output.WriteLine("[테스트 완료] 자원 정리 완료");
+        }
+    }
 
-        // 모든 클라이언트가 종료되었을 때만 false로 전이
-        Assert.False(lastReportedConnection);
-        Assert.Equal(0, grpcService.ActiveConnectionCount);
+    private async Task WaitForConditionAsync(Func<bool> condition, TimeSpan timeout, string failureContext)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.Elapsed < timeout)
+        {
+            if (condition()) return;
+            await Task.Delay(15);
+        }
+        _output.WriteLine($"[타임아웃 감지] {failureContext} (경과: {sw.ElapsedMilliseconds}ms)");
+        Assert.True(condition(), $"조건 대기 시간 초과 ({timeout.TotalSeconds}초): {failureContext}");
     }
 }

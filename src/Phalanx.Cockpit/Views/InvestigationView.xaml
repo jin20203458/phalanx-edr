@@ -183,30 +183,15 @@
                         Foreground="#FCA5A5"
                         Visibility="{Binding SelectedIncident.IsInvestigating, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-                    <!--  동결 상태이면서 수사 중이 아닐 때 활성화되는 수동 처분 버튼  -->
+                    <!--  프로세스 트리로 바로 이동하여 직접 사살/동결해제할 수 있는 버튼  -->
                     <Button
                         Margin="0,0,8,0"
                         Padding="10,5"
-                        Background="#DC2626"
-                        BorderThickness="0"
-                        Command="{Binding KillSelectedIncidentCommand}"
-                        Content="수동 사살"
-                        FontSize="11"
-                        FontWeight="SemiBold"
-                        Foreground="White"
-                        IsEnabled="{Binding SelectedIncident.CanManualActuate}" />
-
-                    <Button
-                        Margin="0,0,8,0"
-                        Padding="10,5"
-                        Background="#059669"
-                        BorderThickness="0"
-                        Command="{Binding ResumeSelectedIncidentCommand}"
-                        Content="동결 해제"
-                        FontSize="11"
-                        FontWeight="SemiBold"
-                        Foreground="White"
-                        IsEnabled="{Binding SelectedIncident.CanManualActuate}" />
+                        Command="{Binding FocusProcessInGraphCommand}"
+                        CommandParameter="{Binding SelectedIncident.TargetPid}"
+                        Content="프로세스 트리로 이동 ➔"
+                        Style="{StaticResource CapsuleFilterButtonStyle}"
+                        ToolTip="해당 프로세스가 위치한 프로세스 트리 맵으로 이동하여 동결 해제 또는 사살을 직접 집행합니다" />
 
                     <Button
                         Padding="12,5"

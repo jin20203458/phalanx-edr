@@ -246,4 +246,87 @@ public class MainViewModelCancellationTests
         Assert.NotNull(vm.SelectedIncident);
         Assert.Equal("BENIGN", vm.SelectedIncident.StatusSeverity);
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestCancellation_FollowedByFocusProcessInGraph_AllowsActuationViaProcessTreeCommands()
+    {
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var treeManager = new ProcessTreeProjectionManager();
+        var uiBridge = new CockpitUiBridge();
+
+        MitigationCommand? dispatchedCommand = null;
+        uiBridge.ManualCommandSender = cmd =>
+        {
+            dispatchedCommand = cmd;
+            return Task.CompletedTask;
+        };
+
+        var vm = new MainViewModel(archiveManager, treeManager, uiBridge);
+
+        uint targetPid = 5566;
+        string incidentId = "INC-NAV-TREE-001";
+
+        treeManager.ApplySnapshotBatch(new[]
+        {
+            new ProcessEvent
+            {
+                ProcessId = targetPid,
+                ParentProcessId = 1000,
+                ImageName = "frozen_cmd.exe",
+                CommandLine = "frozen_cmd.exe",
+                IsSuspended = true,
+                Lifecycle = ProcessLifecycle.LifecycleSuspended
+            }
+        });
+
+        var targetNode = treeManager.FindNodeByPid(targetPid);
+        Assert.NotNull(targetNode);
+
+        // 1. 수사 시작 후 사용자 취소
+        uiBridge.NotifyInvestigationStarted(targetNode, incidentId);
+
+        var cancelledRecord = new IncidentRecord
+        {
+            IncidentId = incidentId,
+            TargetPid = targetPid,
+            TargetImage = "frozen_cmd.exe",
+            CommandLine = "frozen_cmd.exe",
+            VerdictAction = "SUSPENDED",
+            SummaryTitle = "사용자 취소",
+            RemediationStatus = "SUSPENDED_MANUAL_HOLD"
+        };
+        archiveManager.SaveIncident(cancelledRecord, new List<ReActTraceRecord>());
+
+        uiBridge.NotifyInvestigationCompleted(new InvestigationResult(
+            incidentId,
+            ActionType.ActionSuspend,
+            0.0,
+            "취소",
+            "서사",
+            new List<string>(),
+            string.Empty,
+            new List<ReActTraceRecord>(),
+            TimeSpan.FromMilliseconds(50),
+            cancelledRecord,
+            cancelledRecord.RemediationSteps
+        ));
+
+        // 2. 유저가 '프로세스 트리로 이동' 버튼 클릭 (FocusProcessInGraphCommand 실행)
+        vm.FocusProcessInGraphCommand.Execute(targetPid);
+
+        // 3. 프로세스 트리 뷰로 전환 및 해당 노드 자동 선택 검증
+        Assert.Equal(CockpitViewType.ProcessGraph, vm.CurrentView);
+        Assert.NotNull(vm.SelectedProcessNode);
+        Assert.Equal(targetPid, vm.SelectedProcessNode.ProcessId);
+        Assert.True(vm.SelectedProcessNode.IsSuspended);
+
+        // 4. 프로세스 트리 인스펙터의 사살 커맨드(TerminateSelectedProcessCommand)를 통해 사살 집행
+        await vm.TerminateSelectedProcessCommand.ExecuteAsync(null);
+
+        Assert.NotNull(dispatchedCommand);
+        Assert.Equal(ActionType.ActionKill, dispatchedCommand.Action);
+        Assert.Equal(targetPid, dispatchedCommand.TargetPid);
+        Assert.True(targetNode.IsTerminated);
+    }
 }

@@ -771,10 +771,19 @@ public class AutonomousHunterAgent
             ? new List<string> { "타깃 프로세스 원자적 영구 사살 (ACTION_KILL)", "엔드포인트 네트워크 격리", "침해 계정 자격증명 초기화" }
             : new List<string>());
 
-        var remediationSteps = new List<string>(rawRemediation);
+        var remediationSteps = new List<string>();
         if (!string.IsNullOrEmpty(firewallResultMsg))
         {
-            remediationSteps.Insert(0, firewallResultMsg);
+            remediationSteps.Add(firewallResultMsg);
+        }
+        foreach (var remStep in rawRemediation)
+        {
+            if (!string.IsNullOrEmpty(firewallResultMsg) &&
+                (remStep.Contains("방화벽", StringComparison.OrdinalIgnoreCase) || remStep.Contains("firewall", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue; // 방화벽 집행 결과가 이미 1번에 들어갔으므로 중복 제거
+            }
+            remediationSteps.Add(remStep);
         }
 
         var incidentRecord = new IncidentRecord

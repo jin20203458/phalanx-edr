@@ -217,12 +217,12 @@ public class ForensicPdfReportGeneratorTests
     }
 
     [Fact]
-    public void GenerateReportBytes_ProducesTwoPageDocumentWithBothPagesPopulated()
+    public void GenerateReportBytes_ProducesSinglePageExecutiveBrief()
     {
         // 1. Arrange
         var incident = new IncidentItemViewModel
         {
-            IncidentId = "INC-TWOPAGE-001",
+            IncidentId = "INC-ONEPAGE-001",
             Timestamp = DateTime.UtcNow,
             TargetPid = 12345,
             TargetImage = @"C:\Windows\System32\powershell.exe",
@@ -232,8 +232,8 @@ public class ForensicPdfReportGeneratorTests
             VerdictAction = "ACTION_KILL",
             StatusSeverity = "CRITICAL",
             ConfidenceScore = 0.98,
-            SummaryTitle = "Two-Page Layout Verification Incident",
-            Narrative = "A4 2페이지 명시적 분할 레이아웃이 적용되어 1페이지와 2페이지에 각각 전용 섹션이 안정적으로 렌더링되는지 검증합니다.",
+            SummaryTitle = "Single Page Layout Verification Incident",
+            Narrative = "A4 단일 페이지 완결형(One-Page Executive Brief) 레이아웃이 적용되어 1번부터 6번 검증 블록까지 단 1장의 A4에 안정적으로 완결되는지 검증합니다.",
             BlockedIp = "185.220.101.5",
             ElapsedMs = 1234.5
         };
@@ -264,7 +264,7 @@ public class ForensicPdfReportGeneratorTests
 
         // 3. Assert
         Assert.NotNull(bytes);
-        Assert.True(bytes.Length > 3072, $"2페이지 PDF 크기가 예상보다 작습니다: {bytes.Length} bytes");
+        Assert.True(bytes.Length > 2048, $"단일 페이지 PDF 크기가 너무 작습니다: {bytes.Length} bytes");
         // PDF Magic bytes
         Assert.Equal(0x25, bytes[0]); // '%'
         Assert.Equal(0x50, bytes[1]); // 'P'
@@ -272,10 +272,9 @@ public class ForensicPdfReportGeneratorTests
         Assert.Equal(0x46, bytes[3]); // 'F'
         Assert.Equal(0x2D, bytes[4]); // '-'
 
-        // UTF-8 변환 후 PDF 내 2페이지 분할 지표 확인
+        // UTF-8 변환 후 PDF 내 단일 페이지 수납 지표 확인
         string pdfText = System.Text.Encoding.Latin1.GetString(bytes);
-        // /Type /Page 카운트가 최소 2개 이상 존재하는지 확인
         int pageMatches = System.Text.RegularExpressions.Regex.Matches(pdfText, @"/Type\s*/Page\b").Count;
-        Assert.True(pageMatches >= 2, $"생성된 PDF 페이지 수가 2페이지 이상이어야 합니다. 실제 감지: {pageMatches}");
+        Assert.Equal(1, pageMatches); // 단일 페이지 완결 검증!
     }
 }

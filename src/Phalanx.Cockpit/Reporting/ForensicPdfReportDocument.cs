@@ -1,6 +1,7 @@
 namespace Phalanx.Cockpit.Reporting;
 
 using System;
+using System.IO;
 using System.Linq;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -9,19 +10,19 @@ using Phalanx.Cockpit.ViewModels;
 
 /// <summary>
 /// QuestPDF 기반 A4 인시던트 포렌식 수사 보고서 레이아웃 구현체.
-/// CrowdStrike/Mandiant/SANS DFIR 실무 보고서 표준에 준하는 간결한 기술 문서 형식.
+/// 엔터프라이즈 DFIR 표준 규격의 단일 페이지 완결형(One-Page Executive Brief) 기술 문서.
 /// </summary>
 public class ForensicPdfReportDocument : IDocument
 {
     private readonly IncidentItemViewModel _incident;
 
-    // 6-color system: black/white + single accent
-    private const string ColorText = "#111827";         // Body text, headings
-    private const string ColorLabel = "#6B7280";        // Labels, secondary text
-    private const string ColorDanger = "#991B1B";       // Kill verdict, blocked IP
-    private const string ColorBgCode = "#F3F4F6";       // Code block, table header
-    private const string ColorBorder = "#D1D5DB";       // Dividers, borders
-    private const string ColorZebra = "#F9FAFB";        // Table alternating rows
+    // 6-color system: black/white + single dark red accent
+    private const string ColorText = "#111827";         // Slate 900 (Headings, primary body)
+    private const string ColorLabel = "#6B7280";        // Slate 500 (Labels, secondary text)
+    private const string ColorDanger = "#991B1B";       // Red 800 (Kill verdict, blocked IP)
+    private const string ColorBgCode = "#F3F4F6";       // Slate 100 (Code block, table header)
+    private const string ColorBorder = "#D1D5DB";       // Slate 300 (Dividers, borders)
+    private const string ColorZebra = "#F9FAFB";        // Slate 50 (Table alternating rows)
 
     public ForensicPdfReportDocument(IncidentItemViewModel incident)
     {
@@ -44,12 +45,12 @@ public class ForensicPdfReportDocument : IDocument
         container.Page(page =>
         {
             page.Size(PageSizes.A4);
-            page.Margin(40, Unit.Point);
+            page.Margin(26, Unit.Point);
             page.PageColor(Colors.White);
 
             page.DefaultTextStyle(x => x
                 .FontFamily("Segoe UI")
-                .FontSize(9)
+                .FontSize(8.2f)
                 .FontColor(ColorText));
 
             page.Header().Element(ComposeHeader);
@@ -71,8 +72,8 @@ public class ForensicPdfReportDocument : IDocument
                         .Bold()
                         .FontColor(ColorText);
 
-                    left.Item().PaddingTop(1).Text("Phalanx EDR — Internal Use Only")
-                        .FontSize(8)
+                    left.Item().PaddingTop(1).Text("Phalanx EDR — Internal Security Investigation")
+                        .FontSize(7.5f)
                         .FontColor(ColorLabel);
                 });
 
@@ -80,22 +81,22 @@ public class ForensicPdfReportDocument : IDocument
                 {
                     right.Item().AlignRight().Text(text =>
                     {
-                        text.Span("Document:  ").FontSize(8).FontColor(ColorLabel);
-                        text.Span(_incident.IncidentId ?? "N/A").FontSize(8).FontColor(ColorText);
+                        text.Span("Document:  ").FontSize(7.5f).FontColor(ColorLabel);
+                        text.Span(_incident.IncidentId ?? "N/A").FontSize(7.5f).Bold().FontColor(ColorText);
                     });
 
                     right.Item().AlignRight().Text($"Date:  {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC")
-                        .FontSize(8)
+                        .FontSize(7.5f)
                         .FontColor(ColorLabel);
 
                     right.Item().AlignRight().Text("Classification:  CONFIDENTIAL")
-                        .FontSize(8)
+                        .FontSize(7.5f)
                         .Bold()
                         .FontColor(ColorDanger);
                 });
             });
 
-            col.Item().PaddingTop(6).PaddingBottom(8).LineHorizontal(1).LineColor(ColorBorder);
+            col.Item().PaddingTop(4).PaddingBottom(6).LineHorizontal(0.75f).LineColor(ColorBorder);
         });
     }
 
@@ -103,23 +104,25 @@ public class ForensicPdfReportDocument : IDocument
     {
         container.Column(col =>
         {
-            // ── [PAGE 1] Executive Overview & Technical Context ──
+            col.Spacing(8);
+
+            // 1. Incident Summary
             col.Item().Element(ComposeIncidentSummary);
-            col.Item().PaddingTop(12).Element(ComposeProcessContext);
-            col.Item().PaddingTop(12).Element(ComposeAnalysisFindings);
 
-            col.Item().PaddingTop(16).AlignCenter().Text("— Continued on Page 2 (Forensic Investigation Trace & Response Actions) —")
-                .FontSize(8)
-                .Italic()
-                .FontColor(ColorLabel);
+            // 2. Process Context
+            col.Item().Element(ComposeProcessContext);
 
-            // ── Explicit Page Break to Page 2 ──
-            col.Item().PageBreak();
+            // 3. Analysis & Findings
+            col.Item().Element(ComposeAnalysisFindings);
 
-            // ── [PAGE 2] Forensic Investigation Trace & Remediation Actions ──
+            // 4. Investigation Trace (ReAct 멀티턴 감사 추적)
             col.Item().Element(ComposeInvestigationTrace);
-            col.Item().PaddingTop(14).Element(ComposeResponseActions);
-            col.Item().PaddingTop(14).Element(ComposeVerificationBlock);
+
+            // 5. Response Actions (침해 대응 조치 내역)
+            col.Item().Element(ComposeResponseActions);
+
+            // 6. Verification & Audit Metadata (무결성 검증 블록)
+            col.Item().Element(ComposeVerificationBlock);
         });
     }
 
@@ -166,7 +169,7 @@ public class ForensicPdfReportDocument : IDocument
 
                 // Row 4: Parent / Parent PID
                 AddSummaryLabel(table, "Parent:");
-                string parentName = string.IsNullOrEmpty(_incident.ParentImage) ? "-" : System.IO.Path.GetFileName(_incident.ParentImage);
+                string parentName = string.IsNullOrEmpty(_incident.ParentImage) ? "-" : Path.GetFileName(_incident.ParentImage);
                 AddSummaryValue(table, parentName);
                 AddSummaryLabel(table, "Parent PID:");
                 AddSummaryValue(table, $"{_incident.ParentPid}");
@@ -176,14 +179,14 @@ public class ForensicPdfReportDocument : IDocument
 
     private void AddSummaryLabel(TableDescriptor table, string label)
     {
-        table.Cell().PaddingVertical(2).Text(label)
-            .FontSize(8.5f).Bold().FontColor(ColorLabel);
+        table.Cell().PaddingVertical(1.5f).Text(label)
+            .FontSize(8).Bold().FontColor(ColorLabel);
     }
 
     private void AddSummaryValue(TableDescriptor table, string value, string? color = null, bool bold = false)
     {
-        var cell = table.Cell().PaddingVertical(2);
-        var text = cell.Text(value).FontSize(9).FontColor(color ?? ColorText);
+        var cell = table.Cell().PaddingVertical(1.5f);
+        var text = cell.Text(value).FontSize(8.2f).FontColor(color ?? ColorText);
         if (bold) text.Bold();
     }
 
@@ -195,46 +198,44 @@ public class ForensicPdfReportDocument : IDocument
         {
             CreateSectionHeader(col, "2. Process Context");
 
-            // Target image full path
             col.Item().Text(text =>
             {
-                text.Span("Target Image:  ").FontSize(8.5f).Bold().FontColor(ColorLabel);
+                text.Span("Target Image:  ").FontSize(8).Bold().FontColor(ColorLabel);
                 text.Span(string.IsNullOrEmpty(_incident.TargetImage) ? "-" : _incident.TargetImage)
-                    .FontSize(8.5f).FontColor(ColorText);
+                    .FontSize(8).FontColor(ColorText);
             });
 
-            col.Item().PaddingTop(2).Text(text =>
+            col.Item().PaddingTop(1).Text(text =>
             {
-                text.Span("Parent Image:  ").FontSize(8.5f).Bold().FontColor(ColorLabel);
+                text.Span("Parent Image:  ").FontSize(8).Bold().FontColor(ColorLabel);
                 text.Span(string.IsNullOrEmpty(_incident.ParentImage) ? "-" : _incident.ParentImage)
-                    .FontSize(8.5f).FontColor(ColorText);
+                    .FontSize(8).FontColor(ColorText);
             });
 
-            // Blocked IP (if present)
             if (_incident.HasBlockedIp)
             {
-                col.Item().PaddingTop(2).Text(text =>
+                col.Item().PaddingTop(1).Text(text =>
                 {
-                    text.Span("Blocked Network:  ").FontSize(8.5f).Bold().FontColor(ColorDanger);
-                    text.Span(_incident.BlockedIp).FontSize(8.5f).FontColor(ColorDanger);
+                    text.Span("Blocked Network:  ").FontSize(8).Bold().FontColor(ColorDanger);
+                    text.Span(_incident.BlockedIp).FontSize(8).Bold().FontColor(ColorDanger);
                 });
             }
 
-            // Command line in light gray code block
-            col.Item().PaddingTop(6).Text("Command Line:")
-                .FontSize(8.5f).Bold().FontColor(ColorLabel);
+            // Command Line (라이트 그레이 코드 컨테이너)
+            col.Item().PaddingTop(4).Text("Command Line:")
+                .FontSize(8).Bold().FontColor(ColorLabel);
 
             string cmd = string.IsNullOrWhiteSpace(_incident.CommandLine)
                 ? "(no command line arguments recorded)"
                 : _incident.CommandLine;
 
-            col.Item().PaddingTop(2)
+            col.Item().PaddingTop(1)
                 .Background(ColorBgCode)
                 .Border(0.5f).BorderColor(ColorBorder)
-                .Padding(8)
+                .Padding(5)
                 .Text(cmd)
                 .FontFamily("Consolas")
-                .FontSize(8.5f)
+                .FontSize(7.8f)
                 .FontColor(ColorText)
                 .BreakAnywhere();
         });
@@ -248,34 +249,31 @@ public class ForensicPdfReportDocument : IDocument
         {
             CreateSectionHeader(col, "3. Analysis & Findings");
 
-            // Finding title
             string title = string.IsNullOrWhiteSpace(_incident.SummaryTitle)
                 ? "Investigation Complete"
                 : _incident.SummaryTitle;
 
             col.Item().Text(title)
-                .FontSize(10)
+                .FontSize(9)
                 .Bold()
                 .FontColor(ColorText);
 
-            // Analysis narrative
             string narrative = string.IsNullOrWhiteSpace(_incident.Narrative)
                 ? "No detailed analysis narrative was recorded for this incident."
                 : _incident.Narrative;
 
-            col.Item().PaddingTop(4).Text(narrative)
-                .FontSize(9)
-                .LineHeight(1.4f)
+            col.Item().PaddingTop(2).Text(narrative)
+                .FontSize(8.2f)
+                .LineHeight(1.35f)
                 .FontColor(ColorText);
 
-            // MITRE ATT&CK references (plain inline text)
             if (_incident.MitreTactics.Count > 0)
             {
                 string mitre = string.Join(", ", _incident.MitreTactics);
-                col.Item().PaddingTop(6).Text(text =>
+                col.Item().PaddingTop(4).Text(text =>
                 {
-                    text.Span("MITRE ATT&CK Reference:  ").FontSize(8.5f).Bold().FontColor(ColorLabel);
-                    text.Span(mitre).FontSize(8.5f).FontColor(ColorText);
+                    text.Span("MITRE ATT&CK Reference:  ").FontSize(8).Bold().FontColor(ColorLabel);
+                    text.Span(mitre).FontSize(8).FontColor(ColorText);
                 });
             }
         });
@@ -292,39 +290,40 @@ public class ForensicPdfReportDocument : IDocument
             if (_incident.Traces.Count == 0)
             {
                 col.Item().Text("No investigation trace recorded.")
-                    .FontSize(9)
+                    .FontSize(8.2f)
                     .FontColor(ColorLabel);
                 return;
             }
 
             col.Item().Table(table =>
             {
+                // 컬럼 폭 최적화: Tool(108pt - ThreatReputationTool 완벽 수용), Latency(48pt - 4925.8ms 완벽 수용)
                 table.ColumnsDefinition(columns =>
                 {
-                    columns.ConstantColumn(28);
-                    columns.ConstantColumn(90);
+                    columns.ConstantColumn(24);
+                    columns.ConstantColumn(108);
                     columns.RelativeColumn(3);
                     columns.RelativeColumn(3);
-                    columns.ConstantColumn(40);
+                    columns.ConstantColumn(48);
                 });
 
-                // Light header
+                // Header
                 table.Header(header =>
                 {
-                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4).AlignCenter()
-                        .Text("Step").FontSize(8).Bold().FontColor(ColorText);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(3.5f).AlignCenter()
+                        .Text("Step").FontSize(7.8f).Bold().FontColor(ColorText);
 
-                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4)
-                        .Text("Tool").FontSize(8).Bold().FontColor(ColorText);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(3.5f)
+                        .Text("Tool").FontSize(7.8f).Bold().FontColor(ColorText);
 
-                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4)
-                        .Text("Reasoning").FontSize(8).Bold().FontColor(ColorText);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(3.5f)
+                        .Text("Reasoning").FontSize(7.8f).Bold().FontColor(ColorText);
 
-                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4)
-                        .Text("Observation").FontSize(8).Bold().FontColor(ColorText);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(3.5f)
+                        .Text("Observation").FontSize(7.8f).Bold().FontColor(ColorText);
 
-                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(4).AlignRight()
-                        .Text("Latency").FontSize(8).Bold().FontColor(ColorText);
+                    header.Cell().Background(ColorBgCode).BorderBottom(1).BorderColor(ColorBorder).Padding(3.5f).AlignRight()
+                        .Text("Latency").FontSize(7.8f).Bold().FontColor(ColorText);
                 });
 
                 int index = 0;
@@ -332,28 +331,37 @@ public class ForensicPdfReportDocument : IDocument
                 {
                     string rowBg = (index++ % 2 == 0) ? Colors.White : ColorZebra;
 
-                    AddTableCell(table, $"{trace.StepNumber}", rowBg, true, false, true);
-                    AddTableCell(table, trace.ActionTool ?? "-", rowBg, true);
-                    AddTableCell(table, string.IsNullOrWhiteSpace(trace.Thought) ? "-" : trace.Thought, rowBg);
-                    AddTableCell(table, string.IsNullOrWhiteSpace(trace.Observation) ? "-" : trace.Observation, rowBg);
-                    AddTableCell(table, $"{trace.ElapsedMs:F1}ms", rowBg, false, false, false, true);
+                    // Step
+                    AddTableCell(table, $"{trace.StepNumber}", rowBg, bold: true, breakAnywhere: false, center: true);
+
+                    // Tool (한 줄 완벽 수용)
+                    AddTableCell(table, trace.ActionTool ?? "-", rowBg, bold: true, breakAnywhere: false);
+
+                    // Reasoning (한글/영문 단어 쪼개짐 방지: breakAnywhere = false)
+                    AddTableCell(table, string.IsNullOrWhiteSpace(trace.Thought) ? "-" : trace.Thought, rowBg, bold: false, breakAnywhere: false);
+
+                    // Observation (긴 URL/해시 포함 가능: breakAnywhere = true)
+                    AddTableCell(table, string.IsNullOrWhiteSpace(trace.Observation) ? "-" : trace.Observation, rowBg, bold: false, breakAnywhere: true);
+
+                    // Latency (한 줄 완벽 수용)
+                    AddTableCell(table, $"{trace.ElapsedMs:F1}ms", rowBg, bold: false, breakAnywhere: false, center: false, right: true);
                 }
             });
         });
     }
 
     private void AddTableCell(TableDescriptor table, string text, string bg,
-        bool bold = false, bool breakAnywhere = true, bool center = false, bool right = false)
+        bool bold = false, bool breakAnywhere = false, bool center = false, bool right = false)
     {
         var cell = table.Cell()
             .Background(bg)
             .BorderBottom(0.5f).BorderColor(ColorBorder)
-            .Padding(4);
+            .Padding(3.5f);
 
         if (center) cell = cell.AlignCenter();
         if (right) cell = cell.AlignRight();
 
-        var t = cell.Text(text).FontSize(8).FontColor(ColorText);
+        var t = cell.Text(text).FontSize(7.6f).FontColor(ColorText);
         if (bold) t.Bold();
         if (breakAnywhere) t.BreakAnywhere();
     }
@@ -373,8 +381,8 @@ public class ForensicPdfReportDocument : IDocument
                     : "1. Process unfrozen and restored to normal execution.\n2. Benign classification recorded in audit log.";
 
                 col.Item().Text(defaultAction)
-                    .FontSize(9)
-                    .LineHeight(1.4f)
+                    .FontSize(8.2f)
+                    .LineHeight(1.35f)
                     .FontColor(ColorText);
             }
             else
@@ -382,8 +390,8 @@ public class ForensicPdfReportDocument : IDocument
                 int stepNum = 1;
                 foreach (var step in _incident.RemediationSteps)
                 {
-                    col.Item().PaddingBottom(2).Text($"{stepNum++}. {step}")
-                        .FontSize(9)
+                    col.Item().PaddingBottom(1.5f).Text($"{stepNum++}. {step}")
+                        .FontSize(8.2f)
                         .FontColor(ColorText);
                 }
             }
@@ -398,34 +406,34 @@ public class ForensicPdfReportDocument : IDocument
         {
             CreateSectionHeader(col, "6. Verification & Audit Metadata");
 
-            col.Item().Border(0.5f).BorderColor(ColorBorder).Background(ColorZebra).Padding(8).Column(inner =>
+            col.Item().Border(0.5f).BorderColor(ColorBorder).Background(ColorZebra).Padding(6).Column(inner =>
             {
                 inner.Item().Row(r =>
                 {
                     r.RelativeItem().Text(text =>
                     {
-                        text.Span("Audit Standard:  ").FontSize(8).Bold().FontColor(ColorLabel);
-                        text.Span("MITRE ATT&CK Matrix v14 / SANS DFIR Standard").FontSize(8).FontColor(ColorText);
+                        text.Span("Audit Standard:  ").FontSize(7.5f).Bold().FontColor(ColorLabel);
+                        text.Span("MITRE ATT&CK Matrix v14 / SANS DFIR Standard").FontSize(7.5f).FontColor(ColorText);
                     });
                     r.RelativeItem().AlignRight().Text(text =>
                     {
-                        text.Span("Engine:  ").FontSize(8).Bold().FontColor(ColorLabel);
-                        text.Span("Phalanx Autonomous Threat Hunter v0.5.0").FontSize(8).FontColor(ColorText);
+                        text.Span("Engine:  ").FontSize(7.5f).Bold().FontColor(ColorLabel);
+                        text.Span("Phalanx Autonomous Threat Hunter v0.5.0").FontSize(7.5f).FontColor(ColorText);
                     });
                 });
 
-                inner.Item().PaddingTop(4).Row(r =>
+                inner.Item().PaddingTop(3).Row(r =>
                 {
                     r.RelativeItem().Text(text =>
                     {
-                        text.Span("Evidence Integrity:  ").FontSize(8).Bold().FontColor(ColorLabel);
-                        text.Span("Immutable LiteDB Chain-of-Custody Archive Verified").FontSize(8).FontColor(ColorText);
+                        text.Span("Evidence Integrity:  ").FontSize(7.5f).Bold().FontColor(ColorLabel);
+                        text.Span("Immutable LiteDB Chain-of-Custody Archive Verified").FontSize(7.5f).FontColor(ColorText);
                     });
                     r.RelativeItem().AlignRight().Text(text =>
                     {
-                        text.Span("Disposition:  ").FontSize(8).Bold().FontColor(ColorLabel);
+                        text.Span("Disposition:  ").FontSize(7.5f).Bold().FontColor(ColorLabel);
                         text.Span(_incident.IsCritical ? "INCIDENT CONTAINED & ISOLATED" : "SYSTEM RESTORED (BENIGN)")
-                            .FontSize(8).Bold().FontColor(_incident.IsCritical ? ColorDanger : ColorText);
+                            .FontSize(7.5f).Bold().FontColor(_incident.IsCritical ? ColorDanger : ColorText);
                     });
                 });
             });
@@ -436,11 +444,11 @@ public class ForensicPdfReportDocument : IDocument
 
     private void CreateSectionHeader(ColumnDescriptor col, string title)
     {
-        col.Item().PaddingBottom(6).Column(inner =>
+        col.Item().PaddingBottom(4).Column(inner =>
         {
             inner.Item().LineHorizontal(0.5f).LineColor(ColorBorder);
-            inner.Item().PaddingTop(4).Text(title)
-                .FontSize(10.5f)
+            inner.Item().PaddingTop(3).Text(title)
+                .FontSize(9.5f)
                 .Bold()
                 .FontColor(ColorText);
         });
@@ -448,7 +456,7 @@ public class ForensicPdfReportDocument : IDocument
 
     private void ComposeFooter(IContainer container)
     {
-        container.PaddingTop(6).Row(row =>
+        container.PaddingTop(4).Row(row =>
         {
             row.RelativeItem().Text("Phalanx EDR — Confidential")
                 .FontSize(7)

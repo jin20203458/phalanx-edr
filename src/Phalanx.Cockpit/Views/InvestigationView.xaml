@@ -176,7 +176,7 @@
                         Command="{Binding CancelInvestigationCommand}"
                         CommandParameter="{Binding SelectedIncident.IncidentId}"
                         Content="조사 취소"
-                        Style="{StaticResource DangerActionButtonStyle}"
+                        Style="{StaticResource SuspendedActionButtonStyle}"
                         ToolTip="진행 중인 AI 조사를 즉시 취소하고 프로세스를 안전 동결(SUSPENDED) 상태로 유지합니다"
                         Visibility="{Binding SelectedIncident.IsInvestigating, Converter={StaticResource BooleanToVisibilityConverter}}" />
 

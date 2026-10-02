@@ -189,6 +189,37 @@
         </Setter>
     </Style>
 
+    <Style x:Key="SuspendedActionButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource SeveritySuspendedBgBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource SeveritySuspendedTextBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource SeveritySuspendedBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Padding" Value="12,6" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border
+                        x:Name="border"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="3">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource SeveritySuspendedBorderBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Micro Utility Icon Button (EDR Forensic Copy / Action) -->
     <Style x:Key="UtilityCopyButtonStyle" TargetType="Button">
         <Setter Property="Width" Value="24" />

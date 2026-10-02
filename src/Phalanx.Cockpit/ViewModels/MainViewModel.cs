@@ -594,7 +594,7 @@ public partial class MainViewModel : ObservableObject
         existing.BlockedIp = result.BlockedIp ?? string.Empty;
         existing.ElapsedMs = result.Elapsed.TotalMilliseconds;
         existing.IsInvestigating = false;
-        existing.InvestigationProgressText = isSuspend ? "사용자에 의해 AI 심층 수사 취소됨 (동결 상태 유지)" : string.Empty;
+        existing.InvestigationProgressText = isSuspend ? "사용자에 의해 AI 조사 취소됨 (동결 상태 유지) ➔ 전역 프로세스 트리에서 사살/해제 가능" : string.Empty;
 
         // 다중 수사 안전 가드: 타 수사 건이 없으면 틱 타이머 정지
         if (!Incidents.Any(x => x.IsInvestigating && x.IncidentId != record.IncidentId))
@@ -1432,7 +1432,7 @@ public partial class MainViewModel : ObservableObject
         // 실제 취소 요청이 접수된 경우에만 UI 상태 갱신
         if (cancelled && SelectedIncident != null && SelectedIncident.IncidentId == targetId)
         {
-            SelectedIncident.InvestigationProgressText = "수사 취소 요청 중... (동결 상태 유지)";
+            SelectedIncident.InvestigationProgressText = "사용자에 의해 AI 조사 취소됨 (동결 상태 유지) ➔ 전역 프로세스 트리에서 사살/해제 가능";
             SelectedIncident.IsInvestigating = false;
         }
     }

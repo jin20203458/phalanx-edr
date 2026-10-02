@@ -295,13 +295,13 @@ public class AutonomousHunterAgent
                 VerdictAction = "SUSPENDED",
                 ConfidenceScore = 0.0,
                 SummaryTitle = "사용자 수동 개입에 의한 AI 심층 수사 취소 (동결 유지)",
-                Narrative = $"사용자 요청으로 AI 자율 수사가 취소되었습니다. 대상 프로세스(PID: {targetNode.ProcessId})는 커널 레벨에서 안전하게 동결(SUSPENDED) 상태로 유지되었으며, 관리자의 수동 처분(사살/동결 해제) 대기 상태입니다.",
+                Narrative = $"사용자 요청으로 AI 자율 조사가 취소되었습니다. 대상 프로세스(PID: {targetNode.ProcessId})는 커널 레벨에서 안전하게 동결(SUSPENDED) 상태로 보존되었으며, 관리자가 전역 프로세스 트리에서 수동 처분(사살/동결 해제)을 직접 집행할 수 있는 대기 상태입니다.",
                 MitreTactics = new List<string>(),
                 BlockedIp = string.Empty,
                 RootCauseProcess = targetNode.ImageName,
                 TerminatedProcesses = new List<string>(),
                 RemediationStatus = "SUSPENDED_MANUAL_HOLD",
-                RemediationSteps = new List<string> { "AI 자율 수사 취소 완료", "관리자 수동 처분 대기" },
+                RemediationSteps = new List<string> { "AI 자율 조사 취소 완료 (동결 유지)", "전역 프로세스 트리 수동 처분 대기" },
                 ElapsedMs = sw.Elapsed.TotalMilliseconds
             };
             _archiveManager.SaveIncident(cancelledRecord, new List<ReActTraceRecord>());

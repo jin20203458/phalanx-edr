@@ -39,6 +39,7 @@ public partial class IncidentItemViewModel : ObservableObject
     private string _verdictAction = "SUSPENDED";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanManualActuate))]
     private string _statusSeverity = "SUSPENDED"; // CRITICAL, BENIGN, SUSPENDED, REFLEX
 
     [ObservableProperty]
@@ -70,6 +71,7 @@ public partial class IncidentItemViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FormattedLatency))]
+    [NotifyPropertyChangedFor(nameof(CanManualActuate))]
     private bool _isInvestigating;
 
     [ObservableProperty]
@@ -123,6 +125,7 @@ public partial class IncidentItemViewModel : ObservableObject
     public bool IsCritical => StatusSeverity == "CRITICAL";
     public bool IsBenign => StatusSeverity == "BENIGN";
     public bool IsSuspended => StatusSeverity == "SUSPENDED";
+    public bool CanManualActuate => IsSuspended && !IsInvestigating;
     public bool IsReflex => StatusSeverity == "REFLEX";
 
     // 2단 계층 분리: 파일명 우선 (절대 안 잘림) + 디렉터리 경로 분리

@@ -86,6 +86,7 @@ public static class Program
             uiBridge.NotifyReActStepCompleted(incidentId, trace);
         agent.OnInvestigationCompleted += result =>
             uiBridge.NotifyInvestigationCompleted(result);
+        uiBridge.InvestigationCancelHandler = id => agent.CancelInvestigation(id);
 
         if (args.Contains("--headless"))
         {

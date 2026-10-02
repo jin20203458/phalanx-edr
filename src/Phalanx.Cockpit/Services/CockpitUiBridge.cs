@@ -26,6 +26,14 @@ public class CockpitUiBridge
     // 수동 제어 역방향 명령 대리자 (MainWindow -> gRPC 서비스)
     public Func<MitigationCommand, Task>? ManualCommandSender { get; set; }
 
+    // 심층 조사 취소 역방향 대리자 (MainViewModel -> AutonomousHunterAgent)
+    public Func<string, bool>? InvestigationCancelHandler { get; set; }
+
+    public bool CancelInvestigation(string incidentId)
+    {
+        return InvestigationCancelHandler?.Invoke(incidentId) ?? false;
+    }
+
     public void NotifyIncidentsDatabaseCleared()
     {
         Dispatch(() => IncidentsDatabaseCleared?.Invoke());

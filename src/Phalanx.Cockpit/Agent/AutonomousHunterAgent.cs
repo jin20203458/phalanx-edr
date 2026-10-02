@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -22,6 +23,7 @@ public class AutonomousHunterAgent
     private readonly ProcessTreeProjectionManager _treeManager;
     private readonly ForensicArchiveManager _archiveManager;
     private readonly Dictionary<string, IInvestigationTool> _tools = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeCtsMap = new();
     private GeminiRestClient? _geminiClient;
 
     public bool IsOnlineGemini => _geminiClient != null;
@@ -31,6 +33,25 @@ public class AutonomousHunterAgent
     public int CtsTimeoutSec { get; set; } = 50;
     public bool OfflineFallbackEnabled { get; set; } = true;
     public bool FailSecureEnabled { get; set; } = true;
+
+    /// <summary>
+    /// 진행 중인 사건의 AI 심층 수사를 즉시 취소합니다. (커널 동결 상태 보존)
+    /// </summary>
+    public bool CancelInvestigation(string incidentId)
+    {
+        if (string.IsNullOrWhiteSpace(incidentId)) return false;
+        if (_activeCtsMap.TryRemove(incidentId, out var cts))
+        {
+            try
+            {
+                cts.Cancel();
+                Trace.WriteLine($"[AutonomousHunterAgent] 수사 취소 요청 성공: IncidentId={incidentId}");
+                return true;
+            }
+            catch (ObjectDisposedException) { return false; }
+        }
+        return false;
+    }
 
     public event Action<ProcessNodeModel, string>? OnInvestigationStarted;
     public event Action<string /* incidentId */, ReActTraceRecord>? OnReActStepProgress;
@@ -169,81 +190,143 @@ public class AutonomousHunterAgent
     {
         var sw = Stopwatch.StartNew();
         string incidentId = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+
+        // 내부 취소용 Linked CTS 생성 및 등록
+        using var internalCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _activeCtsMap[incidentId] = internalCts;
+
         OnInvestigationStarted?.Invoke(targetNode, incidentId);
 
-        InvestigationResult result;
-
-        // [모드 A: 실제 Gemini REST 호출] 클라이언트(API Key 또는 Vertex AI)가 활성화된 경우
-        if (_geminiClient != null)
+        try
         {
-            try
-            {
-                result = await InvestigateWithGeminiAsync(targetNode, incidentId, sw, commandSender, cancellationToken);
-                OnInvestigationCompleted?.Invoke(result);
-                return result;
-            }
-            catch (Exception ex)
-            {
-                Trace.WriteLine($"[AutonomousHunterAgent] Gemini API 호출 실패 또는 타임아웃 발생: {ex.Message}");
-                if (!OfflineFallbackEnabled)
-                {
-                    if (FailSecureEnabled)
-                    {
-                        var failRecord = new IncidentRecord
-                        {
-                            IncidentId = incidentId,
-                            Timestamp = DateTime.UtcNow,
-                            TargetPid = targetNode.ProcessId,
-                            TargetImage = targetNode.ImageName,
-                            CommandLine = targetNode.CommandLine,
-                            VerdictAction = "ACTION_KILL",
-                            ConfidenceScore = 0.99,
-                            SummaryTitle = "오프라인 폴백 비활성화 및 API 장애에 따른 Fail-Secure 사살",
-                            Narrative = $"Gemini API 호출에 실패하였으나, 오프라인 폴백이 비활성화되어 Fail-Secure 정책에 의해 선제 사살되었습니다: {ex.Message}",
-                            MitreTactics = new List<string> { "T1059" },
-                            BlockedIp = string.Empty,
-                            RootCauseProcess = targetNode.ImageName,
-                            TerminatedProcesses = new() { $"{targetNode.ImageName} (PID: {targetNode.ProcessId})" },
-                            RemediationStatus = "SECURED",
-                            RemediationSteps = new List<string> { "API 장애 발생", "Fail-Secure 선제 조치" },
-                            ElapsedMs = sw.Elapsed.TotalMilliseconds
-                        };
-                        _archiveManager.SaveIncident(failRecord, new List<ReActTraceRecord>());
+            // try 블록 내부에서 취소 확인 -> 사전 취소된 경우에도 catch 블록으로 진입하여 SUSPENDED 레코드 및 결과 반환
+            internalCts.Token.ThrowIfCancellationRequested();
 
-                        var failKill = new InvestigationResult(
-                            incidentId,
-                            MitigationCommand.Types.ActionType.ActionKill,
-                            0.99,
-                            failRecord.SummaryTitle,
-                            failRecord.Narrative,
-                            failRecord.MitreTactics,
-                            string.Empty,
-                            new List<ReActTraceRecord>(),
-                            sw.Elapsed,
-                            failRecord,
-                            failRecord.RemediationSteps
-                        );
-                        if (commandSender != null)
+            InvestigationResult result;
+
+            // [모드 A: 실제 Gemini REST 호출] 클라이언트(API Key 또는 Vertex AI)가 활성화된 경우
+            if (_geminiClient != null)
+            {
+                try
+                {
+                    result = await InvestigateWithGeminiAsync(targetNode, incidentId, sw, commandSender, internalCts.Token);
+                    OnInvestigationCompleted?.Invoke(result);
+                    return result;
+                }
+                catch (OperationCanceledException) when (internalCts.IsCancellationRequested || cancellationToken.IsCancellationRequested)
+                {
+                    throw; // 상위 통합 취소 핸들러로 전달 (오프라인 폴백 금지)
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"[AutonomousHunterAgent] Gemini API 호출 실패 또는 타임아웃 발생: {ex.Message}");
+                    if (!OfflineFallbackEnabled)
+                    {
+                        if (FailSecureEnabled)
                         {
-                            await commandSender(new MitigationCommand
+                            var failRecord = new IncidentRecord
                             {
+                                IncidentId = incidentId,
+                                Timestamp = DateTime.UtcNow,
                                 TargetPid = targetNode.ProcessId,
-                                Action = MitigationCommand.Types.ActionType.ActionKill,
-                                Reason = "Gemini API 장애 및 Fail-Secure 집행"
-                            });
+                                TargetImage = targetNode.ImageName,
+                                CommandLine = targetNode.CommandLine,
+                                VerdictAction = "ACTION_KILL",
+                                ConfidenceScore = 0.99,
+                                SummaryTitle = "오프라인 폴백 비활성화 및 API 장애에 따른 Fail-Secure 사살",
+                                Narrative = $"Gemini API 호출에 실패하였으나, 오프라인 폴백이 비활성화되어 Fail-Secure 정책에 의해 선제 사살되었습니다: {ex.Message}",
+                                MitreTactics = new List<string> { "T1059" },
+                                BlockedIp = string.Empty,
+                                RootCauseProcess = targetNode.ImageName,
+                                TerminatedProcesses = new() { $"{targetNode.ImageName} (PID: {targetNode.ProcessId})" },
+                                RemediationStatus = "SECURED",
+                                RemediationSteps = new List<string> { "API 장애 발생", "Fail-Secure 선제 조치" },
+                                ElapsedMs = sw.Elapsed.TotalMilliseconds
+                            };
+                            _archiveManager.SaveIncident(failRecord, new List<ReActTraceRecord>());
+
+                            var failKill = new InvestigationResult(
+                                incidentId,
+                                MitigationCommand.Types.ActionType.ActionKill,
+                                0.99,
+                                failRecord.SummaryTitle,
+                                failRecord.Narrative,
+                                failRecord.MitreTactics,
+                                string.Empty,
+                                new List<ReActTraceRecord>(),
+                                sw.Elapsed,
+                                failRecord,
+                                failRecord.RemediationSteps
+                            );
+                            if (commandSender != null)
+                            {
+                                await commandSender(new MitigationCommand
+                                {
+                                    TargetPid = targetNode.ProcessId,
+                                    Action = MitigationCommand.Types.ActionType.ActionKill,
+                                    Reason = "Gemini API 장애 및 Fail-Secure 집행"
+                                });
+                            }
+                            OnInvestigationCompleted?.Invoke(failKill);
+                            return failKill;
                         }
-                        OnInvestigationCompleted?.Invoke(failKill);
-                        return failKill;
+                        throw;
                     }
-                    throw;
                 }
             }
-        }
 
-        // [모드 B: 오프라인 초고속 결정론적 ReAct 엔진 Fallback] (기본 10초 워치독 내 23ms 즉각 완결, 타임아웃 연장 불필요)
-        result = await InvestigateOfflineDeterministicAsync(targetNode, incidentId, sw, commandSender, cancellationToken);
-        OnInvestigationCompleted?.Invoke(result);
-        return result;
+            // [모드 B: 오프라인 초고속 결정론적 ReAct 엔진 Fallback] (기본 10초 워치독 내 23ms 즉각 완결, 타임아웃 연장 불필요)
+            result = await InvestigateOfflineDeterministicAsync(targetNode, incidentId, sw, commandSender, internalCts.Token);
+            OnInvestigationCompleted?.Invoke(result);
+            return result;
+        }
+        catch (OperationCanceledException) when (internalCts.IsCancellationRequested || cancellationToken.IsCancellationRequested)
+        {
+            Trace.WriteLine($"[AutonomousHunterAgent] AI 심층 수사 취소 집행: IncidentId={incidentId}, TargetPid={targetNode.ProcessId}");
+
+            // C++ 센서로 사살/해제 완화 명령을 절대로 전송하지 않음 -> 프로세스는 커널에서 안전하게 Suspended 유지
+            var cancelledRecord = new IncidentRecord
+            {
+                IncidentId = incidentId,
+                Timestamp = DateTime.UtcNow,
+                TargetPid = targetNode.ProcessId,
+                TargetImage = targetNode.ImageName,
+                CommandLine = targetNode.CommandLine,
+                VerdictAction = "SUSPENDED",
+                ConfidenceScore = 0.0,
+                SummaryTitle = "사용자 수동 개입에 의한 AI 심층 수사 취소 (동결 유지)",
+                Narrative = $"사용자 요청으로 AI 자율 수사가 취소되었습니다. 대상 프로세스(PID: {targetNode.ProcessId})는 커널 레벨에서 안전하게 동결(SUSPENDED) 상태로 유지되었으며, 관리자의 수동 처분(사살/동결 해제) 대기 상태입니다.",
+                MitreTactics = new List<string>(),
+                BlockedIp = string.Empty,
+                RootCauseProcess = targetNode.ImageName,
+                TerminatedProcesses = new List<string>(),
+                RemediationStatus = "SUSPENDED_MANUAL_HOLD",
+                RemediationSteps = new List<string> { "AI 자율 수사 취소 완료", "관리자 수동 처분 대기" },
+                ElapsedMs = sw.Elapsed.TotalMilliseconds
+            };
+            _archiveManager.SaveIncident(cancelledRecord, new List<ReActTraceRecord>());
+
+            var cancelledResult = new InvestigationResult(
+                incidentId,
+                MitigationCommand.Types.ActionType.ActionSuspend, // 동결 유지
+                0.0,
+                cancelledRecord.SummaryTitle,
+                cancelledRecord.Narrative,
+                cancelledRecord.MitreTactics,
+                string.Empty,
+                new List<ReActTraceRecord>(),
+                sw.Elapsed,
+                cancelledRecord,
+                cancelledRecord.RemediationSteps
+            );
+
+            OnInvestigationCompleted?.Invoke(cancelledResult);
+            return cancelledResult;
+        }
+        finally
+        {
+            _activeCtsMap.TryRemove(incidentId, out _);
+        }
     }
 
     /// <summary>
@@ -833,6 +916,8 @@ public class AutonomousHunterAgent
         Func<MitigationCommand, Task>? commandSender,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var traces = new List<ReActTraceRecord>();
         var ancestry = _treeManager.GetAncestry(targetNode.ProcessId, maxDepth: 5, includeSelf: true);
         string rootCause = ancestry.Count > 1 ? $"{ancestry[1].ImageName} (PID: {ancestry[1].ProcessId})" : $"{targetNode.ImageName} (PID: {targetNode.ProcessId})";
@@ -888,6 +973,7 @@ public class AutonomousHunterAgent
                             $"외부 C2 통신 및 파괴 행위가 없는 사내 정상 작업(루프백/내부 인프라)으로 확인되었습니다. " +
                             $"오프라인 결정론적 추론 엔진에 의해 무해성을 확인하고 즉시 정상 복구(ACTION_RESUME)를 완료했습니다.";
 
+                cancellationToken.ThrowIfCancellationRequested();
                 if (commandSender != null)
                 {
                     await commandSender(new MitigationCommand
@@ -1254,6 +1340,7 @@ public class AutonomousHunterAgent
         string blockedIp = (isMalicious ? extractedIp : string.Empty) ?? string.Empty;
 
         // [최종 명령 C++ 전송]
+        cancellationToken.ThrowIfCancellationRequested();
         if (commandSender != null)
         {
             await commandSender(new MitigationCommand

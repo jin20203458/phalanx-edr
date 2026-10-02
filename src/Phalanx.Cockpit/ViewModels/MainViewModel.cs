@@ -532,19 +532,30 @@ public partial class MainViewModel : ObservableObject
 
     private void OnInvestigationCompleted(InvestigationResult result)
     {
-        if (ActiveSuspendedCount > 0)
+        if (result.VerdictAction != ActionType.ActionSuspend && ActiveSuspendedCount > 0)
         {
             ActiveSuspendedCount--;
         }
 
         bool isKill = result.VerdictAction == ActionType.ActionKill;
+        bool isSuspend = result.VerdictAction == ActionType.ActionSuspend;
         var targetNode = result.Record?.TargetPid is uint pid ? _treeManager.FindNodeByPid(pid) : null;
 
-        if (isKill)
+        if (isSuspend)
+        {
+            if (targetNode != null)
+            {
+                targetNode.IsSuspended = true;
+                targetNode.IsRestored = false;
+                targetNode.IsTerminated = false;
+            }
+        }
+        else if (isKill)
         {
             if (targetNode != null)
             {
                 targetNode.IsRestored = false;
+                targetNode.IsTerminated = true;
             }
             TotalTerminatedCount++;
         }
@@ -553,6 +564,7 @@ public partial class MainViewModel : ObservableObject
             if (targetNode != null)
             {
                 targetNode.IsRestored = true;
+                targetNode.IsSuspended = false;
             }
             ActiveRestoredCount++;
         }
@@ -574,15 +586,15 @@ public partial class MainViewModel : ObservableObject
         existing.TargetImage = record.TargetImage;
         existing.CommandLine = record.CommandLine;
         existing.ParentImage = record.RootCauseProcess;
-        existing.VerdictAction = result.VerdictAction.ToString();
-        existing.StatusSeverity = isKill ? "CRITICAL" : "BENIGN";
+        existing.VerdictAction = isKill ? "ACTION_KILL" : isSuspend ? "SUSPENDED" : "ACTION_RESUME";
+        existing.StatusSeverity = isKill ? "CRITICAL" : isSuspend ? "SUSPENDED" : "BENIGN";
         existing.ConfidenceScore = result.Confidence;
         existing.SummaryTitle = result.SummaryTitle;
         existing.Narrative = result.Narrative;
         existing.BlockedIp = result.BlockedIp ?? string.Empty;
         existing.ElapsedMs = result.Elapsed.TotalMilliseconds;
         existing.IsInvestigating = false;
-        existing.InvestigationProgressText = string.Empty;
+        existing.InvestigationProgressText = isSuspend ? "사용자에 의해 AI 심층 수사 취소됨 (동결 상태 유지)" : string.Empty;
 
         // 다중 수사 안전 가드: 타 수사 건이 없으면 틱 타이머 정지
         if (!Incidents.Any(x => x.IsInvestigating && x.IncidentId != record.IncidentId))
@@ -1406,5 +1418,120 @@ public partial class MainViewModel : ObservableObject
                     MessageBoxImage.Error);
             }
         }
+    }
+
+    [RelayCommand]
+    public void CancelInvestigation(string? incidentId)
+    {
+        string? targetId = incidentId ?? SelectedIncident?.IncidentId;
+        if (string.IsNullOrEmpty(targetId)) return;
+
+        // CockpitUiBridge를 통해 에이전트의 실제 CancellationTokenSource 취소 호출
+        bool cancelled = _uiBridge.CancelInvestigation(targetId);
+
+        // 실제 취소 요청이 접수된 경우에만 UI 상태 갱신
+        if (cancelled && SelectedIncident != null && SelectedIncident.IncidentId == targetId)
+        {
+            SelectedIncident.InvestigationProgressText = "수사 취소 요청 중... (동결 상태 유지)";
+            SelectedIncident.IsInvestigating = false;
+        }
+    }
+
+    [RelayCommand]
+    public async Task KillSelectedIncidentAsync()
+    {
+        if (SelectedIncident == null || !SelectedIncident.CanManualActuate) return;
+
+        uint pid = SelectedIncident.TargetPid;
+        string incidentId = SelectedIncident.IncidentId;
+
+        // 1. gRPC 커널 완화 명령 생성 및 전송
+        var cmd = new MitigationCommand
+        {
+            TargetPid = pid,
+            Action = MitigationCommand.Types.ActionType.ActionKill,
+            Reason = $"관리자 수동 사살 집행 (IncidentId: {incidentId})"
+        };
+        await _uiBridge.SendManualCommandAsync(cmd);
+
+        // 2. 프로세스 트리 노드 상태 갱신
+        var node = _treeManager.FindNodeByPid(pid);
+        if (node != null)
+        {
+            node.IsTerminated = true;
+            node.IsSuspended = false;
+        }
+
+        // 3. 뷰모델 상태 갱신
+        SelectedIncident.VerdictAction = "ACTION_KILL";
+        SelectedIncident.StatusSeverity = "CRITICAL";
+        SelectedIncident.InvestigationProgressText = "관리자에 의해 수동 사살 완료";
+        SelectedIncident.RemediationSteps.Add($"관리자 수동 사살 완료 (PID: {pid})");
+
+        // 4. 대시보드 통계 카운터 갱신
+        if (ActiveSuspendedCount > 0) ActiveSuspendedCount--;
+        TotalTerminatedCount++;
+
+        // 5. LiteDB 영속화
+        var record = _archiveManager.GetIncident(incidentId);
+        if (record != null)
+        {
+            record.VerdictAction = "ACTION_KILL";
+            record.RemediationStatus = "TERMINATED_MANUAL";
+            record.RemediationSteps.Add($"관리자 수동 사살 완료 (PID: {pid})");
+            _archiveManager.SaveIncident(record, new List<ReActTraceRecord>());
+        }
+
+        // 6. 필터 및 뷰 동기화
+        ApplyFilter();
+    }
+
+    [RelayCommand]
+    public async Task ResumeSelectedIncidentAsync()
+    {
+        if (SelectedIncident == null || !SelectedIncident.CanManualActuate) return;
+
+        uint pid = SelectedIncident.TargetPid;
+        string incidentId = SelectedIncident.IncidentId;
+
+        // 1. gRPC 커널 완화 명령 생성 및 전송
+        var cmd = new MitigationCommand
+        {
+            TargetPid = pid,
+            Action = MitigationCommand.Types.ActionType.ActionResume,
+            Reason = $"관리자 수동 동결 해제 집행 (IncidentId: {incidentId})"
+        };
+        await _uiBridge.SendManualCommandAsync(cmd);
+
+        // 2. 프로세스 트리 노드 상태 갱신
+        var node = _treeManager.FindNodeByPid(pid);
+        if (node != null)
+        {
+            node.IsRestored = true;
+            node.IsSuspended = false;
+        }
+
+        // 3. 뷰모델 상태 갱신
+        SelectedIncident.VerdictAction = "ACTION_RESUME";
+        SelectedIncident.StatusSeverity = "BENIGN";
+        SelectedIncident.InvestigationProgressText = "관리자에 의해 수동 동결 해제 완료";
+        SelectedIncident.RemediationSteps.Add($"관리자 수동 동결 해제 완료 (PID: {pid})");
+
+        // 4. 대시보드 통계 카운터 갱신
+        if (ActiveSuspendedCount > 0) ActiveSuspendedCount--;
+        ActiveRestoredCount++;
+
+        // 5. LiteDB 영속화
+        var record = _archiveManager.GetIncident(incidentId);
+        if (record != null)
+        {
+            record.VerdictAction = "ACTION_RESUME";
+            record.RemediationStatus = "RESTORED_MANUAL";
+            record.RemediationSteps.Add($"관리자 수동 동결 해제 완료 (PID: {pid})");
+            _archiveManager.SaveIncident(record, new List<ReActTraceRecord>());
+        }
+
+        // 6. 필터 및 뷰 동기화
+        ApplyFilter();
     }
 }

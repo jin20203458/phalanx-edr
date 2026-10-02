@@ -169,6 +169,45 @@
                         Foreground="{DynamicResource TextMutedBrush}"
                         Text="{Binding SelectedIncident.FormattedLatency, StringFormat='수사 지연: {0}'}" />
 
+                    <!--  수사 진행 중일 때 노출되는 취소 버튼  -->
+                    <Button
+                        Margin="0,0,8,0"
+                        Padding="10,5"
+                        Background="#7F1D1D"
+                        BorderBrush="#991B1B"
+                        Command="{Binding CancelInvestigationCommand}"
+                        CommandParameter="{Binding SelectedIncident.IncidentId}"
+                        Content="심층 조사 취소"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Foreground="#FCA5A5"
+                        Visibility="{Binding SelectedIncident.IsInvestigating, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                    <!--  동결 상태이면서 수사 중이 아닐 때 활성화되는 수동 처분 버튼  -->
+                    <Button
+                        Margin="0,0,8,0"
+                        Padding="10,5"
+                        Background="#DC2626"
+                        BorderThickness="0"
+                        Command="{Binding KillSelectedIncidentCommand}"
+                        Content="수동 사살"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Foreground="White"
+                        IsEnabled="{Binding SelectedIncident.CanManualActuate}" />
+
+                    <Button
+                        Margin="0,0,8,0"
+                        Padding="10,5"
+                        Background="#059669"
+                        BorderThickness="0"
+                        Command="{Binding ResumeSelectedIncidentCommand}"
+                        Content="동결 해제"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Foreground="White"
+                        IsEnabled="{Binding SelectedIncident.CanManualActuate}" />
+
                     <Button
                         Padding="12,5"
                         Command="{Binding ExportForensicPdfCommand}"

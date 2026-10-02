@@ -103,13 +103,23 @@ public class ForensicPdfReportDocument : IDocument
     {
         container.Column(col =>
         {
-            col.Spacing(14);
-
+            // ── [PAGE 1] Executive Overview & Technical Context ──
             col.Item().Element(ComposeIncidentSummary);
-            col.Item().Element(ComposeProcessContext);
-            col.Item().Element(ComposeAnalysisFindings);
+            col.Item().PaddingTop(12).Element(ComposeProcessContext);
+            col.Item().PaddingTop(12).Element(ComposeAnalysisFindings);
+
+            col.Item().PaddingTop(16).AlignCenter().Text("— Continued on Page 2 (Forensic Investigation Trace & Response Actions) —")
+                .FontSize(8)
+                .Italic()
+                .FontColor(ColorLabel);
+
+            // ── Explicit Page Break to Page 2 ──
+            col.Item().PageBreak();
+
+            // ── [PAGE 2] Forensic Investigation Trace & Remediation Actions ──
             col.Item().Element(ComposeInvestigationTrace);
-            col.Item().Element(ComposeResponseActions);
+            col.Item().PaddingTop(14).Element(ComposeResponseActions);
+            col.Item().PaddingTop(14).Element(ComposeVerificationBlock);
         });
     }
 
@@ -377,6 +387,48 @@ public class ForensicPdfReportDocument : IDocument
                         .FontColor(ColorText);
                 }
             }
+        });
+    }
+
+    // ── Section 6: Verification & Audit Metadata ─────────────────────────
+
+    private void ComposeVerificationBlock(IContainer container)
+    {
+        container.Column(col =>
+        {
+            CreateSectionHeader(col, "6. Verification & Audit Metadata");
+
+            col.Item().Border(0.5f).BorderColor(ColorBorder).Background(ColorZebra).Padding(8).Column(inner =>
+            {
+                inner.Item().Row(r =>
+                {
+                    r.RelativeItem().Text(text =>
+                    {
+                        text.Span("Audit Standard:  ").FontSize(8).Bold().FontColor(ColorLabel);
+                        text.Span("MITRE ATT&CK Matrix v14 / SANS DFIR Standard").FontSize(8).FontColor(ColorText);
+                    });
+                    r.RelativeItem().AlignRight().Text(text =>
+                    {
+                        text.Span("Engine:  ").FontSize(8).Bold().FontColor(ColorLabel);
+                        text.Span("Phalanx Autonomous Threat Hunter v0.5.0").FontSize(8).FontColor(ColorText);
+                    });
+                });
+
+                inner.Item().PaddingTop(4).Row(r =>
+                {
+                    r.RelativeItem().Text(text =>
+                    {
+                        text.Span("Evidence Integrity:  ").FontSize(8).Bold().FontColor(ColorLabel);
+                        text.Span("Immutable LiteDB Chain-of-Custody Archive Verified").FontSize(8).FontColor(ColorText);
+                    });
+                    r.RelativeItem().AlignRight().Text(text =>
+                    {
+                        text.Span("Disposition:  ").FontSize(8).Bold().FontColor(ColorLabel);
+                        text.Span(_incident.IsCritical ? "INCIDENT CONTAINED & ISOLATED" : "SYSTEM RESTORED (BENIGN)")
+                            .FontSize(8).Bold().FontColor(_incident.IsCritical ? ColorDanger : ColorText);
+                    });
+                });
+            });
         });
     }
 

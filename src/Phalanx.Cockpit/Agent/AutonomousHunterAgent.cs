@@ -739,22 +739,15 @@ public class AutonomousHunterAgent
             }
         }
 
-        // 2. 보조 도구 체인: 악성 확정(isMalicious) 시에만 방화벽 C2 차단 연동
+        // 2. 사후 완화 조치: 악성 확정(isMalicious) 시 방화벽 C2 차단 즉각 집행 (수사 추적 traces가 아닌 대응 조치로 분리)
+        string? firewallResultMsg = null;
         if (isMalicious && extractedIp != null && _tools.TryGetValue("SystemFirewallTool", out var fwTool))
         {
-            var fwThought = $"[Step {step} 추론] 식별된 외부 악성 C2 통신 IP '{extractedIp}'에 대해 방화벽 차단 룰을 집행합니다.";
             var fwRes = await fwTool.ExecuteAsync(new() { ["maliciousIp"] = extractedIp });
-            var fwTrace = new ReActTraceRecord
+            if (fwRes.Success)
             {
-                IncidentId = incidentId,
-                StepNumber = step++,
-                Thought = fwThought,
-                ActionTool = fwTool.Name,
-                ActionArgsJson = JsonSerializer.Serialize(new { maliciousIp = extractedIp }),
-                Observation = fwRes.Output
-            };
-            traces.Add(fwTrace);
-            OnReActStepProgress?.Invoke(incidentId, fwTrace);
+                firewallResultMsg = $"악성 C2 IP({extractedIp}) 전사 방화벽 인/아웃바운드 차단 집행 완료 (규칙명: Phalanx_EDR_Block_{extractedIp})";
+            }
         }
 
         string blockedIp = (isMalicious ? extractedIp : string.Empty) ?? string.Empty;
@@ -774,9 +767,15 @@ public class AutonomousHunterAgent
         sw.Stop();
 
         // 4. [LiteDB 영구 저장] 확신도 및 차단 IP 무결성 보장
-        var remediationSteps = latestDecision?.RemediationSteps ?? (isMalicious
-            ? new List<string> { "엔드포인트 네트워크 격리", "악성 C2 IP 방화벽 차단", "침해 계정 자격증명 초기화" }
+        var rawRemediation = latestDecision?.RemediationSteps ?? (isMalicious
+            ? new List<string> { "타깃 프로세스 원자적 영구 사살 (ACTION_KILL)", "엔드포인트 네트워크 격리", "침해 계정 자격증명 초기화" }
             : new List<string>());
+
+        var remediationSteps = new List<string>(rawRemediation);
+        if (!string.IsNullOrEmpty(firewallResultMsg))
+        {
+            remediationSteps.Insert(0, firewallResultMsg);
+        }
 
         var incidentRecord = new IncidentRecord
         {

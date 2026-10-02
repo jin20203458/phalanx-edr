@@ -408,31 +408,16 @@
                             Grid.Column="1"
                             VerticalAlignment="Top"
                             Orientation="Horizontal">
-                            <!--  수사 진행 중일 때 노출되는 취소 버튼 (공식 DangerActionButtonStyle 적용)  -->
+                            <!--  수사 진행 중일 때 노출되는 취소 버튼  -->
                             <Button
                                 Margin="0,0,8,0"
                                 Padding="12,5"
                                 Command="{Binding DataContext.CancelInvestigationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding SelectedIncident.IncidentId}"
+                                Content="조사 취소"
                                 Style="{StaticResource DangerActionButtonStyle}"
-                                ToolTip="진행 중인 AI 심층 수사를 즉시 취소하고 프로세스를 안전 동결(SUSPENDED) 상태로 유지합니다"
-                                Visibility="{Binding SelectedIncident.IsInvestigating, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <StackPanel Orientation="Horizontal">
-                                    <Path
-                                        Width="10"
-                                        Height="10"
-                                        Margin="0,0,6,0"
-                                        VerticalAlignment="Center"
-                                        Data="{StaticResource IconClose}"
-                                        Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                        StrokeThickness="1.5" />
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        FontSize="11"
-                                        FontWeight="SemiBold"
-                                        Text="심층 조사 취소" />
-                                </StackPanel>
-                            </Button>
+                                ToolTip="진행 중인 AI 조사를 즉시 취소하고 프로세스를 안전 동결(SUSPENDED) 상태로 유지합니다"
+                                Visibility="{Binding SelectedIncident.IsInvestigating, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
                             <Button
                                 Padding="14,8"

@@ -10,7 +10,8 @@ using Phalanx.Cockpit.ViewModels;
 
 /// <summary>
 /// QuestPDF 기반 A4 인시던트 포렌식 수사 보고서 레이아웃 구현체.
-/// 엔터프라이즈 DFIR 표준 규격의 단일 페이지 완결형(One-Page Executive Brief) 기술 문서.
+/// 엔터프라이즈 DFIR 표준 규격의 동적 적응형(Adaptive Dynamic Flow) 기술 문서.
+/// 3턴 이하의 사건은 단일 페이지로 단정하게 완결되며, 5턴 이상의 복잡한 사건은 단어 찢김 없이 안전하게 다면 확장됩니다.
 /// </summary>
 public class ForensicPdfReportDocument : IDocument
 {
@@ -104,7 +105,7 @@ public class ForensicPdfReportDocument : IDocument
     {
         container.Column(col =>
         {
-            col.Spacing(8);
+            col.Spacing(7);
 
             // 1. Incident Summary
             col.Item().Element(ComposeIncidentSummary);
@@ -118,11 +119,12 @@ public class ForensicPdfReportDocument : IDocument
             // 4. Investigation Trace (ReAct 멀티턴 감사 추적)
             col.Item().Element(ComposeInvestigationTrace);
 
-            // 5. Response Actions (침해 대응 조치 내역)
-            col.Item().Element(ComposeResponseActions);
+            // 5. Containment & Remediation Actions (자동 집행 vs 권장 조치 분리)
+            // 내용 증가 시 페이지 경계에서 어설프게 잘리지 않도록 ShowEntire로 안전하게 보호
+            col.Item().ShowEntire().Element(ComposeResponseActions);
 
             // 6. Verification & Audit Metadata (무결성 검증 블록)
-            col.Item().Element(ComposeVerificationBlock);
+            col.Item().ShowEntire().Element(ComposeVerificationBlock);
         });
     }
 
@@ -297,7 +299,7 @@ public class ForensicPdfReportDocument : IDocument
 
             col.Item().Table(table =>
             {
-                // 컬럼 폭 최적화: Tool(108pt - ThreatReputationTool 완벽 수용), Latency(48pt - 4925.8ms 완벽 수용)
+                // 컬럼 폭 최적화: Tool(108pt - ThreatReputationTool 완벽 수납), Latency(48pt - 4925.8ms 완벽 수납)
                 table.ColumnsDefinition(columns =>
                 {
                     columns.ConstantColumn(24);
@@ -334,7 +336,7 @@ public class ForensicPdfReportDocument : IDocument
                     // Step
                     AddTableCell(table, $"{trace.StepNumber}", rowBg, bold: true, breakAnywhere: false, center: true);
 
-                    // Tool (한 줄 완벽 수용)
+                    // Tool (한 줄 완벽 수납)
                     AddTableCell(table, trace.ActionTool ?? "-", rowBg, bold: true, breakAnywhere: false);
 
                     // Reasoning (한글/영문 단어 쪼개짐 방지: breakAnywhere = false)
@@ -343,7 +345,7 @@ public class ForensicPdfReportDocument : IDocument
                     // Observation (긴 URL/해시 포함 가능: breakAnywhere = true)
                     AddTableCell(table, string.IsNullOrWhiteSpace(trace.Observation) ? "-" : trace.Observation, rowBg, bold: false, breakAnywhere: true);
 
-                    // Latency (한 줄 완벽 수용)
+                    // Latency (한 줄 완벽 수납)
                     AddTableCell(table, $"{trace.ElapsedMs:F1}ms", rowBg, bold: false, breakAnywhere: false, center: false, right: true);
                 }
             });
@@ -366,35 +368,90 @@ public class ForensicPdfReportDocument : IDocument
         if (breakAnywhere) t.BreakAnywhere();
     }
 
-    // ── Section 5: Response Actions ──────────────────────────────────────
+    // ── Section 5: Containment & Remediation Actions ─────────────────────
 
     private void ComposeResponseActions(IContainer container)
     {
         container.Column(col =>
         {
-            CreateSectionHeader(col, "5. Response Actions");
+            CreateSectionHeader(col, "5. Containment & Remediation Actions");
 
-            if (_incident.RemediationSteps.Count == 0)
-            {
-                string defaultAction = _incident.IsCritical
-                    ? "1. Malicious process terminated.\n2. Residual volatile memory regions cleared.\n3. Incident record synchronized to central EDR database."
-                    : "1. Process unfrozen and restored to normal execution.\n2. Benign classification recorded in audit log.";
+            // Sub-block A: Automated Containment (EDR 시스템 자동 집행 완료)
+            col.Item().PaddingBottom(2).Text("[Automated Actions Taken (EDR 시스템 자동 집행 완료)]")
+                .FontSize(8.0f)
+                .Bold()
+                .FontColor(ColorText);
 
-                col.Item().Text(defaultAction)
-                    .FontSize(8.2f)
-                    .LineHeight(1.35f)
-                    .FontColor(ColorText);
-            }
-            else
+            col.Item().PaddingLeft(6).Column(autoCol =>
             {
-                int stepNum = 1;
-                foreach (var step in _incident.RemediationSteps)
+                string targetProcName = string.IsNullOrEmpty(_incident.TargetFileName) ? "프로세스" : _incident.TargetFileName;
+                bool isKill = _incident.VerdictAction.Equals("ACTION_KILL", StringComparison.OrdinalIgnoreCase);
+                bool isResume = _incident.VerdictAction.Equals("ACTION_RESUME", StringComparison.OrdinalIgnoreCase);
+
+                // 1) 프로세스 처분
+                string processActionText = isKill
+                    ? $"• 타깃 프로세스 '{targetProcName}' (PID: {_incident.TargetPid}) 즉각 사살 완료 (ACTION_KILL 집행)"
+                    : (isResume
+                        ? $"• 정상 프로세스 '{targetProcName}' (PID: {_incident.TargetPid}) 원자적 동결 해제 및 복구 완료 (ACTION_RESUME 집행)"
+                        : $"• 프로세스 '{targetProcName}' (PID: {_incident.TargetPid}) 선제 동결 상태 유지 (SUSPENDED)");
+
+                autoCol.Item().PaddingBottom(1.5f).Text(processActionText)
+                    .FontSize(7.8f)
+                    .FontColor(isKill ? ColorDanger : ColorText);
+
+                // 2) 네트워크 방화벽 차단 실적
+                if (_incident.HasBlockedIp)
                 {
-                    col.Item().PaddingBottom(1.5f).Text($"{stepNum++}. {step}")
-                        .FontSize(8.2f)
+                    autoCol.Item().PaddingBottom(1.5f).Text($"• 악성 C2 네트워크 '{_incident.BlockedIp}' 전사 방화벽 인/아웃바운드 차단 집행 완료 (규칙: Phalanx_EDR_Block_{_incident.BlockedIp})")
+                        .FontSize(7.8f)
+                        .FontColor(ColorDanger);
+                }
+
+                // 3) 휘발성 메모리 및 감사 보존
+                autoCol.Item().PaddingBottom(1.5f).Text(isKill
+                    ? "• 타깃 프로세스 잔류 가상 메모리(VAD) 영역 정밀 회수 및 LiteDB 포렌식 증적 영구 보관"
+                    : "• 시스템 감사 로그에 프로세스 무해성 입증 증적 영구 보관")
+                    .FontSize(7.8f)
+                    .FontColor(ColorLabel);
+            });
+
+            // Sub-block B: Recommended Follow-up Actions (보안 관제팀 권장 후속 조치)
+            col.Item().PaddingTop(4).PaddingBottom(2).Text("[Recommended Follow-up Actions (보안 관제팀 권장 후속 조치)]")
+                .FontSize(8.0f)
+                .Bold()
+                .FontColor(ColorLabel);
+
+            col.Item().PaddingLeft(6).Column(recCol =>
+            {
+                // _incident.RemediationSteps에서 중복된 방화벽/사살 항목을 제외하고 순수 권장 사항만 추출
+                var recommendations = _incident.RemediationSteps
+                    .Where(s => !s.Contains("방화벽", StringComparison.OrdinalIgnoreCase) &&
+                                !s.Contains("firewall", StringComparison.OrdinalIgnoreCase) &&
+                                !s.Contains("사살", StringComparison.OrdinalIgnoreCase) &&
+                                !s.Contains("terminate", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (recommendations.Count == 0)
+                {
+                    if (_incident.IsCritical)
+                    {
+                        recommendations.Add("침해 유입 경로(발신 이메일, 첨부파일, 브라우저 다운로드 원본) 격리 및 전사 위협 헌팅");
+                        recommendations.Add("해당 엔드포인트 전수 정밀 백신 검사 수행 및 침해 의심 계정 자격증명 초기화");
+                    }
+                    else
+                    {
+                        recommendations.Add("특이 사항 없음 - 정상 업무 프로세스로 확인되어 일상 보안 모니터링 유지");
+                    }
+                }
+
+                int stepNum = 1;
+                foreach (var rec in recommendations)
+                {
+                    recCol.Item().PaddingBottom(1.5f).Text($"{stepNum++}. {rec}")
+                        .FontSize(7.8f)
                         .FontColor(ColorText);
                 }
-            }
+            });
         });
     }
 

@@ -277,4 +277,70 @@ public class ForensicPdfReportGeneratorTests
         int pageMatches = System.Text.RegularExpressions.Regex.Matches(pdfText, @"/Type\s*/Page\b").Count;
         Assert.Equal(1, pageMatches); // 단일 페이지 완결 검증!
     }
+
+    [Fact]
+    public void GenerateReportBytes_WithComplexMultiTurnIncident_ExpandsToMultiPageSafely()
+    {
+        // 1. Arrange - 6턴 이상의 복잡한 침해사고 시나리오
+        var incident = new IncidentItemViewModel
+        {
+            IncidentId = "INC-COMPLEX-001",
+            Timestamp = DateTime.UtcNow,
+            TargetPid = 54321,
+            TargetImage = @"C:\Windows\System32\powershell.exe",
+            CommandLine = "powershell.exe -w hidden -enc JABjAGwAYQBzAHMAIAA9ACAATgBlAHcALQBPAGIAagBlAGMAdAAgAE4AZQB0AC4AVwBlAGIAQwBsAGkAZQBuAHQAOw...",
+            ParentPid = 1000,
+            ParentImage = @"C:\Windows\explorer.exe",
+            VerdictAction = "ACTION_KILL",
+            StatusSeverity = "CRITICAL",
+            ConfidenceScore = 0.99,
+            SummaryTitle = "Complex Advanced Multi-Stage APT Attack Detection",
+            Narrative = "다단계 악성 페이로드 해독, 파일 Authenticode 서명 검사, 인메모리 DLL 인젝션 스캔, 레지스트리 COM 하이재킹 분석, C2 네트워크 평판 조회를 순차 수행하여 국가 배후 공격 그룹의 회피형 지속성 침투를 확증하고 사살 조치하였습니다.",
+            BlockedIp = "185.220.101.5",
+            ElapsedMs = 45210.0
+        };
+        incident.MitreTactics.Add("T1566.001");
+        incident.MitreTactics.Add("T1059.001");
+        incident.MitreTactics.Add("T1055");
+        incident.MitreTactics.Add("T1547.001");
+        incident.MitreTactics.Add("T1071.001");
+
+        for (int i = 1; i <= 10; i++)
+        {
+            incident.Traces.Add(new ReActStepViewModel
+            {
+                StepNumber = i,
+                ActionTool = (i % 6) switch
+                {
+                    1 => "DecodePayloadTool",
+                    2 => "FileInspectionTool",
+                    3 => "ProcessMemoryScanTool",
+                    4 => "RegistryInspectionTool",
+                    5 => "ThreatReputationTool",
+                    _ => "MitreClassifierTool"
+                },
+                Thought = $"단계 {i}: 공격자의 다차원 은닉 행위를 조사하기 위해 도구를 호출하고 결과를 검증합니다. 심층 추론 분석을 수행하여 침해 지표를 확증합니다.",
+                Observation = $"[도구 {i} 실행 결과] 관측 지표 및 위협 신호가 식별되었습니다. 파일 해시, 레지스트리 키, 메모리 주소 및 외부 통신 지표가 분석되었습니다.",
+                ElapsedMs = 2000.0 + i * 500
+            });
+        }
+
+        incident.RemediationSteps.Add("1. 악성 C2 IP 차단 완료");
+        incident.RemediationSteps.Add("2. 타깃 프로세스 강제 사살");
+        incident.RemediationSteps.Add("3. 레지스트리 지속성 Run 키 삭제");
+        incident.RemediationSteps.Add("4. 엔드포인트 네트워크 격리 및 계정 초기화");
+
+        var generator = new ForensicPdfReportGenerator();
+
+        // 2. Act
+        byte[] bytes = generator.GenerateReportBytes(incident);
+
+        // 3. Assert
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 3072);
+
+        string pdfText = System.Text.Encoding.Latin1.GetString(bytes);
+        int pageMatches = System.Text.RegularExpressions.Regex.Matches(pdfText, @"/Type\s*/Page\b").Count;
+        Assert.True(pageMatches >= 2, $"10턴 이상의 대형 침해사고는 안전하게 2페이지 이상으로 확장되어야 합니다. 실제: {pageMatches}");
+    }
 }

@@ -353,8 +353,24 @@
                                         <TextBlock
                                             FontSize="10"
                                             FontWeight="Bold"
-                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                            Text="{Binding SelectedProcessNode.Status}" />
+                                            Text="{Binding SelectedProcessNode.Status}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SelectedProcessNode.IsTerminated}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SelectedProcessNode.IsSuspended}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource SeveritySuspendedTextBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding SelectedProcessNode.IsRestored}" Value="True">
+                                                            <Setter Property="Foreground" Value="{DynamicResource SeverityBenignTextBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </Border>
                                 </Grid>
 
@@ -471,17 +487,24 @@
                                 <Button
                                     Padding="8,6"
                                     Command="{Binding SuspendSelectedProcessCommand}"
-                                    Content="원자적 동결 (Suspend)"
-                                    ToolTip="NtSuspendProcess 시스템 콜을 통해 프로세스를 즉각 동결합니다 (24μs)">
+                                    Content="원자적 동결 (Suspend)">
                                     <Button.Style>
                                         <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
                                             <Setter Property="Visibility" Value="Visible" />
+                                            <Setter Property="ToolTip" Value="NtSuspendProcess 시스템 콜을 통해 프로세스를 즉각 동결합니다 (24μs)" />
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding SelectedProcessNode.IsSuspended}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding SelectedProcessNode.IsAlive}" Value="False">
                                                     <Setter Property="IsEnabled" Value="False" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SelectedProcessNode.IsTerminated}" Value="True">
+                                                    <Setter Property="IsEnabled" Value="False" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SelectedProcessNode.IsInvestigating}" Value="True">
+                                                    <Setter Property="IsEnabled" Value="False" />
+                                                    <Setter Property="ToolTip" Value="AI 심층 수사가 진행 중입니다. (수사 완료 또는 취소 후 수동 제어 가능)" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -492,17 +515,26 @@
                                 <Button
                                     Padding="8,6"
                                     Command="{Binding ResumeSelectedProcessCommand}"
-                                    Content="동결 해제 (Resume)"
-                                    ToolTip="NtResumeProcess 시스템 콜을 통해 프로세스 실행을 즉각 재개합니다">
+                                    Content="동결 해제 (Resume)">
                                     <Button.Style>
                                         <Style BasedOn="{StaticResource CapsuleFilterButtonStyle}" TargetType="Button">
                                             <Setter Property="Visibility" Value="Collapsed" />
+                                            <Setter Property="ToolTip" Value="NtResumeProcess 시스템 콜을 통해 프로세스 실행을 즉각 재개합니다" />
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding SelectedProcessNode.IsSuspended}" Value="True">
                                                     <Setter Property="Visibility" Value="Visible" />
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding SelectedProcessNode.IsAlive}" Value="False">
                                                     <Setter Property="IsEnabled" Value="False" />
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SelectedProcessNode.IsTerminated}" Value="True">
+                                                    <Setter Property="IsEnabled" Value="False" />
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SelectedProcessNode.IsInvestigating}" Value="True">
+                                                    <Setter Property="IsEnabled" Value="False" />
+                                                    <Setter Property="ToolTip" Value="AI 심층 수사가 진행 중입니다. (수사 완료 또는 취소 후 수동 제어 가능)" />
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -515,13 +547,22 @@
                                 Grid.Column="2"
                                 Padding="8,6"
                                 Command="{Binding TerminateSelectedProcessCommand}"
-                                Content="프로세스 사살 (Kill)"
-                                ToolTip="NtTerminateProcess 시스템 콜을 통해 프로세스를 강제 종료합니다">
+                                Content="프로세스 사살 (Kill)">
                                 <Button.Style>
                                     <Style BasedOn="{StaticResource DangerActionButtonStyle}" TargetType="Button">
+                                        <Setter Property="ToolTip" Value="NtTerminateProcess 시스템 콜을 통해 프로세스를 강제 종료합니다" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding SelectedProcessNode.IsAlive}" Value="False">
                                                 <Setter Property="IsEnabled" Value="False" />
+                                                <Setter Property="ToolTip" Value="이미 종료되었거나 사살된 프로세스입니다." />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SelectedProcessNode.IsTerminated}" Value="True">
+                                                <Setter Property="IsEnabled" Value="False" />
+                                                <Setter Property="ToolTip" Value="이미 현장 사살된 프로세스입니다." />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SelectedProcessNode.IsInvestigating}" Value="True">
+                                                <Setter Property="IsEnabled" Value="False" />
+                                                <Setter Property="ToolTip" Value="AI 심층 수사가 진행 중입니다. (수사 완료 또는 취소 후 수동 제어 가능)" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>

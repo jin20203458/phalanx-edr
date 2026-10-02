@@ -329,4 +329,187 @@ public class MainViewModelCancellationTests
         Assert.Equal(targetPid, dispatchedCommand.TargetPid);
         Assert.True(targetNode.IsTerminated);
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestInvestigationCompleted_WhenTerminated_UpdatesProcessNodeToTerminatedAndDisablesButtons()
+    {
+        // Arrange
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var treeManager = new ProcessTreeProjectionManager();
+        var uiBridge = new CockpitUiBridge();
+        MitigationCommand? dispatchedCommand = null;
+        uiBridge.ManualCommandSender = cmd =>
+        {
+            dispatchedCommand = cmd;
+            return Task.CompletedTask;
+        };
+
+        var vm = new MainViewModel(archiveManager, treeManager, uiBridge);
+        uint targetPid = 9999;
+        string incidentId = "INC-TEST-KILL-STATE-001";
+
+        treeManager.ApplySnapshotBatch(new[]
+        {
+            new ProcessEvent
+            {
+                ProcessId = targetPid,
+                ParentProcessId = 1000,
+                ImageName = "powershell.exe",
+                CommandLine = "powershell.exe -enc malicious",
+                IsSuspended = true,
+                Lifecycle = ProcessLifecycle.LifecycleSuspended
+            }
+        });
+
+        var targetNode = treeManager.FindNodeByPid(targetPid);
+        Assert.NotNull(targetNode);
+
+        // 1. 수사 시작: targetNode 상태 검증
+        uiBridge.NotifyInvestigationStarted(targetNode, incidentId);
+        vm.SelectedProcessNode = targetNode;
+
+        Assert.True(targetNode.IsInvestigating);
+        Assert.True(targetNode.IsSuspended);
+        Assert.True(targetNode.IsAlive);
+        Assert.False(targetNode.IsTerminated);
+        Assert.Equal("[원자적 동결 (수사 중)]", targetNode.Status);
+
+        // 2. 수사 중 상태에서 수동 제어 시도 -> 가드에 의해 전송 차단 검증
+        await vm.SuspendSelectedProcessCommand.ExecuteAsync(null);
+        Assert.Null(dispatchedCommand);
+        await vm.ResumeSelectedProcessCommand.ExecuteAsync(null);
+        Assert.Null(dispatchedCommand);
+        await vm.TerminateSelectedProcessCommand.ExecuteAsync(null);
+        Assert.Null(dispatchedCommand);
+
+        // 3. AI 수사 완료 및 사살(ActionKill) 인입
+        var killRecord = new IncidentRecord
+        {
+            IncidentId = incidentId,
+            TargetPid = targetPid,
+            TargetImage = "powershell.exe",
+            CommandLine = "powershell.exe -enc malicious",
+            VerdictAction = "ACTION_KILL",
+            RemediationStatus = "SECURED"
+        };
+        var killResult = new InvestigationResult(
+            incidentId,
+            ActionType.ActionKill,
+            0.99,
+            "악성 파워셸 사살",
+            "사살 서사",
+            new List<string>(),
+            string.Empty,
+            new List<ReActTraceRecord>(),
+            TimeSpan.FromMilliseconds(200),
+            killRecord,
+            killRecord.RemediationSteps
+        );
+
+        uiBridge.NotifyInvestigationCompleted(killResult);
+
+        // 4. 불변식 검증: targetNode가 현장 사살 상태로 전이되어야 함
+        Assert.False(targetNode.IsInvestigating);
+        Assert.False(targetNode.IsAlive);
+        Assert.False(targetNode.IsSuspended);
+        Assert.True(targetNode.IsTerminated);
+        Assert.Equal("[현장 사살]", targetNode.Status);
+
+        // 5. 사살 완료 후 수동 동결/해제/사살 명령 재시도 -> 전부 차단 검증
+        dispatchedCommand = null;
+        await vm.SuspendSelectedProcessCommand.ExecuteAsync(null);
+        Assert.Null(dispatchedCommand);
+        await vm.ResumeSelectedProcessCommand.ExecuteAsync(null);
+        Assert.Null(dispatchedCommand);
+        await vm.TerminateSelectedProcessCommand.ExecuteAsync(null);
+        Assert.Null(dispatchedCommand);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public async Task TestInvestigationCompleted_WhenResumed_UpdatesProcessNodeToRestoredAndEnablesSuspend()
+    {
+        // Arrange
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var treeManager = new ProcessTreeProjectionManager();
+        var uiBridge = new CockpitUiBridge();
+        MitigationCommand? dispatchedCommand = null;
+        uiBridge.ManualCommandSender = cmd =>
+        {
+            dispatchedCommand = cmd;
+            return Task.CompletedTask;
+        };
+
+        var vm = new MainViewModel(archiveManager, treeManager, uiBridge);
+        uint targetPid = 8888;
+        string incidentId = "INC-TEST-RESUME-STATE-001";
+
+        treeManager.ApplySnapshotBatch(new[]
+        {
+            new ProcessEvent
+            {
+                ProcessId = targetPid,
+                ParentProcessId = 1000,
+                ImageName = "benign_task.exe",
+                CommandLine = "benign_task.exe --check",
+                IsSuspended = true,
+                Lifecycle = ProcessLifecycle.LifecycleSuspended
+            }
+        });
+
+        var targetNode = treeManager.FindNodeByPid(targetPid);
+        Assert.NotNull(targetNode);
+
+        // 1. 수사 시작
+        uiBridge.NotifyInvestigationStarted(targetNode, incidentId);
+        vm.SelectedProcessNode = targetNode;
+        Assert.True(targetNode.IsInvestigating);
+        Assert.Equal("[원자적 동결 (수사 중)]", targetNode.Status);
+
+        // 2. AI 수사 완료 (정상 판정 복구 ActionResume)
+        var resumeRecord = new IncidentRecord
+        {
+            IncidentId = incidentId,
+            TargetPid = targetPid,
+            TargetImage = "benign_task.exe",
+            CommandLine = "benign_task.exe --check",
+            VerdictAction = "ACTION_RESUME",
+            RemediationStatus = "RESTORED"
+        };
+        var resumeResult = new InvestigationResult(
+            incidentId,
+            ActionType.ActionResume,
+            0.98,
+            "정상 작업 복구",
+            "복구 서사",
+            new List<string>(),
+            string.Empty,
+            new List<ReActTraceRecord>(),
+            TimeSpan.FromMilliseconds(120),
+            resumeRecord,
+            resumeRecord.RemediationSteps
+        );
+
+        uiBridge.NotifyInvestigationCompleted(resumeResult);
+
+        // 3. 상태 전이 검증: 실시간 가동 중으로 복원
+        Assert.False(targetNode.IsInvestigating);
+        Assert.True(targetNode.IsAlive);
+        Assert.False(targetNode.IsSuspended);
+        Assert.True(targetNode.IsRestored);
+        Assert.False(targetNode.IsTerminated);
+        Assert.Equal("[실시간 가동 중]", targetNode.Status);
+
+        // 4. 가동 중이므로 동결(Suspend) 가능, 동결 해제(Resume)는 이미 해제되었으므로 차단
+        dispatchedCommand = null;
+        await vm.ResumeSelectedProcessCommand.ExecuteAsync(null);
+        Assert.Null(dispatchedCommand); // 이미 가동 중이므로 무시
+
+        await vm.SuspendSelectedProcessCommand.ExecuteAsync(null);
+        Assert.NotNull(dispatchedCommand);
+        Assert.Equal(ActionType.ActionSuspend, dispatchedCommand.Action);
+        Assert.Equal(targetPid, dispatchedCommand.TargetPid);
+        Assert.True(targetNode.IsSuspended);
+    }
 }

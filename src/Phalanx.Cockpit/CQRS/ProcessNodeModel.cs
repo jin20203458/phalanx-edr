@@ -81,6 +81,9 @@ public partial class ProcessNodeModel : ObservableObject
     private bool _isRestored;
 
     [ObservableProperty]
+    private bool _isInvestigating;
+
+    [ObservableProperty]
     private ProcessLifecycle _lifecycle = ProcessLifecycle.LifecycleUnknown;
 
     [ObservableProperty]
@@ -90,9 +93,51 @@ public partial class ProcessNodeModel : ObservableObject
 
     partial void OnStatusBadgeChanged(string value) => OnPropertyChanged(nameof(Status));
 
+    partial void OnIsAliveChanged(bool value) => RefreshStatusBadge();
+    partial void OnIsSuspendedChanged(bool value) => RefreshStatusBadge();
+    partial void OnIsTerminatedChanged(bool value) => RefreshStatusBadge();
+    partial void OnIsRestoredChanged(bool value) => RefreshStatusBadge();
+    partial void OnIsInvestigatingChanged(bool value) => RefreshStatusBadge();
+    partial void OnLifecycleChanged(ProcessLifecycle value) => RefreshStatusBadge();
+
     public ObservableCollection<ProcessNodeModel> Children { get; } = new();
 
     public ProcessNodeModel? Parent { get; set; }
+
+    public void RefreshStatusBadge()
+    {
+        if (IsTerminated || Lifecycle == ProcessLifecycle.LifecycleTerminated)
+        {
+            if (IsAlive) IsAlive = false;
+            if (IsSuspended) IsSuspended = false;
+            if (IsInvestigating) IsInvestigating = false;
+            StatusBadge = "[현장 사살]";
+        }
+        else if (Lifecycle == ProcessLifecycle.LifecycleStop)
+        {
+            if (IsAlive) IsAlive = false;
+            if (IsSuspended) IsSuspended = false;
+            if (IsInvestigating) IsInvestigating = false;
+            StatusBadge = "[정상 종료]";
+        }
+        else if (IsInvestigating)
+        {
+            if (!IsSuspended) IsSuspended = true;
+            StatusBadge = "[원자적 동결 (수사 중)]";
+        }
+        else if (IsSuspended)
+        {
+            StatusBadge = "[원자적 동결 (수동 대기)]";
+        }
+        else if (Lifecycle == ProcessLifecycle.LifecycleSnapshot)
+        {
+            StatusBadge = "[기저 프로세스]";
+        }
+        else
+        {
+            StatusBadge = "[실시간 가동 중]";
+        }
+    }
 
     public void UpdateStatus(ProcessLifecycle lifecycle, bool isSuspended = false, bool isTerminated = false)
     {
@@ -104,26 +149,9 @@ public partial class ProcessNodeModel : ObservableObject
         {
             IsAlive = false;
             IsRestored = false;
-            StatusBadge = "[현장 사살]";
+            IsInvestigating = false;
         }
-        else if (isSuspended || lifecycle == ProcessLifecycle.LifecycleSuspended)
-        {
-            IsRestored = false;
-            StatusBadge = "[원자적 동결 (수사 중)]";
-        }
-        else if (lifecycle == ProcessLifecycle.LifecycleStop)
-        {
-            IsAlive = false;
-            IsRestored = false;
-            StatusBadge = "[정상 종료]";
-        }
-        else if (lifecycle == ProcessLifecycle.LifecycleSnapshot)
-        {
-            StatusBadge = "[기저 프로세스]";
-        }
-        else
-        {
-            StatusBadge = "[실시간 가동 중]";
-        }
+
+        RefreshStatusBadge();
     }
 }

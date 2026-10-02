@@ -472,6 +472,9 @@ public partial class MainViewModel : ObservableObject
             ActiveRestoredCount--;
         }
         targetNode.IsRestored = false;
+        targetNode.IsSuspended = true;
+        targetNode.IsInvestigating = true;
+        targetNode.RefreshStatusBadge();
         ActiveSuspendedCount++;
 
         string parentImg = _treeManager.FindActiveNodeByPid(targetNode.ParentProcessId)?.ImageName ?? "System";
@@ -545,17 +548,24 @@ public partial class MainViewModel : ObservableObject
         {
             if (targetNode != null)
             {
+                targetNode.IsInvestigating = false;
                 targetNode.IsSuspended = true;
                 targetNode.IsRestored = false;
                 targetNode.IsTerminated = false;
+                targetNode.IsAlive = true;
+                targetNode.RefreshStatusBadge();
             }
         }
         else if (isKill)
         {
             if (targetNode != null)
             {
+                targetNode.IsInvestigating = false;
+                targetNode.IsAlive = false;
+                targetNode.IsSuspended = false;
                 targetNode.IsRestored = false;
                 targetNode.IsTerminated = true;
+                targetNode.UpdateStatus(ProcessLifecycle.LifecycleTerminated, isSuspended: false, isTerminated: true);
             }
             TotalTerminatedCount++;
         }
@@ -563,8 +573,12 @@ public partial class MainViewModel : ObservableObject
         {
             if (targetNode != null)
             {
-                targetNode.IsRestored = true;
+                targetNode.IsInvestigating = false;
+                targetNode.IsAlive = true;
                 targetNode.IsSuspended = false;
+                targetNode.IsRestored = true;
+                targetNode.IsTerminated = false;
+                targetNode.UpdateStatus(ProcessLifecycle.LifecycleStart, isSuspended: false, isTerminated: false);
             }
             ActiveRestoredCount++;
         }
@@ -949,7 +963,7 @@ public partial class MainViewModel : ObservableObject
     private async Task SuspendSelectedProcessAsync()
     {
         var node = SelectedProcessNode;
-        if (node == null || !node.IsAlive) return;
+        if (node == null || !node.IsAlive || node.IsSuspended || node.IsInvestigating) return;
         bool wasSuspended = node.IsSuspended;
         bool wasRestored = node.IsRestored;
         var cmd = new MitigationCommand
@@ -976,7 +990,7 @@ public partial class MainViewModel : ObservableObject
     private async Task ResumeSelectedProcessAsync()
     {
         var node = SelectedProcessNode;
-        if (node == null || !node.IsAlive) return;
+        if (node == null || !node.IsAlive || !node.IsSuspended || node.IsInvestigating) return;
         bool wasSuspended = node.IsSuspended;
         var cmd = new MitigationCommand
         {
@@ -1001,7 +1015,7 @@ public partial class MainViewModel : ObservableObject
     private async Task TerminateSelectedProcessAsync()
     {
         var node = SelectedProcessNode;
-        if (node == null || !node.IsAlive) return;
+        if (node == null || !node.IsAlive || node.IsTerminated || node.IsInvestigating) return;
         bool wasSuspended = node.IsSuspended;
         bool wasRestored = node.IsRestored;
         var cmd = new MitigationCommand
@@ -1458,8 +1472,11 @@ public partial class MainViewModel : ObservableObject
         var node = _treeManager.FindNodeByPid(pid);
         if (node != null)
         {
-            node.IsTerminated = true;
+            node.IsInvestigating = false;
+            node.IsAlive = false;
             node.IsSuspended = false;
+            node.IsTerminated = true;
+            node.UpdateStatus(ProcessLifecycle.LifecycleTerminated, isSuspended: false, isTerminated: true);
         }
 
         // 3. 뷰모델 상태 갱신
@@ -1507,8 +1524,12 @@ public partial class MainViewModel : ObservableObject
         var node = _treeManager.FindNodeByPid(pid);
         if (node != null)
         {
-            node.IsRestored = true;
+            node.IsInvestigating = false;
+            node.IsAlive = true;
             node.IsSuspended = false;
+            node.IsRestored = true;
+            node.IsTerminated = false;
+            node.UpdateStatus(ProcessLifecycle.LifecycleStart, isSuspended: false, isTerminated: false);
         }
 
         // 3. 뷰모델 상태 갱신

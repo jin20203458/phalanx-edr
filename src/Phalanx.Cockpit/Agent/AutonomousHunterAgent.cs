@@ -337,6 +337,12 @@ public class AutonomousHunterAgent
     {
         string incidentId = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
 
+        targetNode.IsInvestigating = false;
+        targetNode.IsAlive = false;
+        targetNode.IsSuspended = false;
+        targetNode.IsTerminated = true;
+        targetNode.UpdateStatus(ProcessLifecycle.LifecycleTerminated, isSuspended: false, isTerminated: true);
+
         string ruleReason = targetNode.CommandLine.Contains("shadows", StringComparison.OrdinalIgnoreCase)
             ? "KILL_VSSADMIN_DELETE_SHADOWS (랜섬웨어 볼륨 섀도 복사본 파괴 차단)"
             : targetNode.CommandLine.Contains("recoveryenabled", StringComparison.OrdinalIgnoreCase)

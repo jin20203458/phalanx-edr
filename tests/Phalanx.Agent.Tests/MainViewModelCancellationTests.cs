@@ -512,4 +512,93 @@ public class MainViewModelCancellationTests
         Assert.Equal(targetPid, dispatchedCommand.TargetPid);
         Assert.True(targetNode.IsSuspended);
     }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void TestInvestigationStarted_WhenBrowsingInvestigationView_PreservesCurrentSelectedIncident()
+    {
+        // Arrange
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var treeManager = new ProcessTreeProjectionManager();
+        var uiBridge = new CockpitUiBridge();
+        var vm = new MainViewModel(archiveManager, treeManager, uiBridge);
+
+        var nodeA = new ProcessNodeModel { ProcessId = 1111, ImageName = "incident_a.exe", CommandLine = "incident_a.exe" };
+        var nodeB = new ProcessNodeModel { ProcessId = 2222, ImageName = "incident_b.exe", CommandLine = "incident_b.exe" };
+
+        // 1. 사건 A 수사 시작 및 관제사가 심층 수사실(InvestigationView)에서 사건 A를 열람 중
+        uiBridge.NotifyInvestigationStarted(nodeA, "INC-AAA-001");
+        vm.CurrentView = CockpitViewType.Investigation;
+        var selectedBefore = vm.SelectedIncident;
+        Assert.NotNull(selectedBefore);
+        Assert.Equal("INC-AAA-001", selectedBefore.IncidentId);
+
+        // 2. 다른 새로운 위협 사건 B의 수사가 백그라운드에서 인입
+        uiBridge.NotifyInvestigationStarted(nodeB, "INC-BBB-002");
+
+        // 3. 불변식 검증: 관제사의 포렌식 화면이 전환되지 않고 기존 사건 A가 그대로 유지되어야 함
+        Assert.NotNull(vm.SelectedIncident);
+        Assert.Equal("INC-AAA-001", vm.SelectedIncident.IncidentId);
+        Assert.Equal(selectedBefore, vm.SelectedIncident);
+
+        // 사건 목록에는 2개 모두 정상 적재되어 있어야 함
+        Assert.Equal(2, vm.Incidents.Count);
+        Assert.Equal("INC-BBB-002", vm.Incidents[0].IncidentId);
+        Assert.Equal("INC-AAA-001", vm.Incidents[1].IncidentId);
+    }
+
+    [Fact]
+    [Trait("Category", "Unit")]
+    public void TestInvestigationCompleted_WhenBrowsingDifferentIncident_PreservesCurrentSelectedIncident()
+    {
+        // Arrange
+        var archiveManager = ForensicArchiveManager.CreateInMemory();
+        var treeManager = new ProcessTreeProjectionManager();
+        var uiBridge = new CockpitUiBridge();
+        var vm = new MainViewModel(archiveManager, treeManager, uiBridge);
+
+        var nodeA = new ProcessNodeModel { ProcessId = 3333, ImageName = "viewing_a.exe", CommandLine = "viewing_a.exe" };
+        var nodeB = new ProcessNodeModel { ProcessId = 4444, ImageName = "background_b.exe", CommandLine = "background_b.exe" };
+
+        uiBridge.NotifyInvestigationStarted(nodeA, "INC-VIEWING-A");
+        uiBridge.NotifyInvestigationStarted(nodeB, "INC-BACKGROUND-B");
+
+        // 관제사가 사건 A를 열람 중
+        var itemA = vm.Incidents.First(x => x.IncidentId == "INC-VIEWING-A");
+        vm.SelectedIncident = itemA;
+        vm.CurrentView = CockpitViewType.Investigation;
+
+        // 사건 B의 AI 수사가 완료되어 알림 인입
+        var recordB = new IncidentRecord
+        {
+            IncidentId = "INC-BACKGROUND-B",
+            TargetPid = 4444,
+            TargetImage = "background_b.exe",
+            VerdictAction = "ACTION_KILL",
+            RemediationStatus = "SECURED"
+        };
+        var resultB = new InvestigationResult(
+            "INC-BACKGROUND-B",
+            ActionType.ActionKill,
+            0.99,
+            "B 사살",
+            "서사",
+            new List<string>(),
+            string.Empty,
+            new List<ReActTraceRecord>(),
+            TimeSpan.FromMilliseconds(50),
+            recordB,
+            recordB.RemediationSteps
+        );
+        uiBridge.NotifyInvestigationCompleted(resultB);
+
+        // 불변식 검증: 관제사의 포렌식 화면(사건 A)이 사건 B로 바뀌지 않고 그대로 보존되어야 함
+        Assert.NotNull(vm.SelectedIncident);
+        Assert.Equal("INC-VIEWING-A", vm.SelectedIncident.IncidentId);
+
+        // 사건 B의 상태는 목록에서 정상적으로 사살 상태로 갱신되어 있어야 함
+        var itemB = vm.Incidents.First(x => x.IncidentId == "INC-BACKGROUND-B");
+        Assert.Equal("ACTION_KILL", itemB.VerdictAction);
+        Assert.Equal("CRITICAL", itemB.StatusSeverity);
+    }
 }

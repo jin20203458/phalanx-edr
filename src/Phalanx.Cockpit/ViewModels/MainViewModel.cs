@@ -500,8 +500,11 @@ public partial class MainViewModel : ObservableObject
         Incidents.Insert(0, item);
         ApplyFilter();
 
-        // 새로 수사 시작된 항목을 기본 선택
-        SelectedIncident = item;
+        // 관제사가 심층 수사실(InvestigationView)에서 기존 사건을 분석 중일 때는 포렌식 조사 연속성을 위해 화면 유지
+        if (CurrentView != CockpitViewType.Investigation || SelectedIncident == null)
+        {
+            SelectedIncident = item;
+        }
         StartInvestigationTimer();
     }
 
@@ -650,8 +653,12 @@ public partial class MainViewModel : ObservableObject
         }
 
         ApplyFilter();
-        SelectedIncident = existing;
-        OnPropertyChanged(nameof(SelectedIncident));
+        // 관제사가 다른 사건을 열람 중인 경우 화면 가로채기 방지 (완료된 사건과 일치하거나 선택이 없을 때만 갱신)
+        if (SelectedIncident == null || SelectedIncident.IncidentId == existing.IncidentId)
+        {
+            SelectedIncident = existing;
+            OnPropertyChanged(nameof(SelectedIncident));
+        }
         ExportForensicPdfCommand.NotifyCanExecuteChanged();
     }
 

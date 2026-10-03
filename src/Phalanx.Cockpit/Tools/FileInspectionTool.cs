@@ -577,7 +577,7 @@ public sealed class FileInspectionTool : IInvestigationTool
 
     #region DLL Search Order Hijacking / Sideloading (T1574.002) 정밀 분석
 
-    private static readonly HashSet<string> KnownSideloadCandidateDlls = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> KnownSideloadCandidateDlls = new(StringComparer.OrdinalIgnoreCase)
     {
         "version.dll", "cryptbase.dll", "uxtheme.dll", "dwmapi.dll", "shcore.dll",
         "winmm.dll", "userenv.dll", "netapi32.dll", "dbghelp.dll", "wtsapi32.dll",

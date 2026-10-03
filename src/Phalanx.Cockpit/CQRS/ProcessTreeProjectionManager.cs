@@ -18,7 +18,6 @@ public class ProcessTreeProjectionManager
     private readonly object _syncLock = new();
 
     private readonly HashSet<ulong> _rootNodeGuids = new();
-    private readonly HashSet<ulong> _allNodeGuids = new();
     private readonly HashSet<ulong> _visibleNodeGuids = new();
 
     /// <summary>
@@ -27,18 +26,15 @@ public class ProcessTreeProjectionManager
     public ObservableCollection<ProcessNodeModel> RootNodes { get; } = new();
 
     /// <summary>
-    /// 전체 노드 플랫 컬렉션
+    /// 전체 노드 읽기 전용 컬렉션 (하위 호환 뷰)
     /// </summary>
-    public ObservableCollection<ProcessNodeModel> AllNodes { get; } = new();
+    public ICollection<ProcessNodeModel> AllNodes => _nodesByGuid.Values;
 
     /// <summary>
     /// 1차원 플랫 가상화 렌더링용 활성 노드 컬렉션 (ListView VirtualizingStackPanel 최적화)
     /// </summary>
     public ObservableCollection<ProcessNodeModel> VisibleNodes { get; } = new();
 
-    public event Action<ProcessNodeModel>? OnProcessSuspended;
-    public event Action<ProcessNodeModel>? OnProcessTerminated;
-    public event Action<ProcessNodeModel>? OnProcessStarted;
     public event Action<ProcessNodeModel, bool /* wasSuspended */, bool /* wasRestored */>? OnProcessStopped;
 
     public int ActiveCount => _activePidToGuid.Count;
@@ -50,7 +46,6 @@ public class ProcessTreeProjectionManager
         if (app != null)
         {
             System.Windows.Data.BindingOperations.EnableCollectionSynchronization(RootNodes, _syncLock);
-            System.Windows.Data.BindingOperations.EnableCollectionSynchronization(AllNodes, _syncLock);
             System.Windows.Data.BindingOperations.EnableCollectionSynchronization(VisibleNodes, _syncLock);
         }
     }
@@ -145,7 +140,6 @@ public class ProcessTreeProjectionManager
 
             // 부모-자식 트리 링크 구성
             var rootNodesToAdd = new List<ProcessNodeModel>();
-            var allNodesToAdd = new List<ProcessNodeModel>();
 
             foreach (var node in tempMap.Values)
             {
@@ -167,11 +161,6 @@ public class ProcessTreeProjectionManager
                     {
                         rootNodesToAdd.Add(node);
                     }
-                }
-
-                if (_allNodeGuids.Add(node.ProcessGuid))
-                {
-                    allNodesToAdd.Add(node);
                 }
             }
 
@@ -206,10 +195,6 @@ public class ProcessTreeProjectionManager
                 foreach (var node in rootNodesToAdd)
                 {
                     RootNodes.Add(node);
-                }
-                foreach (var node in allNodesToAdd)
-                {
-                    AllNodes.Add(node);
                 }
 
                 VisibleNodes.Clear();
@@ -265,14 +250,6 @@ public class ProcessTreeProjectionManager
             _nodesByGuid.TryGetValue(existingGuid, out var existingNode))
         {
             existingNode.UpdateStatus(ev.Lifecycle, ev.IsSuspended, ev.IsTerminated);
-            if (ev.IsTerminated || ev.Lifecycle == ProcessLifecycle.LifecycleTerminated)
-            {
-                OnProcessTerminated?.Invoke(existingNode);
-            }
-            else if (ev.IsSuspended || ev.Lifecycle == ProcessLifecycle.LifecycleSuspended)
-            {
-                OnProcessSuspended?.Invoke(existingNode);
-            }
             return;
         }
 
@@ -359,25 +336,7 @@ public class ProcessTreeProjectionManager
                     VisibleNodes.Add(node);
                 }
             }
-
-            if (_allNodeGuids.Add(node.ProcessGuid))
-            {
-                AllNodes.Add(node);
-            }
         });
-
-        if (ev.IsTerminated || ev.Lifecycle == ProcessLifecycle.LifecycleTerminated)
-        {
-            OnProcessTerminated?.Invoke(node);
-        }
-        else if (ev.IsSuspended || ev.Lifecycle == ProcessLifecycle.LifecycleSuspended)
-        {
-            OnProcessSuspended?.Invoke(node);
-        }
-        else
-        {
-            OnProcessStarted?.Invoke(node);
-        }
     }
 
     private void HandleStop(ProcessEvent ev)
@@ -498,12 +457,10 @@ public class ProcessTreeProjectionManager
             _nodesByGuid.Clear();
             _activePidToGuid.Clear();
             _rootNodeGuids.Clear();
-            _allNodeGuids.Clear();
             _visibleNodeGuids.Clear();
             DispatchUI(() =>
             {
                 RootNodes.Clear();
-                AllNodes.Clear();
                 VisibleNodes.Clear();
             });
         }

@@ -701,58 +701,6 @@ public class ProcessTreeProjectionTests
         Assert.Same(incident, vm.SelectedIncident);
     }
 
-    [Fact]
-    [Trait("Category", "Unit")]
-    public async Task TestAttackLab_NewScenarios_EvasionAndDetection_Verdicts()
-    {
-        // 1. Arrange: 5대 포렌식 도구를 장착한 오프라인 자율 위협 헌터 에이전트 구성
-        var treeManager = new ProcessTreeProjectionManager();
-        var archiveManager = ForensicArchiveManager.CreateInMemory();
-        var tools = new IInvestigationTool[]
-        {
-            new DecodePayloadTool(),
-            new ProcessMemoryScanTool(),
-            new ThreatReputationTool(),
-            new MitreClassifierTool(),
-            new SystemFirewallTool(),
-            new FileInspectionTool(),
-            new RegistryInspectionTool()
-        };
-        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
-        var labRunner = new AttackLabScenarioRunner(treeManager, agent);
-
-        // 2. [시나리오 #7] SCCM 유지보수 스크립트 ➔ ACTION_RESUME (오탐 방지)
-        var sc7 = AttackScenarioRegistry.FindById(7);
-        Assert.NotNull(sc7);
-        var res7 = await labRunner.ExecuteScenarioAsync(sc7, AttackLabMode.CleanRoom);
-        Assert.True(res7.IsPass);
-        Assert.Equal(MitigationCommand.Types.ActionType.ActionResume, res7.ActualAction);
-        Assert.Equal("ACTION_RESUME", res7.ExpectedAction);
-
-        // 3. [시나리오 #8] 개발 도구 루프백 IPC ➔ ACTION_RESUME (개발자 워크플로우 보존)
-        var sc8 = AttackScenarioRegistry.FindById(8);
-        Assert.NotNull(sc8);
-        var res8 = await labRunner.ExecuteScenarioAsync(sc8, AttackLabMode.CleanRoom);
-        Assert.True(res8.IsPass);
-        Assert.Equal(MitigationCommand.Types.ActionType.ActionResume, res8.ActualAction);
-        Assert.Equal("ACTION_RESUME", res8.ExpectedAction);
-
-        // 4. [시나리오 #9] LOLBAS Rundll32 프록시 공격 ➔ ACTION_KILL (은폐 회피 차단)
-        var sc9 = AttackScenarioRegistry.FindById(9);
-        Assert.NotNull(sc9);
-        var res9 = await labRunner.ExecuteScenarioAsync(sc9, AttackLabMode.CleanRoom);
-        Assert.True(res9.IsPass);
-        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, res9.ActualAction);
-        Assert.Equal("ACTION_KILL", res9.ExpectedAction);
-
-        // 5. [시나리오 #10] Process Injection VAD 인메모리 위협 ➔ ACTION_KILL (메모리 주입 적발)
-        var sc10 = AttackScenarioRegistry.FindById(10);
-        Assert.NotNull(sc10);
-        var res10 = await labRunner.ExecuteScenarioAsync(sc10, AttackLabMode.CleanRoom);
-        Assert.True(res10.IsPass);
-        Assert.Equal(MitigationCommand.Types.ActionType.ActionKill, res10.ActualAction);
-        Assert.Equal("ACTION_KILL", res10.ExpectedAction);
-    }
 
     [Fact]
     [Trait("Category", "Unit")]

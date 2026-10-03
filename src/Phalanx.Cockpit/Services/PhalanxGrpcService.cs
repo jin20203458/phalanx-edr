@@ -46,7 +46,7 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
     {
         string connectionId = Guid.NewGuid().ToString("N");
         _activeClients[connectionId] = responseStream;
-        Console.WriteLine($"⚡ [gRPC Server] 클라이언트 연결됨 (ID: {connectionId}, 활성 연결 수: {_activeClients.Count})");
+        Console.WriteLine($"[gRPC Server] 클라이언트 연결됨 (ID: {connectionId}, 활성 연결 수: {_activeClients.Count})");
         _uiBridge?.NotifySensorConnected(true);
 
         try
@@ -81,7 +81,7 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
                         var targetNode = _treeManager.FindActiveNodeByPid(ev.ProcessId);
                         if (targetNode != null)
                         {
-                            Console.WriteLine($"❄️ [수사 의뢰 인입] PID: {targetNode.ProcessId} ({targetNode.ImageName}) - 자율 AI 헌터 기동!");
+                            Console.WriteLine($"[SUSPEND] PID: {targetNode.ProcessId} ({targetNode.ImageName}) - 자율 AI 헌터 기동!");
                             
                             // 비동기 AI 에이전트 수사 루프 즉각 가동
                             _ = Task.Run(async () =>
@@ -95,7 +95,7 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
                                 }
                                 catch (Exception ex)
                                 {
-                                    Console.WriteLine($"❌ [AI 에이전트 수사 오류] {ex.Message}");
+                                    Console.WriteLine($"[ERROR] AI 에이전트 수사 오류: {ex.Message}");
                                 }
                             });
                         }
@@ -111,14 +111,14 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
                             CommandLine = ev.CommandLine
                         };
 
-                        Console.WriteLine($"⚡ [C++ 현장 사살 인입] PID: {node.ProcessId} ({node.ImageName}) - 0.1ms Reflex Kill 즉시 관제 보고!");
+                        Console.WriteLine($"[REFLEX KILL] PID: {node.ProcessId} ({node.ImageName}) - 0.1ms Reflex Kill 즉시 관제 보고!");
                         try
                         {
                             _agent.HandleReflexKill(node);
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"❌ [현장 사살 보고 오류] {ex.Message}");
+                            Console.WriteLine($"[ERROR] 현장 사살 보고 오류: {ex.Message}");
                         }
                     }
                 }
@@ -132,12 +132,12 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ [gRPC 스트림 예외] {ex.Message}\n{ex.StackTrace}");
+            Console.WriteLine($"[STREAM ERROR] {ex.Message}\n{ex.StackTrace}");
         }
         finally
         {
             _activeClients.TryRemove(connectionId, out _);
-            Console.WriteLine($"🔌 [gRPC Server] 클라이언트 연결 종료 (ID: {connectionId}, 잔여 연결 수: {_activeClients.Count})");
+            Console.WriteLine($"[gRPC Server] 클라이언트 연결 종료 (ID: {connectionId}, 잔여 연결 수: {_activeClients.Count})");
 
             // 모든 연결이 종료되었을 때만 UI에 DISCONNECTED 알림
             if (_activeClients.IsEmpty)
@@ -184,8 +184,7 @@ public class PhalanxGrpcService : PhalanxService.PhalanxServiceBase
             }
 
             OnCommandSent?.Invoke(command);
-            _uiBridge?.NotifyCommandDispatched(command);
-            Console.WriteLine($"🛡️ [gRPC 완화 명령 하달] 조치: {command.Action} | 타깃 PID: {command.TargetPid} | 사유: {command.Reason}");
+            Console.WriteLine($"[COMMAND] 조치: {command.Action} | 타깃 PID: {command.TargetPid} | 사유: {command.Reason}");
         }
         finally
         {

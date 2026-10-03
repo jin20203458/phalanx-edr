@@ -475,7 +475,7 @@ public class ForensicPdfReportDocument : IDocument
                     r.RelativeItem().AlignRight().Text(text =>
                     {
                         text.Span("Engine:  ").FontSize(7.5f).Bold().FontColor(ColorLabel);
-                        text.Span("Phalanx Autonomous Threat Hunter v0.5.0").FontSize(7.5f).FontColor(ColorText);
+                        text.Span("Phalanx Autonomous Threat Hunter v1.0.0").FontSize(7.5f).FontColor(ColorText);
                     });
                 });
 

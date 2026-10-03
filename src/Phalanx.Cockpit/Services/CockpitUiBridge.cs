@@ -20,7 +20,6 @@ public class CockpitUiBridge
     public event Action<ProcessNodeModel, string>? InvestigationStarted;
     public event Action<string, ReActTraceRecord>? ReActStepCompleted;
     public event Action<InvestigationResult>? InvestigationCompleted;
-    public event Action<MitigationCommand>? CommandDispatched;
     public event Action? IncidentsDatabaseCleared;
 
     // 수동 제어 역방향 명령 대리자 (MainWindow -> gRPC 서비스)
@@ -62,11 +61,6 @@ public class CockpitUiBridge
     public void NotifyInvestigationCompleted(InvestigationResult result)
     {
         Dispatch(() => InvestigationCompleted?.Invoke(result));
-    }
-
-    public void NotifyCommandDispatched(MitigationCommand command)
-    {
-        Dispatch(() => CommandDispatched?.Invoke(command));
     }
 
     public async Task SendManualCommandAsync(MitigationCommand command)

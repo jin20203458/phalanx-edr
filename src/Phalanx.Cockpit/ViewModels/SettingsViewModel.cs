@@ -240,7 +240,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     // =========================================================================
     // 4. System Information Observables (User-Facing Architecture Specs)
     // =========================================================================
-    public string ProductVersionText => "Phalanx EDR v0.5.0-preview";
+    public string ProductVersionText => "Phalanx EDR v1.0.0";
     public string HostPlatformText => $"{System.Runtime.InteropServices.RuntimeInformation.OSDescription} ({System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture})";
     public string DotNetRuntimeText => $".NET {Environment.Version}";
     public string ActiveAiModelText => UseVertexAi

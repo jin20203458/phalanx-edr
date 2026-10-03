@@ -210,7 +210,7 @@ public class SettingsViewModelTests
         var vm = new SettingsViewModel();
 
         // 1. 고정 제품 사양
-        Assert.Equal("Phalanx EDR v0.5.0-preview", vm.ProductVersionText);
+        Assert.Equal("Phalanx EDR v1.0.0", vm.ProductVersionText);
         Assert.False(string.IsNullOrWhiteSpace(vm.HostPlatformText));
         Assert.StartsWith(".NET ", vm.DotNetRuntimeText);
 

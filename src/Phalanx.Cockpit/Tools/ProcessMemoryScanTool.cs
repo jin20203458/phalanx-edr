@@ -29,13 +29,6 @@ public class ProcessMemoryScanTool : IInvestigationTool
 
     public string Description => "동결된 타깃 프로세스의 VAD 영역(ReadProcessMemory)을 스캔하여 인메모리 DLL(MZ 헤더), C2 IP, 도메인, URL 및 악성 문자열을 추출합니다. 매개변수: 'targetPid' (uint 또는 int)";
 
-    private static readonly HashSet<string> KnownSideloadCandidateDlls = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "version.dll", "cryptbase.dll", "uxtheme.dll", "dwmapi.dll", "shcore.dll",
-        "winmm.dll", "userenv.dll", "netapi32.dll", "dbghelp.dll", "wtsapi32.dll",
-        "mpr.dll", "propsys.dll", "secur32.dll", "samcli.dll", "dxgi.dll", "d3d11.dll", "d3d9.dll"
-    };
-
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(250);
     private static readonly Regex UrlRegex = new(@"https?://[a-zA-Z0-9\-\._~:/\?#\[\]@!\$&'\(\)\*\+,;=%]+", RegexOptions.Compiled, RegexTimeout);
     private static readonly Regex IpRegex = new(@"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b", RegexOptions.Compiled, RegexTimeout);
@@ -106,7 +99,7 @@ public class ProcessMemoryScanTool : IInvestigationTool
                 foreach (var mod in sim.LoadedModules)
                 {
                     string modName = System.IO.Path.GetFileName(mod);
-                    if (KnownSideloadCandidateDlls.Contains(modName))
+                    if (FileInspectionTool.KnownSideloadCandidateDlls.Contains(modName))
                     {
                         hasSuspiciousDll = true;
                         sideloadedDlls.Add(mod);
@@ -284,7 +277,7 @@ public class ProcessMemoryScanTool : IInvestigationTool
             foreach (var mod in loadedModules)
             {
                 string modName = System.IO.Path.GetFileName(mod);
-                if (KnownSideloadCandidateDlls.Contains(modName))
+                if (FileInspectionTool.KnownSideloadCandidateDlls.Contains(modName))
                 {
                     if (!mod.Contains(@"\System32\", StringComparison.OrdinalIgnoreCase) &&
                         !mod.Contains(@"\SysWOW64\", StringComparison.OrdinalIgnoreCase))

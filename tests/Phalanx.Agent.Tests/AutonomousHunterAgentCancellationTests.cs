@@ -103,14 +103,11 @@ public class AutonomousHunterAgentCancellationTests
 
         var dispatchedCommands = new List<MitigationCommand>();
 
-        // 2. 수사 시작 시 비동기로 CancelInvestigation 트리거
+        // 2. 수사 시작 시 즉시 CancelInvestigation 트리거
         agent.OnInvestigationStarted += (node, incId) =>
         {
-            Task.Run(() =>
-            {
-                bool cancelSuccess = agent.CancelInvestigation(incId);
-                Assert.True(cancelSuccess);
-            });
+            bool cancelSuccess = agent.CancelInvestigation(incId);
+            Assert.True(cancelSuccess);
         };
 
         // 3. 수사 호출

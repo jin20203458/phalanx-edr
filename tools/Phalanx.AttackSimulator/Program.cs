@@ -26,6 +26,7 @@ public static class Program
 
         // CLI 파라미터 파싱
         int? scenarioArg = null;
+        bool allArg = false;
         bool nonInteractive = false;
 
         for (int i = 0; i < args.Length; i++)
@@ -37,6 +38,10 @@ public static class Program
             else if (args[i].Equals("--scenario", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
             {
                 if (int.TryParse(args[++i], out int id)) scenarioArg = id;
+            }
+            else if (args[i].Equals("--all", StringComparison.OrdinalIgnoreCase))
+            {
+                allArg = true;
             }
             else if (args[i].Equals("--mode", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
             {
@@ -92,16 +97,16 @@ public static class Program
 
         try
         {
-            if (scenarioArg.HasValue)
+            if (allArg || scenarioArg.HasValue)
             {
-                // 단일 시나리오 자동 실행
-                if (scenarioArg.Value == 8)
+                // 단일 시나리오 자동 실행 또는 전체 순차 실행
+                if (allArg || scenarioArg == 99)
                 {
                     await RunAllScenariosAsync(stream);
                 }
                 else
                 {
-                    bool success = await RunScenarioByIdAsync(stream, scenarioArg.Value);
+                    bool success = await RunScenarioByIdAsync(stream, scenarioArg!.Value);
                     exitCode = success ? 0 : 1;
                 }
             }
@@ -149,7 +154,7 @@ public static class Program
                 Console.WriteLine($" [{s.Id}] {s.Name,-42} (기대: {s.ExpectedAction})");
                 Console.WriteLine($"     ㄴ {s.Description}");
             }
-            Console.WriteLine(" [8] Run All Scenarios Sequentially (전체 순차 자동 실행)");
+            Console.WriteLine(" [99] Run All Scenarios Sequentially (전체 순차 자동 실행)");
             Console.WriteLine(" [0] Exit (종료)");
             Console.Write("\n실행할 시나리오 번호를 입력하십시오 > ");
 
@@ -161,7 +166,7 @@ public static class Program
 
             if (int.TryParse(input, out int choice))
             {
-                if (choice == 8)
+                if (choice == 99)
                 {
                     await RunAllScenariosAsync(stream);
                 }
@@ -194,7 +199,7 @@ public static class Program
     private static async Task RunAllScenariosAsync(
         AsyncDuplexStreamingCall<TelemetryBatch, MitigationCommand> stream)
     {
-        Console.WriteLine("\n🚀 [AUTO DEMO] 전체 1~7번 시나리오 순차 실행을 시작합니다...");
+        Console.WriteLine("\n[AUTO DEMO] 전체 시나리오 순차 실행을 시작합니다...");
         int passed = 0;
         int total = 0;
 
@@ -354,7 +359,7 @@ public static class Program
 
                 Console.WriteLine($"  - [VERDICT] 수신 판결: {actionStr} ({sw.Elapsed.TotalMilliseconds:F1}ms)");
                 Console.WriteLine($"  - [REASON] {verdictCmd.Reason}");
-                Console.WriteLine($"  - [RESULT] 판결 일치 여부: {(isMatch ? "✅ PASS" : "❌ FAIL (기대값과 불일치)")}");
+                Console.WriteLine($"  - [RESULT] 판결 일치 여부: {(isMatch ? "[PASS]" : "[FAIL] (기대값과 불일치)")}");
 
                 if (verdictCmd.Action == MitigationCommand.Types.ActionType.ActionKill && realProcess != null && !realProcess.HasExited)
                 {
@@ -412,11 +417,11 @@ public static class Program
 
     private static void HandleIncomingMitigation(MitigationCommand cmd)
     {
-        Console.WriteLine($"\n📡 [COCKPIT FEEDBACK] 조치: {cmd.Action} | PID: {cmd.TargetPid} | 사유: {cmd.Reason}");
+        Console.WriteLine($"\n[FEEDBACK] 조치: {cmd.Action} | PID: {cmd.TargetPid} | 사유: {cmd.Reason}");
 
         if (cmd.Action == MitigationCommand.Types.ActionType.ActionExtendTimeout)
         {
-            Console.WriteLine($"  ㄴ ⏳ 세이프티 워치독 SLA +50초 연장 티켓 확인 (심층 수사진행 중)");
+            Console.WriteLine($"  ㄴ [TIMEOUT SLA] 세이프티 워치독 SLA +50초 연장 티켓 확인 (심층 수사진행 중)");
             return;
         }
 

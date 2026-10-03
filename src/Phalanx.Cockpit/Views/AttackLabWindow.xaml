@@ -679,7 +679,7 @@
                             </Style>
                         </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
-                            <DataTemplate DataType="{x:Type vm:AttackScenarioItem}">
+                            <DataTemplate>
                                 <Border
                                     x:Name="cardBorder"
                                     Margin="8,3,8,3"

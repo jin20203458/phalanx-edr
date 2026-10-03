@@ -377,171 +377,34 @@ public class AttackLabScenarioRunner
         AttackLabMode mode,
         CancellationToken cancellationToken = default)
     {
-        var logs = new List<string>();
-        var sw = Stopwatch.StartNew();
-        Process? realOsProcess = null;
-        uint targetPid = AttackScenarioRegistry.GeneratePid();
-        uint parentPid = 1000;
-
-        try
+        var customSc = new AttackScenario
         {
-            // 1. [OS 모드 / 전문가 라이브 모드] 프로세스 스폰
-            if (mode == AttackLabMode.LiveExpert)
+            Id = 99,
+            Name = "커스텀 페이로드 공작소 (Ad-hoc)",
+            Description = "사용자 정의 모의 공격 페이로드",
+            ExpectedAction = expectedAction,
+            TargetProcess = targetImage,
+            ParentProcess = parentImage,
+            MitreTactic = mitreTactic,
+            CommandLine = commandLine,
+            BuildBatch = targetPid => BuildCustomBatch(targetPid, 1000, targetImage, parentImage, commandLine, isSuspended: true),
+            GetLiveProcessInfo = () => new ProcessStartInfo
             {
-                try
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = string.IsNullOrWhiteSpace(targetImage) ? "powershell.exe" : targetImage,
-                        Arguments = commandLine,
-                        CreateNoWindow = true,
-                        UseShellExecute = false
-                    };
-                    realOsProcess = Process.Start(psi);
-                    if (realOsProcess != null)
-                    {
-                        targetPid = (uint)realOsProcess.Id;
-                        logs.Add($"[{DateTime.Now:HH:mm:ss}] [전문가 라이브] 실제 커스텀 프로세스 스폰 완료 (PID: {targetPid})");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logs.Add($"[{DateTime.Now:HH:mm:ss}] [전문가 라이브 경고] 커스텀 프로세스 기동 실패: {ex.Message}");
-                }
-            }
-            else if (mode == AttackLabMode.OsHybrid)
+                FileName = string.IsNullOrWhiteSpace(targetImage) ? "powershell.exe" : targetImage,
+                Arguments = commandLine,
+                CreateNoWindow = true,
+                UseShellExecute = false
+            },
+            GetSafeOsProcessInfo = () => new ProcessStartInfo
             {
-                try
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "powershell.exe",
-                        Arguments = "-NoProfile -Command \"Start-Sleep -Seconds 30\"",
-                        CreateNoWindow = true,
-                        UseShellExecute = false
-                    };
-                    realOsProcess = Process.Start(psi);
-                    if (realOsProcess != null)
-                    {
-                        targetPid = (uint)realOsProcess.Id;
-                        logs.Add($"[{DateTime.Now:HH:mm:ss}] [OS 연동] 커스텀 안전 대기 프로세스 스폰 완료 (PID: {targetPid})");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logs.Add($"[{DateTime.Now:HH:mm:ss}] [OS 연동 경고] 프로세스 기동 실패: {ex.Message}");
-                }
+                FileName = "powershell.exe",
+                Arguments = "-NoProfile -Command \"Start-Sleep -Seconds 30\"",
+                CreateNoWindow = true,
+                UseShellExecute = false
             }
+        };
 
-            // 2. 동적 TelemetryBatch 빌드
-            var batch = BuildCustomBatch(targetPid, parentPid, targetImage, parentImage, commandLine, isSuspended: true);
-
-            // 3. CQRS 프로세스 트리에 인프로세스 주입
-            var snapshots = batch.ProcessEvents.Where(e => e.Lifecycle == ProcessLifecycle.LifecycleSnapshot).ToList();
-            if (snapshots.Count > 0)
-            {
-                _treeManager.ApplySnapshotBatch(snapshots);
-            }
-
-            var deltas = batch.ProcessEvents.Where(e => e.Lifecycle != ProcessLifecycle.LifecycleSnapshot).ToList();
-            foreach (var ev in deltas)
-            {
-                _treeManager.ApplyDeltaEvent(ev);
-            }
-
-            // 4. 자율 AI 헌터 ReAct 수사 구동
-            var targetNode = _treeManager.FindActiveNodeByPid(targetPid)
-                             ?? new ProcessNodeModel
-                             {
-                                 ProcessId = targetPid,
-                                 ImageName = targetImage,
-                                 CommandLine = commandLine,
-                                 IsSuspended = true
-                             };
-
-            logs.Add($"[{DateTime.Now:HH:mm:ss}] [커스텀 주입] 24μs 원자적 동결 인입 (타깃: {targetImage}) ➔ AI 수사관 가동");
-
-            InvestigationResult? invResult = null;
-            MitigationCommand.Types.ActionType finalAction;
-
-            if (_agent != null)
-            {
-                invResult = await _agent.InvestigateAsync(targetNode, cmd => Task.CompletedTask, cancellationToken);
-                finalAction = invResult.VerdictAction;
-            }
-            else
-            {
-                await Task.Delay(100, cancellationToken);
-                finalAction = expectedAction == "ACTION_KILL"
-                    ? MitigationCommand.Types.ActionType.ActionKill
-                    : MitigationCommand.Types.ActionType.ActionResume;
-            }
-
-            sw.Stop();
-
-            // 5. [SSOT 판결 집행] AI 판결 기반 OS 사살
-            bool osKilledSuccessfully = true;
-            if (realOsProcess != null && !realOsProcess.HasExited)
-            {
-                if (finalAction == MitigationCommand.Types.ActionType.ActionKill)
-                {
-                    realOsProcess.Kill(entireProcessTree: KillProcessTree);
-                    using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                    try
-                    {
-                        await realOsProcess.WaitForExitAsync(exitCts.Token);
-                        osKilledSuccessfully = realOsProcess.HasExited;
-                        logs.Add($"[{DateTime.Now:HH:mm:ss}] [OS 사살 집행] Win32 TerminateProcess 성공 (HasExited: {osKilledSuccessfully})");
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        osKilledSuccessfully = realOsProcess.HasExited;
-                    }
-                }
-                else
-                {
-                    osKilledSuccessfully = true;
-                }
-            }
-
-            // 6. 결과 평가 및 어설션
-            string finalActionStr = finalAction == MitigationCommand.Types.ActionType.ActionKill ? "ACTION_KILL" : "ACTION_RESUME";
-            bool isPass = finalActionStr == expectedAction && osKilledSuccessfully;
-            int turns = invResult?.Traces.Count ?? 3;
-            double conf = invResult?.Confidence ?? 0.980;
-            string tools = invResult != null && invResult.Traces.Count > 0
-                ? string.Join(" ➔ ", invResult.Traces.Select(t => t.ActionTool).Where(t => !string.IsNullOrEmpty(t)).Distinct())
-                : "DecodePayloadTool ➔ ThreatReputationTool";
-
-            string assertion = isPass
-                ? $"PASS: 커스텀 기대 처분({expectedAction})과 EDR 판결({finalActionStr}) 100% 일치"
-                : $"FAIL: 기대 처분({expectedAction}) 불일치 (실제 판결: {finalActionStr})";
-
-            logs.Add($"[{DateTime.Now:HH:mm:ss}] [커스텀 완결] 판결: {finalActionStr} ➔ E2E 검증 {(isPass ? "성공 (PASS)" : "실패 (FAIL)")}");
-
-            return new ScenarioExecutionResult(
-                $"커스텀: {targetImage}",
-                99,
-                expectedAction,
-                finalAction,
-                isPass,
-                sw.Elapsed,
-                turns,
-                conf,
-                tools,
-                assertion,
-                logs,
-                osKilledSuccessfully
-            );
-        }
-        finally
-        {
-            if (realOsProcess != null && !realOsProcess.HasExited)
-            {
-                try { realOsProcess.Kill(entireProcessTree: KillProcessTree); } catch { }
-                realOsProcess.Dispose();
-            }
-        }
+        return await ExecuteScenarioAsync(customSc, mode, cancellationToken);
     }
 
     /// <summary>

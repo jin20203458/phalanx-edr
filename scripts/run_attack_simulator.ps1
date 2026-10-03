@@ -4,11 +4,13 @@
 # 사용법:
 #   .\scripts\run_attack_simulator.ps1                       # 대화형 CLI 메뉴 모드
 #   .\scripts\run_attack_simulator.ps1 -Scenario 1           # 시나리오 1 즉시 실행
-#   .\scripts\run_attack_simulator.ps1 -Scenario 8           # 전체 시나리오 순차 자동 실행
+#   .\scripts\run_attack_simulator.ps1 -Scenario 8           # 시나리오 8 즉시 실행
+#   .\scripts\run_attack_simulator.ps1 -All                  # 전체 시나리오 순차 자동 실행
 # ==============================================================================
 
 param(
     [string]$Scenario = "",
+    [switch]$All,
     [string]$Mode = "grpc",
     [string]$Target = "http://127.0.0.1:50051",
     [switch]$NonInteractive
@@ -18,6 +20,10 @@ $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot\..
 
 $argsList = @("--target", $Target, "--mode", $Mode)
+
+if ($All) {
+    $argsList += @("--all")
+}
 
 if ($Scenario -ne "") {
     $argsList += @("--scenario", $Scenario)

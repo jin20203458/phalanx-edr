@@ -38,8 +38,12 @@ if ($existingConn) {
 }
 
 Write-Host "`n[1/4] C# Cockpit Kestrel gRPC 관제 서버 백그라운드 구동 (Port: 50051)..." -ForegroundColor Yellow
+$dllPath = "src/Phalanx.Cockpit/bin/Debug/net9.0-windows/Phalanx.Cockpit.dll"
+if (-not (Test-Path $dllPath)) {
+    dotnet build src/Phalanx.Cockpit -c Debug | Out-Null
+}
 $cockpitProc = Start-Process -FilePath "dotnet" `
-                             -ArgumentList "run --project src/Phalanx.Cockpit --headless" `
+                             -ArgumentList "`"$dllPath`" --headless" `
                              -PassThru `
                              -NoNewWindow
 

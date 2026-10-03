@@ -26,7 +26,7 @@ public static class LlmJsonParser
         bool inString = false;
         bool isEscaped = false;
 
-        // MundusVivens & GRC 표준: 문자열 내부("...") 및 이스케이프(\")를 완벽히 추적하여 문자열 내 중괄호 오작동 방지
+        // 엔터프라이즈 정밀 JSON 파서: 문자열 내부("...") 및 이스케이프(\")를 완벽히 추적하여 문자열 내 중괄호 오작동 방지
         for (int i = startIndex; i < rawText.Length; i++)
         {
             char c = rawText[i];

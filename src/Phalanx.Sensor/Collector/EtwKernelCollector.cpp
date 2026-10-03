@@ -63,10 +63,15 @@ bool EtwKernelCollector::Start() {
                 krabs::provider<> provider(KernelProcessGuid);
 
                 provider.add_on_event_callback([this](const EVENT_RECORD& record, const krabs::trace_context& trace_context) {
+                    const USHORT event_id = record.EventHeader.EventDescriptor.Id;
+                    if (event_id != 1 && event_id != 2) {
+                        return;
+                    }
+
                     try {
                         krabs::schema schema(record, trace_context.schema_locator);
                         // 이벤트 ID 1: ProcessStart (프로세스 생성)
-                        if (schema.event_id() == 1) {
+                        if (event_id == 1) {
                             krabs::parser parser(schema);
                             phalanx::ProcessEvent ev;
 
@@ -137,7 +142,7 @@ bool EtwKernelCollector::Start() {
                             if (impl_->queue) {
                                 impl_->queue->Push(std::move(ev));
                             }
-                        } else if (schema.event_id() == 2) {
+                        } else if (event_id == 2) {
                             // 이벤트 ID 2: ProcessStop (프로세스 정상/비정상 종료)
                             krabs::parser parser(schema);
                             uint32_t pid = 0;

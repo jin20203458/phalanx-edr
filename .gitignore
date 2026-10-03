@@ -60,6 +60,7 @@ $RECYCLE.BIN/
 # Build artifacts
 *.exe
 *.obj
+*.zip
 
 out/
 

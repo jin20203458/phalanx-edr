@@ -1,0 +1,7 @@
+# GitHub Linguist Language Statistics Overrides
+# Exclude test suites, attack simulation harness, and tooling scripts from language bar
+# to highlight core low-latency C++20 kernel sensor and autonomous C# AI agent engines.
+
+tests/** linguist-vendored
+tools/Phalanx.AttackSimulator/** linguist-vendored
+scripts/** linguist-vendored

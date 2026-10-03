@@ -50,7 +50,7 @@ public class SensorProcessController
             {
                 Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
                 Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"))
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"))
             };
 
             foreach (var path in candidates)
@@ -102,7 +102,7 @@ public class SensorProcessController
         string baseDir = AppContext.BaseDirectory;
 
         // 1. AppContext 기준 상대 경로 (bin/Debug/net9.0-windows -> out/build/windows-default/...)
-        string candidate1 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\..\out\build\windows-default\src\Phalanx.Sensor\Phalanx.Sensor.exe"));
+        string candidate1 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\..\..\out\build\windows-default\src\Phalanx.Sensor\Phalanx.Sensor.exe"));
         if (File.Exists(candidate1)) return candidate1;
 
         // 2. 현재 작업 디렉터리 기준

@@ -730,7 +730,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             File.WriteAllText(appSettingsFile, output);
 
             // 소스 디렉터리 AppSettings.json도 존재 시 동시 반영
-            string devAppSettings = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"));
+            string devAppSettings = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"));
             if (File.Exists(devAppSettings))
             {
                 try { File.WriteAllText(devAppSettings, output); } catch { }

@@ -110,7 +110,7 @@ public class GeminiRestClient
                     Path.Combine(AppContext.BaseDirectory, "Config", "google-credentials.json"),
                     Path.Combine(Directory.GetCurrentDirectory(), "Config", "google-credentials.json"),
                     Path.Combine(Directory.GetCurrentDirectory(), "src", "Phalanx.Cockpit", "Config", "google-credentials.json"),
-                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\Config\google-credentials.json")),
+                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\Config\google-credentials.json")),
                     Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\Config\google-credentials.json"))
                 };
 
@@ -141,7 +141,7 @@ public class GeminiRestClient
                     Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
                     Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
                     Path.Combine(Directory.GetCurrentDirectory(), "src", "Phalanx.Cockpit", "AppSettings.json"),
-                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json")),
+                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json")),
                     Path.Combine(Path.GetDirectoryName(credentialsPath) ?? string.Empty, "..", "AppSettings.json")
                 };
 

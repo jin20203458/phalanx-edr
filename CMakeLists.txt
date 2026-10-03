@@ -1,5 +1,18 @@
 cmake_minimum_required(VERSION 3.24)
 
+# vcpkg 툴체인 탐색 (우선순위: -DCMAKE_TOOLCHAIN_FILE > VCPKG_ROOT > %USERPROFILE%/vcpkg)
+# project() 호출 이전에 확정되어야 하므로 프리셋이 아닌 이 위치에서 결정합니다.
+if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if (DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+        file(TO_CMAKE_PATH "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" _phalanx_vcpkg_toolchain)
+    elseif (DEFINED ENV{USERPROFILE} AND EXISTS "$ENV{USERPROFILE}/vcpkg/scripts/buildsystems/vcpkg.cmake")
+        file(TO_CMAKE_PATH "$ENV{USERPROFILE}/vcpkg/scripts/buildsystems/vcpkg.cmake" _phalanx_vcpkg_toolchain)
+    else()
+        message(FATAL_ERROR "vcpkg toolchain not found. Set VCPKG_ROOT or install vcpkg at %USERPROFILE%/vcpkg.")
+    endif()
+    set(CMAKE_TOOLCHAIN_FILE "${_phalanx_vcpkg_toolchain}" CACHE FILEPATH "vcpkg toolchain file")
+endif()
+
 project(Phalanx CXX)
 
 set(CMAKE_CXX_STANDARD 20)

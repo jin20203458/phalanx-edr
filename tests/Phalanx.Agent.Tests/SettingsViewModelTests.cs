@@ -138,7 +138,7 @@ public class SettingsViewModelTests
             }
 
             // 소스 디렉터리 AppSettings.json도 기본값 복원
-            string devAppSettings = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"));
+            string devAppSettings = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"));
             if (File.Exists(devAppSettings))
             {
                 var cleanDefault = @"{

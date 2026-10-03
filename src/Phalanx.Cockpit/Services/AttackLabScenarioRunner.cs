@@ -75,7 +75,7 @@ public class AttackLabScenarioRunner
             {
                 Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
                 Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"))
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"))
             };
 
             foreach (var path in candidates)

@@ -20,7 +20,7 @@ Focus: Deterministic low-overhead ETW telemetry, zero-loss lock-swap queues, ato
 <critical_rules>
 - **Build**: `dotnet build Phalanx.sln` (C#), `powershell -ExecutionPolicy Bypass -File .\build.ps1` (C++)
 - **Test**: `dotnet test tests/Phalanx.Agent.Tests/ --filter "Category=Unit"` (Fast QA, ~2.8s). Never omit filter during standard QA (omitting triggers ~3.5m Category=Live cloud API benchmark). For full suite/Live, append `--logger "console;verbosity=normal"`. Full-Chain: `powershell -ExecutionPolicy Bypass -File .\scripts\run_fullchain_test.ps1`.
-- **Privileges**: Sensor executable requires administrator elevation (`requireAdministrator` in app.manifest) for ETW kernel sessions.
+- **Privileges**: Sensor executable requires administrator elevation for ETW kernel sessions (`/MANIFESTUAC` link flag in `src/Phalanx.Sensor/CMakeLists.txt`; never add a manifest to `target_sources` -> LNK1327).
 - **Secret Isolation**: Store credentials in local uncommitted files (`google-credentials.json`, `AppSettings.json`). Enforce `.gitignore` exclusion.
 - **Paths**: Use relative paths (`../Obsidian.Agent/`, etc.).
 </critical_rules>

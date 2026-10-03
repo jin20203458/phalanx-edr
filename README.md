@@ -25,7 +25,7 @@ Windows ETW 커널 텔레메트리와 자율 AI 위협 헌팅 에이전트(Auton
 * **.NET SDK**: [.NET 9.0 SDK 이상](https://dotnet.microsoft.com/download/dotnet) (.NET 10 호환, 프로젝트 타깃: `net9.0-windows`)
 * **C++ 컴파일러**: Visual Studio 2026 (MSVC v14.51) 또는 Visual Studio 2022 (v17.x, "C++를 사용한 데스크톱 개발" 워크로드 필수)
 * **빌드 시스템**: CMake (3.24 이상) 및 **Ninja** 빌드 도구 (시스템 PATH 환경변수 등록 필수)
-* **패키지 관리자**: vcpkg (Manifest 모드 지원, 기본 위치: `%USERPROFILE%/vcpkg` 또는 `VCPKG_ROOT` 환경변수)
+* **패키지 관리자**: vcpkg (Manifest 모드, 툴체인 탐색 우선순위: `-DCMAKE_TOOLCHAIN_FILE` > `VCPKG_ROOT` 환경변수 > `%USERPROFILE%/vcpkg`)
 
 ---
 

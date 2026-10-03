@@ -313,5 +313,21 @@ public class SettingsViewModelTests
             throw new Exception($"SettingsWindow failed with: {error}");
         }
     }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task TestSettingsViewModel_TestConnectionCommand_PassesWithRealVertexAi()
+    {
+        var vm = new SettingsViewModel();
+        Assert.True(vm.UseVertexAi);
+        Assert.Equal("us-central1", vm.VertexLocation);
+        Assert.Equal("gemini-2.5-flash", vm.SelectedModel);
+        Assert.True(vm.CredentialsFound);
+
+        await vm.TestConnectionCommand.ExecuteAsync(null);
+
+        Assert.Contains("PASS", vm.TestStatusMessage);
+        Assert.True(vm.IsAgentOnline);
+    }
 }
 

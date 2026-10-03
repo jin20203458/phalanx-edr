@@ -39,12 +39,12 @@ public class GeminiRestClient
     /// <summary>
     /// Google AI Studio API Key 기반 생성자
     /// </summary>
-    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-3.7-flash")
+    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-2.5-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
         _modelName = modelName;
-        _location = "global";
+        _location = "us-central1";
     }
 
     /// <summary>
@@ -54,13 +54,13 @@ public class GeminiRestClient
         HttpClient httpClient,
         Func<CancellationToken, Task<string>> tokenProvider,
         string projectId,
-        string location = "global",
-        string modelName = "gemini-3.7-flash")
+        string location = "us-central1",
+        string modelName = "gemini-2.5-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
         _projectId = projectId ?? throw new ArgumentNullException(nameof(projectId));
-        _location = string.IsNullOrWhiteSpace(location) ? "global" : location;
+        _location = string.IsNullOrWhiteSpace(location) ? "us-central1" : location;
         _modelName = modelName;
     }
 
@@ -130,8 +130,8 @@ public class GeminiRestClient
             }
 
             string projectId = !string.IsNullOrWhiteSpace(explicitProjectId) ? explicitProjectId : "grc0-494913";
-            string location = !string.IsNullOrWhiteSpace(explicitLocation) ? explicitLocation.ToLowerInvariant() : "global";
-            string model = modelName ?? "gemini-3.7-flash";
+            string location = !string.IsNullOrWhiteSpace(explicitLocation) ? explicitLocation.ToLowerInvariant() : "us-central1";
+            string model = modelName ?? "gemini-2.5-flash";
 
             // AppSettings.json 탐색 (명시적 인자가 누락되었을 때만 파일에서 보충)
             if (string.IsNullOrWhiteSpace(explicitProjectId) || string.IsNullOrWhiteSpace(explicitLocation))
@@ -314,7 +314,7 @@ public class GeminiRestClient
                 Temperature: null,
                 MaxOutputTokens: 4096,
                 ResponseMimeType: "application/json",
-                ThinkingConfig: new ThinkingConfig(thinkingLevel)
+                ThinkingConfig: SupportsThinkingLevel(_modelName) ? new ThinkingConfig(thinkingLevel) : null
             ),
             SafetySettings: DefaultSafetySettings
         );
@@ -361,5 +361,10 @@ public class GeminiRestClient
             new Content("user", [new Part(userPrompt)])
         ];
         return GenerateContentAsync(contents, systemInstruction, cancellationToken, timeoutMs, thinkingLevel);
+    }
+
+    private static bool SupportsThinkingLevel(string modelName)
+    {
+        return modelName.Contains("thinking", StringComparison.OrdinalIgnoreCase);
     }
 }

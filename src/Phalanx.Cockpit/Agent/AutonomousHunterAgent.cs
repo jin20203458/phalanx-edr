@@ -166,7 +166,7 @@ public class AutonomousHunterAgent
             string? effectiveApiKey = geminiApiKey ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY");
             if (!string.IsNullOrWhiteSpace(effectiveApiKey))
             {
-                _geminiClient = new GeminiRestClient(clientHttp, effectiveApiKey, modelName ?? "gemini-3.7-flash");
+                _geminiClient = new GeminiRestClient(clientHttp, effectiveApiKey, modelName ?? "gemini-2.5-flash");
                 return true;
             }
         }

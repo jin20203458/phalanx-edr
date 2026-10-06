@@ -89,7 +89,7 @@ dotnet run --project src/Phalanx.Cockpit/Phalanx.Cockpit.csproj -c Release
 *(또는 컴파일된 실행 파일 `src\Phalanx.Cockpit\bin\Release\net9.0-windows\Phalanx.Cockpit.exe` 직접 실행)*
 
 ### 5.2 모의 침해 시뮬레이터 구동 (어택랩 실증)
-* **방법 1 (GUI 원클릭)**: 관제 콘솔 좌측 **[어택랩(Attack Lab)]** 탭 이동 ➔ 5대 공격 시나리오(Office 매크로 파일리스 침투 등) 선택 ➔ **[시뮬레이션 실행]** 클릭
+* **방법 1 (GUI 원클릭)**: 관제 콘솔 좌측 네비게이션 하단 **[어택랩]** 아이콘 클릭 ➔ 5대 공격 시나리오(Office 매크로 파일리스 침투 등) 선택 ➔ **[모의 침해 주입 ▶]** 클릭
 * **방법 2 (스크립트)**:
   ```powershell
   powershell -ExecutionPolicy Bypass -File .\scripts\run_attack_simulator.ps1
@@ -112,6 +112,6 @@ dotnet run --project src/Phalanx.Cockpit/Phalanx.Cockpit.csproj -c Release
   * 별도 API Key를 설정하지 않아도 내장된 **23ms 로컬 ReAct Fallback 엔진**이 자동 작동합니다.
   * 외부 네트워크 통신 없이 24μs 프로세스 동결, 5대 침해 시나리오 탐지(100%), 7대 OS 포렌식 도구 호출, 리포트 생성 등 전 기능을 즉시 시연 및 검증할 수 있습니다 (`LOCAL FALLBACK` 배너 표시).
 * **[선택 사항: Google Gemini 클라우드 라이브 연동 모드]**
-  * **GUI 설정**: 관제 콘솔 우측 상단 **[설정]** 메뉴 클릭 ➔ Google AI Studio API Key 입력 후 저장 (`GEMINI CLOUD` 활성화).
+  * **GUI 설정**: 관제 콘솔 좌측 네비게이션 하단 **[설정]** 아이콘 클릭 ➔ Google AI Studio API Key 입력 후 저장 (`CLOUD LLM` 활성화).
   * **설정 파일**: 실행 폴더 내 `AppSettings.json`의 `"ApiKey"` 필드에 키 입력 (`"UseVertexAI": false`).
   * *(Google Cloud Vertex AI 사용 시: `Config/google-credentials.json` 배치 후 `"UseVertexAI": true`)*

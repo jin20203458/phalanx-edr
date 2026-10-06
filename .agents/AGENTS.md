@@ -1,9 +1,3 @@
-# Phalanx EDR Solution Rules
-
-<assigned_role>
-For this workspace, you adopt the role of a Senior Security & Systems Software Engineer specialized in Windows Kernel Telemetry (C++20), Endpoint Detection & Response (EDR), and Autonomous AI Threat Hunting (C# / Gemini).
-</assigned_role>
-
 <project_philosophy>
 Focus: Deterministic low-overhead ETW telemetry, zero-loss lock-swap queues, atomic sub-millisecond NtSuspendProcess, gRPC streaming, LiteDB threat DAG, and tool-augmented ReAct investigation.
 </project_philosophy>
@@ -12,7 +6,7 @@ Focus: Deterministic low-overhead ETW telemetry, zero-loss lock-swap queues, ato
 - **Kernel & Memory**: Manage Win32 handles with RAII (`HANDLE`, `HMODULE`, `SC_HANDLE`). Use smart pointers for telemetry buffers. Keep ETW callback threads non-blocking via lock-swap queues.
 - **Process Actuation**: Freeze suspect processes via `NtSuspendProcess` guarded by `SafetyWatchdog`. Keep `LocalRuleEngine` reflex rules strictly sub-millisecond.
 - **Async & Concurrency**: Use `async`/`await` end-to-end; NEVER block synchronously (`.Result`, `.Wait()`, `.GetAwaiter().GetResult()`). Maintain LiteDB concurrency safety.
-- **Decision Authority (SSOT)**: The ReAct agent verdict is the single source of truth. Restrict deterministic overrides strictly to safety watchdog timeouts and network failures (Fail-Secure).
+- **Decision Authority (SSOT)**: The ReAct agent verdict is the single source of truth over heuristic overrides. Restrict deterministic overrides strictly to safety watchdog timeouts and network failures (Fail-Secure).
 - **Cockpit UI & Headless**: Follow strict MVVM via `CommunityToolkit.Mvvm`. Marshal background updates through `CockpitUiBridge.Instance`. Support headless execution where `Application.Current` is null. Zero decorative emojis.
 - **Formatting**: Strictly follow the target file's style and indentation.
 </engineering_rules>
@@ -37,4 +31,3 @@ Focus: Deterministic low-overhead ETW telemetry, zero-loss lock-swap queues, ato
 - **Log**: Document resolved bugs and kernel edge cases in `../Obsidian.Agent/troubleshooting/phalanx.md`.
 - **Sync**: Update specifications in `../Obsidian.Agent/Phalanx/docs/` if architecture, tool contracts, or IPC schemas change.
 </post_action>
-

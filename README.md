@@ -3,6 +3,8 @@
 Phalanx는 Windows ETW(Event Tracing for Windows) 커널 텔레메트리 기반의 초저지연 프로세스 격리와 Gemini ReAct 에이전트의 자율 포렌식 조사를 결합한 엔드포인트 탐지 및 대응(EDR) 시스템입니다.  
 악성 의심 프로세스 감지 즉시 커널 레벨에서 선제적으로 실행을 동결(`NtSuspendProcess`)하고, AI 에이전트가 OS 포렌식 도구를 자율 실행하여 침해 원인 규명 및 대응 리포트를 생성합니다.
 
+* **시연 영상**: [Phalanx-EDR](https://www.youtube.com/watch?v=SD_Ro2brbOk)
+
 ---
 
 ## Architecture Highlights

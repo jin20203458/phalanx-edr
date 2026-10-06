@@ -18,42 +18,8 @@ public class SystemFirewallTool : IInvestigationTool
 
     public async Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
     {
-        string? targetIp = null;
-        string action = "block";
-
-        var caseInsensitive = new Dictionary<string, object>(parameters, StringComparer.OrdinalIgnoreCase);
-        foreach (var key in new[] { "maliciousIp", "malicious_ip", "ip", "targetIp", "target_ip" })
-        {
-            if (caseInsensitive.TryGetValue(key, out var rawIp) && rawIp != null)
-            {
-                string? s = rawIp switch
-                {
-                    string str => str,
-                    System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
-                    _ => rawIp.ToString()
-                };
-
-                if (!string.IsNullOrWhiteSpace(s))
-                {
-                    targetIp = s.Trim();
-                    break;
-                }
-            }
-        }
-
-        if (caseInsensitive.TryGetValue("action", out var rawAction) && rawAction != null)
-        {
-            string? actStr = rawAction switch
-            {
-                string str => str,
-                System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
-                _ => rawAction.ToString()
-            };
-            if (!string.IsNullOrWhiteSpace(actStr))
-            {
-                action = actStr.Trim().ToLowerInvariant();
-            }
-        }
+        string? targetIp = parameters.GetString("maliciousIp", "malicious_ip", "ip", "targetIp", "target_ip")?.Trim();
+        string action = parameters.GetString("action")?.Trim().ToLowerInvariant() ?? "block";
 
         if (string.IsNullOrWhiteSpace(targetIp))
         {
@@ -136,7 +102,15 @@ public class SystemFirewallTool : IInvestigationTool
             }
             else
             {
-                // Action: "block" (인/아웃바운드 병렬 추가)
+                // Action: "block" (인/아웃바운드 멱등성 보장 추가)
+                // 1. 기존 동일 규칙명 선행 일괄 삭제 (멱등성 보장: 기존에 누적된 중복 룰까지 1회 호출로 완전 정리됨)
+                string delOutArgs = $"advfirewall firewall delete rule name=\"{ruleName}_OUT\"";
+                string delInArgs = $"advfirewall firewall delete rule name=\"{ruleName}_IN\"";
+                var preDelOutTask = RunNetshAsync(delOutArgs);
+                var preDelInTask = RunNetshAsync(delInArgs);
+                await Task.WhenAll(preDelOutTask, preDelInTask);
+
+                // 2. 신규 규칙 병렬 추가 (정확히 1쌍: IN 1개, OUT 1개 생성)
                 string outArgs = $"advfirewall firewall add rule name=\"{ruleName}_OUT\" dir=out action=block remoteip={targetIp} enable=yes";
                 string inArgs = $"advfirewall firewall add rule name=\"{ruleName}_IN\" dir=in action=block remoteip={targetIp} enable=yes";
 

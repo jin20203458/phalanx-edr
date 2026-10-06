@@ -15,6 +15,7 @@ public class ProcessTreeProjectionManager
 {
     private readonly ConcurrentDictionary<ulong, ProcessNodeModel> _nodesByGuid = new();
     private readonly ConcurrentDictionary<uint, ulong> _activePidToGuid = new();
+    private readonly ConcurrentDictionary<uint, ulong> _terminatedPidToGuid = new();
     private readonly object _syncLock = new();
 
     private readonly HashSet<ulong> _rootNodeGuids = new();
@@ -26,14 +27,24 @@ public class ProcessTreeProjectionManager
     public ObservableCollection<ProcessNodeModel> RootNodes { get; } = new();
 
     /// <summary>
-    /// 전체 노드 읽기 전용 컬렉션 (하위 호환 뷰)
-    /// </summary>
-    public ICollection<ProcessNodeModel> AllNodes => _nodesByGuid.Values;
-
-    /// <summary>
     /// 1차원 플랫 가상화 렌더링용 활성 노드 컬렉션 (ListView VirtualizingStackPanel 최적화)
     /// </summary>
     public ObservableCollection<ProcessNodeModel> VisibleNodes { get; } = new();
+
+    /// <summary>
+    /// 프로젝션 트리 내의 모든 노드를 전개(펼침) 상태로 설정하고 1차원 가상화 뷰를 재구성합니다.
+    /// </summary>
+    public void ExpandAll()
+    {
+        lock (_syncLock)
+        {
+            foreach (var node in _nodesByGuid.Values)
+            {
+                node.IsExpanded = true;
+            }
+            RebuildVisibleNodes();
+        }
+    }
 
     public event Action<ProcessNodeModel, bool /* wasSuspended */, bool /* wasRestored */>? OnProcessStopped;
 
@@ -134,6 +145,7 @@ public class ProcessTreeProjectionManager
                 node.UpdateStatus(ProcessLifecycle.LifecycleSnapshot);
 
                 _nodesByGuid[guid] = node;
+                _terminatedPidToGuid.TryRemove(ev.ProcessId, out _);
                 _activePidToGuid[ev.ProcessId] = guid;
                 tempMap[ev.ProcessId] = node;
             }
@@ -280,9 +292,14 @@ public class ProcessTreeProjectionManager
         node.UpdateStatus(ev.Lifecycle, ev.IsSuspended, ev.IsTerminated);
 
         _nodesByGuid[guid] = node;
+        _terminatedPidToGuid.TryRemove(ev.ProcessId, out _);
         if (node.IsAlive)
         {
             _activePidToGuid[ev.ProcessId] = guid;
+        }
+        else
+        {
+            _terminatedPidToGuid[ev.ProcessId] = guid;
         }
 
         // 부모 탐색 및 연결
@@ -370,6 +387,7 @@ public class ProcessTreeProjectionManager
                     targetNode.UpdateStatus(ProcessLifecycle.LifecycleStop);
                 }
             });
+            _terminatedPidToGuid[targetNode.ProcessId] = targetNode.ProcessGuid;
             _activePidToGuid.TryRemove(ev.ProcessId, out _);
             OnProcessStopped?.Invoke(targetNode, wasSuspended, wasRestored);
 
@@ -432,16 +450,21 @@ public class ProcessTreeProjectionManager
 
     public ProcessNodeModel? FindNodeByPid(uint pid)
     {
+        // 1. 활성 프로세스 고속 조회 O(1)
         if (_activePidToGuid.TryGetValue(pid, out ulong guid) &&
             _nodesByGuid.TryGetValue(guid, out var node))
         {
             return node;
         }
 
-        lock (_syncLock)
+        // 2. 종료된 프로세스 고속 인덱스 조회 O(1)
+        if (_terminatedPidToGuid.TryGetValue(pid, out ulong termGuid) &&
+            _nodesByGuid.TryGetValue(termGuid, out var termNode))
         {
-            return AllNodes.FirstOrDefault(n => n.ProcessId == pid);
+            return termNode;
         }
+
+        return null;
     }
 
     public ProcessNodeModel? FindNodeByGuid(ulong guid)
@@ -456,6 +479,7 @@ public class ProcessTreeProjectionManager
         {
             _nodesByGuid.Clear();
             _activePidToGuid.Clear();
+            _terminatedPidToGuid.Clear();
             _rootNodeGuids.Clear();
             _visibleNodeGuids.Clear();
             DispatchUI(() =>
@@ -591,7 +615,7 @@ public class ProcessTreeProjectionManager
     }
 
     /// <summary>
-    /// 가시화 플랫 컬렉션(VisibleNodes) 전체 재구축
+    /// 가시화 플랫 컬렉션(VisibleNodes) 차분 동기화 (Clear()에 의한 스크롤 리셋 및 가상화 파괴 방지)
     /// </summary>
     public void RebuildVisibleNodes()
     {
@@ -605,12 +629,76 @@ public class ProcessTreeProjectionManager
 
             DispatchUI(() =>
             {
-                VisibleNodes.Clear();
-                _visibleNodeGuids.Clear();
+                if (VisibleNodes.Count == 0)
+                {
+                    _visibleNodeGuids.Clear();
+                    foreach (var item in list)
+                    {
+                        VisibleNodes.Add(item);
+                        _visibleNodeGuids.Add(item.ProcessGuid);
+                    }
+                    return;
+                }
+
+                var targetGuids = new HashSet<ulong>(list.Count);
                 foreach (var item in list)
                 {
-                    VisibleNodes.Add(item);
-                    _visibleNodeGuids.Add(item.ProcessGuid);
+                    targetGuids.Add(item.ProcessGuid);
+                }
+
+                // 1단계: 타깃에 없는 노드 제거 (역순 순회로 안전하게 RemoveAt)
+                for (int i = VisibleNodes.Count - 1; i >= 0; i--)
+                {
+                    if (!targetGuids.Contains(VisibleNodes[i].ProcessGuid))
+                    {
+                        _visibleNodeGuids.Remove(VisibleNodes[i].ProcessGuid);
+                        VisibleNodes.RemoveAt(i);
+                    }
+                }
+
+                // 2단계: 타깃 순서와 일치하도록 삽입/정렬 동기화
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var targetItem = list[i];
+                    if (i < VisibleNodes.Count)
+                    {
+                        if (VisibleNodes[i].ProcessGuid == targetItem.ProcessGuid)
+                        {
+                            continue; // 이미 올바른 위치
+                        }
+
+                        int existingIdx = -1;
+                        for (int j = i + 1; j < VisibleNodes.Count; j++)
+                        {
+                            if (VisibleNodes[j].ProcessGuid == targetItem.ProcessGuid)
+                            {
+                                existingIdx = j;
+                                break;
+                            }
+                        }
+
+                        if (existingIdx >= 0)
+                        {
+                            VisibleNodes.Move(existingIdx, i);
+                        }
+                        else
+                        {
+                            VisibleNodes.Insert(i, targetItem);
+                            _visibleNodeGuids.Add(targetItem.ProcessGuid);
+                        }
+                    }
+                    else
+                    {
+                        VisibleNodes.Add(targetItem);
+                        _visibleNodeGuids.Add(targetItem.ProcessGuid);
+                    }
+                }
+
+                // GUID 집합 최종 일치화
+                _visibleNodeGuids.Clear();
+                foreach (var g in targetGuids)
+                {
+                    _visibleNodeGuids.Add(g);
                 }
             });
         }

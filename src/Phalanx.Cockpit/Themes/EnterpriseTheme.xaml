@@ -28,6 +28,7 @@
     <Geometry x:Key="IconBack">M15 19l-7-7 7-7</Geometry>
     <Geometry x:Key="IconCopy">M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z</Geometry>
     <Geometry x:Key="IconExport">M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4</Geometry>
+    <Geometry x:Key="IconAlertTriangle">M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4m0 4h.01</Geometry>
 
     <!-- Window System Caption Icons -->
     <Geometry x:Key="IconWinMinimize">M 0,5 L 10,5</Geometry>
@@ -484,7 +485,12 @@
                                 <Thumb>
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="{x:Type Thumb}">
-                                            <Border Background="{DynamicResource BorderFocusedBrush}" CornerRadius="3" Margin="1,0" />
+                                            <Border x:Name="ThumbBorder" Background="{DynamicResource ScrollBarThumbBrush}" CornerRadius="3" Margin="1,0" />
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ThumbBorder" Property="Background" Value="{DynamicResource ScrollBarThumbHoverBrush}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
                                         </ControlTemplate>
                                     </Thumb.Template>
                                 </Thumb>

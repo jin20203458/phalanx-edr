@@ -358,8 +358,8 @@ public class AutonomousHunterAgentTests
             new RegistryInspectionTool()
         };
 
-        // Phalanx 로컬 인증정보(Config/google-credentials.json 또는 AppSettings.json)로 실제 Vertex AI Gemini 클라이언트 자동 연결
-        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+        // 테스트 출력 폴더의 인증 파일을 명시적으로 지정하여 실제 Vertex AI Gemini 클라이언트 연결 (자동 탐색 없음)
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty, geminiClient: LiveGeminiTestConfig.CreateClient());
 
         if (!agent.IsOnlineGemini)
         {
@@ -524,7 +524,7 @@ public class AutonomousHunterAgentTests
             new RegistryInspectionTool()
         };
 
-        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty, geminiClient: LiveGeminiTestConfig.CreateClient());
 
         if (!agent.IsOnlineGemini)
         {
@@ -857,7 +857,7 @@ public class AutonomousHunterAgentTests
             new SystemFirewallTool()
         };
 
-        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty, geminiClient: LiveGeminiTestConfig.CreateClient());
 
         if (!agent.IsOnlineGemini)
         {
@@ -961,7 +961,7 @@ public class AutonomousHunterAgentTests
             new RegistryInspectionTool()
         };
 
-        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools);
+        var agent = new AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty, geminiClient: LiveGeminiTestConfig.CreateClient());
 
         if (!agent.IsOnlineGemini)
         {

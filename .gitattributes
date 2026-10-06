@@ -1,6 +1,6 @@
-# GitHub Linguist Language Statistics Overrides (Option B)
-# Exclude mock scenarios, auxiliary tools, scripts, and C# test suites from language stats
-# while preserving core C++20 engine tests and autonomous C# AI agent engines.
+# GitHub Linguist Language Statistics Overrides
+# Exclude C# unit/live test harnesses, attack simulator, simulated investigation tools, and scripts
+# to highlight core low-latency C++20 kernel sensor (with native E2E benchmarks) and autonomous C# AI agent engines.
 
 tests/Phalanx.Agent.Tests/** linguist-vendored
 tools/Phalanx.AttackSimulator/** linguist-vendored

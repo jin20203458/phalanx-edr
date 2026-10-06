@@ -1,4 +1,8 @@
 using System.IO;
+using Phalanx.Cockpit.Agent;
+using Phalanx.Cockpit.CQRS;
+using Phalanx.Cockpit.Storage;
+using Phalanx.Cockpit.Tools;
 using Phalanx.Cockpit.ViewModels;
 using Xunit;
 
@@ -136,40 +140,6 @@ public class SettingsViewModelTests
             {
                 File.Delete(appSettingsFile);
             }
-
-            // 소스 디렉터리 AppSettings.json도 기본값 복원
-            string devAppSettings = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"));
-            if (File.Exists(devAppSettings))
-            {
-                var cleanDefault = @"{
-  ""Gemini"": {
-    ""ProjectId"": ""grc0-494913"",
-    ""Location"": ""global"",
-    ""ModelName"": ""gemini-3.7-flash"",
-    ""CredentialsPath"": ""Config/google-credentials.json"",
-    ""ApiKey"": """",
-    ""UseVertexAI"": true,
-    ""MaxSteps"": 5,
-    ""WatchdogTimeoutSec"": 10,
-    ""CtsTimeoutSec"": 50,
-    ""OfflineFallback"": true,
-    ""FailSecure"": true
-  },
-  ""ProjectId"": ""grc0-494913"",
-  ""Location"": ""global"",
-  ""ApiKey"": """",
-  ""UseVertexAI"": true,
-  ""Sensor"": {
-    ""Host"": ""127.0.0.1"",
-    ""Port"": 50051
-  },
-  ""Storage"": {
-    ""DatabasePath"": ""phalanx_forensics.db"",
-    ""ReportExportPath"": ""IncidentReports""
-  }
-}";
-                try { File.WriteAllText(devAppSettings, cleanDefault); } catch { }
-            }
         }
     }
 
@@ -214,16 +184,12 @@ public class SettingsViewModelTests
         Assert.False(string.IsNullOrWhiteSpace(vm.HostPlatformText));
         Assert.StartsWith(".NET ", vm.DotNetRuntimeText);
 
-        // 2. AI 인지 엔진 동적 반영
+        // 2. AI 엔진 표시: 입력 폼 값이 아닌 실제 적용 상태 (에이전트 미연결 시 LOCAL OFFLINE, 공급사 명칭 미노출)
         vm.UseVertexAi = true;
         vm.SelectedModel = "gemini-3.7-flash";
-        Assert.Equal("Google Cloud Vertex AI (gemini-3.7-flash)", vm.ActiveAiModelText);
-
-        vm.UseVertexAi = false;
-        Assert.Equal("Google AI Studio (gemini-3.7-flash)", vm.ActiveAiModelText);
-
-        vm.SelectedModel = "gemini-1.5-pro";
-        Assert.Equal("Google AI Studio (gemini-1.5-pro)", vm.ActiveAiModelText);
+        Assert.Equal("LOCAL OFFLINE", vm.ActiveAiModelText);
+        Assert.DoesNotContain("Gemini", vm.ActiveAiModelText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Google", vm.ActiveAiModelText, StringComparison.OrdinalIgnoreCase);
 
         // 3. 센서 IPC 엔드포인트 동적 반영
         vm.SensorHost = "192.168.1.100";
@@ -233,6 +199,61 @@ public class SettingsViewModelTests
         // 4. 포렌식 데이터베이스 경로 반영
         vm.DatabasePath = "custom_test.db";
         Assert.Contains("custom_test.db", vm.ActiveDatabaseText);
+    }
+
+    [Fact]
+    public void TestSettingsViewModel_AppliedEngineState_RefreshesImmediatelyOnReconfiguration()
+    {
+        var agent = new AutonomousHunterAgent(
+            new ProcessTreeProjectionManager(),
+            ForensicArchiveManager.CreateInMemory(),
+            Array.Empty<IInvestigationTool>(),
+            geminiApiKey: string.Empty);
+        var vm = new SettingsViewModel(agent);
+
+        var changed = new List<string?>();
+        vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        Assert.False(vm.IsAgentOnline);
+        Assert.Equal("LOCAL OFFLINE", vm.AppliedEngineStatusText);
+
+        // 런타임 재구성(설정 저장과 동일 경로) 직후 UI 바인딩 속성이 즉시 갱신되어야 함
+        agent.ReloadConfiguration(geminiApiKey: "unit-test-key", modelName: "unit-test-model", useVertexAi: false);
+
+        Assert.True(vm.IsAgentOnline);
+        Assert.Equal("CLOUD LLM (unit-test-model)", vm.AppliedEngineStatusText);
+        Assert.Contains(nameof(SettingsViewModel.AppliedEngineStatusText), changed);
+        Assert.Contains(nameof(SettingsViewModel.IsAgentOnline), changed);
+
+        // 잘못된 인증 파일로 재구성 시 즉시 오프라인 표시 + 사유 노출
+        changed.Clear();
+        agent.ReloadConfiguration(useVertexAi: true, credentialsPath: "Config/does-not-exist.json");
+
+        Assert.False(vm.IsAgentOnline);
+        Assert.Equal("LOCAL OFFLINE", vm.AppliedEngineStatusText);
+        Assert.Contains("인증 파일 없음", vm.AppliedEngineDetailText);
+        Assert.Contains(nameof(SettingsViewModel.AppliedEngineDetailText), changed);
+        Assert.DoesNotContain("Gemini", vm.AppliedEngineDetailText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TestSettingsViewModel_CredentialsFound_RefreshesWhenPathEdited()
+    {
+        var vm = new SettingsViewModel();
+        string tempFile = Path.Combine(Path.GetTempPath(), $"phalanx-cred-{Guid.NewGuid():N}.json");
+        File.WriteAllText(tempFile, "{}");
+        try
+        {
+            vm.CredentialsPath = tempFile;
+            Assert.True(vm.CredentialsFound);
+
+            vm.CredentialsPath = tempFile + ".missing";
+            Assert.False(vm.CredentialsFound);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
     }
 
     [Fact]
@@ -315,19 +336,100 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    [Trait("Category", "Live")]
-    public async Task TestSettingsViewModel_TestConnectionCommand_PassesWithRealVertexAi()
+    public void TestSettingsViewModel_ApiKeyInput_AutoSwitchesToApiKeyMode()
     {
         var vm = new SettingsViewModel();
+        vm.UseVertexAi = true;
         Assert.True(vm.UseVertexAi);
-        Assert.Equal("us-central1", vm.VertexLocation);
-        Assert.Equal("gemini-2.5-flash", vm.SelectedModel);
-        Assert.True(vm.CredentialsFound);
+        Assert.False(vm.IsApiKeyMode);
 
-        await vm.TestConnectionCommand.ExecuteAsync(null);
+        // API 키 입력 시 자동으로 API Key 모드로 전환 검증
+        vm.GeminiApiKey = "AIzaSyTestApiKey12345";
+        Assert.False(vm.UseVertexAi);
+        Assert.True(vm.IsApiKeyMode);
+    }
 
-        Assert.Contains("PASS", vm.TestStatusMessage);
-        Assert.True(vm.IsAgentOnline);
+    [Fact]
+    public void TestSettingsViewModel_SaveSettings_DirectApiKey_NotifiesUiBridgeAndTransitionsToOnline()
+    {
+        string appSettingsFile = Path.Combine(AppContext.BaseDirectory, "AppSettings.json");
+        string? originalContent = File.Exists(appSettingsFile) ? File.ReadAllText(appSettingsFile) : null;
+
+        try
+        {
+            var treeManager = new Phalanx.Cockpit.CQRS.ProcessTreeProjectionManager();
+            var archiveManager = Phalanx.Cockpit.Storage.ForensicArchiveManager.CreateInMemory();
+            var tools = System.Array.Empty<Phalanx.Cockpit.Tools.IInvestigationTool>();
+            var agent = new Phalanx.Cockpit.Agent.AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
+            var uiBridge = new Phalanx.Cockpit.Services.CockpitUiBridge();
+
+            string? notifiedStatus = null;
+            bool? notifiedOnline = null;
+            uiBridge.EngineConfigurationChanged += (status, online) =>
+            {
+                notifiedStatus = status;
+                notifiedOnline = online;
+            };
+
+            var vm = new SettingsViewModel(
+                agent: agent,
+                archiveManager: archiveManager,
+                uiBridge: uiBridge,
+                sensorController: null,
+                labRunner: null
+            );
+
+            // 초기 오프라인 확인
+            Assert.False(agent.IsOnlineGemini);
+            Assert.Equal("LOCAL OFFLINE", vm.AppliedEngineStatusText);
+
+            // 유효 API 키 입력 및 저장
+            vm.GeminiApiKey = "AIzaSyValidDummyApiKey";
+            vm.SelectedModel = "gemini-3.7-flash";
+            vm.SaveSettingsCommand.Execute(null);
+
+            // 검증: 에이전트가 온라인으로 즉시 전환
+            Assert.True(agent.IsOnlineGemini);
+            Assert.Contains("CLOUD LLM", vm.AppliedEngineStatusText);
+            Assert.Contains("gemini-3.7-flash", vm.AppliedEngineStatusText);
+
+            // 검증: UiBridge를 통해 전체 UI로 즉시 브로드캐스트됨
+            Assert.NotNull(notifiedStatus);
+            Assert.Contains("CLOUD LLM", notifiedStatus);
+            Assert.True(notifiedOnline);
+        }
+        finally
+        {
+            if (originalContent != null) File.WriteAllText(appSettingsFile, originalContent);
+            else if (File.Exists(appSettingsFile)) File.Delete(appSettingsFile);
+        }
+    }
+
+    [Fact]
+    public void TestMainViewModel_LiveEngineProperties_SynchronizeWithSettings()
+    {
+        var archiveManager = Phalanx.Cockpit.Storage.ForensicArchiveManager.CreateInMemory();
+        var treeManager = new Phalanx.Cockpit.CQRS.ProcessTreeProjectionManager();
+        var uiBridge = new Phalanx.Cockpit.Services.CockpitUiBridge();
+        var tools = System.Array.Empty<Phalanx.Cockpit.Tools.IInvestigationTool>();
+        var agent = new Phalanx.Cockpit.Agent.AutonomousHunterAgent(treeManager, archiveManager, tools, geminiApiKey: string.Empty);
+
+        var sensorController = new Phalanx.Cockpit.Services.SensorProcessController();
+        var labRunner = new Phalanx.Cockpit.Services.AttackLabScenarioRunner(treeManager, agent);
+        var settingsVm = new SettingsViewModel(agent, archiveManager, uiBridge);
+        var mainVm = new MainViewModel(archiveManager, treeManager, uiBridge, sensorController, labRunner, settingsVm);
+
+        // 초기 상태: 로컬 오프라인
+        Assert.Equal("LOCAL OFFLINE", mainVm.CurrentLiveEngineText);
+        Assert.False(mainVm.IsCurrentLiveEngineOnline);
+
+        // 설정창에서 API 키 적용
+        settingsVm.GeminiApiKey = "AIzaSyTestLiveKey";
+        settingsVm.SaveSettingsCommand.Execute(null);
+
+        // 검증: MainViewModel의 LiveEngineText와 IsCurrentLiveEngineOnline이 즉시 CLOUD LLM으로 반영됨
+        Assert.Contains("CLOUD LLM", mainVm.CurrentLiveEngineText);
+        Assert.True(mainVm.IsCurrentLiveEngineOnline);
     }
 }
 

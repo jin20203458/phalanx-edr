@@ -21,6 +21,7 @@ public class CockpitUiBridge
     public event Action<string, ReActTraceRecord>? ReActStepCompleted;
     public event Action<InvestigationResult>? InvestigationCompleted;
     public event Action? IncidentsDatabaseCleared;
+    public event Action<string /* statusText */, bool /* isOnline */>? EngineConfigurationChanged;
 
     // 수동 제어 역방향 명령 대리자 (MainWindow -> gRPC 서비스)
     public Func<MitigationCommand, Task>? ManualCommandSender { get; set; }
@@ -61,6 +62,11 @@ public class CockpitUiBridge
     public void NotifyInvestigationCompleted(InvestigationResult result)
     {
         Dispatch(() => InvestigationCompleted?.Invoke(result));
+    }
+
+    public void NotifyEngineConfigurationChanged(string statusText, bool isOnline)
+    {
+        Dispatch(() => EngineConfigurationChanged?.Invoke(statusText, isOnline));
     }
 
     public async Task SendManualCommandAsync(MitigationCommand command)

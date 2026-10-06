@@ -424,10 +424,31 @@
                     Grid.Column="1"
                     VerticalAlignment="Center"
                     Orientation="Horizontal">
+                    <TextBlock FontSize="10" Foreground="{DynamicResource TextMutedBrush}">
+                        <Run Text="SAFETY WATCHDOG: " />
+                        <Run Text="{Binding Settings.WatchdogTimeoutSec, Mode=OneWay}" />
+                        <Run Text="s SLA (+" />
+                        <Run Text="{Binding Settings.CtsTimeoutSec, Mode=OneWay}" />
+                        <Run Text="s EXTEND) • AI ENGINE: " />
+                    </TextBlock>
+                    <Ellipse Width="5" Height="5" Margin="2,0,4,0" VerticalAlignment="Center">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{DynamicResource DotSuspendedBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Settings.IsAgentOnline}" Value="True">
+                                        <Setter Property="Fill" Value="{DynamicResource DotLiveBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
                     <TextBlock
                         FontSize="10"
-                        Foreground="{DynamicResource TextMutedBrush}"
-                        Text="SAFETY WATCHDOG: 10s SLA (+50s EXTEND TICKETS) • REAC HUNTER: READY" />
+                        FontWeight="Bold"
+                        Foreground="{DynamicResource TextPrimaryBrush}"
+                        Text="{Binding Settings.AppliedEngineStatusText, Mode=OneWay}"
+                        ToolTip="{Binding Settings.AppliedEngineDetailText, Mode=OneWay}" />
                 </StackPanel>
             </Grid>
         </Border>

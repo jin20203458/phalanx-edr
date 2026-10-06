@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using Phalanx.Cockpit.Agent;
 using Phalanx.Cockpit.Agent.Gemini;
+using Phalanx.Cockpit.Config;
 using Phalanx.Cockpit.Services;
 using Phalanx.Cockpit.Storage;
 
@@ -151,15 +152,16 @@ public sealed partial class SettingsViewModel : ObservableObject
     private string _vertexProjectId = "grc0-494913";
 
     [ObservableProperty]
-    private string _vertexLocation = "us-central1";
+    private string _vertexLocation = "global";
 
     [ObservableProperty]
-    private string _selectedModel = "gemini-2.5-flash";
+    private string _selectedModel = "gemini-3.7-flash";
 
     public IReadOnlyList<string> AvailableModels { get; } = new List<string>
     {
+        "gemini-3.7-flash",
+        "gemini-3.5-flash",
         "gemini-2.5-flash",
-        "gemini-2.5-pro",
         "gemini-1.5-flash",
         "gemini-1.5-pro"
     };
@@ -167,11 +169,35 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _credentialsPath = "Config/google-credentials.json";
 
+    partial void OnCredentialsPathChanged(string value)
+    {
+        try
+        {
+            string resolved = string.IsNullOrWhiteSpace(value)
+                ? string.Empty
+                : (Path.IsPathRooted(value) ? value : Path.Combine(AppContext.BaseDirectory, value));
+            CredentialsFound = !string.IsNullOrEmpty(resolved) && File.Exists(resolved);
+        }
+        catch
+        {
+            CredentialsFound = false;
+        }
+    }
+
     [ObservableProperty]
     private bool _credentialsFound;
 
     [ObservableProperty]
     private string _geminiApiKey = string.Empty;
+
+    partial void OnGeminiApiKeyChanged(string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && UseVertexAi)
+        {
+            UseVertexAi = false;
+        }
+        OnPropertyChanged(nameof(ActiveAiModelText));
+    }
 
     [ObservableProperty]
     private int _maxSteps = 5;
@@ -242,11 +268,158 @@ public sealed partial class SettingsViewModel : ObservableObject
     public string ProductVersionText => "Phalanx EDR v1.0.0";
     public string HostPlatformText => $"{System.Runtime.InteropServices.RuntimeInformation.OSDescription} ({System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture})";
     public string DotNetRuntimeText => $".NET {Environment.Version}";
-    public string ActiveAiModelText => UseVertexAi
-        ? $"Google Cloud Vertex AI ({SelectedModel})"
-        : $"Google AI Studio ({SelectedModel})";
+    /// <summary>
+    /// 시스템 정보 탭의 활성 AI 엔진 표시: 입력 폼 값이 아닌 에이전트에 실제 적용된 상태를 표시합니다.
+    /// </summary>
+    public string ActiveAiModelText => AppliedEngineStatusText;
     public string ActiveSensorEndpointText => $"{SensorHost}:{SensorPort}";
     public string ActiveDatabaseText => !string.IsNullOrWhiteSpace(DatabaseResolvedPath) ? DatabaseResolvedPath : DatabasePath;
+
+    // =========================================================================
+    // Applied Runtime Engine State (공급사 중립 표기, 에이전트 실제 상태 기준)
+    // =========================================================================
+    public string AppliedEngineStatusText
+    {
+        get
+        {
+            if (_agent == null) return "LOCAL OFFLINE";
+            return _agent.IsOnlineGemini
+                ? (string.IsNullOrWhiteSpace(_agent.CurrentModelName) ? "CLOUD LLM" : $"CLOUD LLM ({_agent.CurrentModelName})")
+                : "LOCAL OFFLINE";
+        }
+    }
+
+    public string AppliedEngineDetailText
+    {
+        get
+        {
+            if (_agent == null) return "수사 에이전트가 연결되지 않아 로컬 결정론적 엔진 상태로 표시됩니다.";
+            if (_agent.IsOnlineGemini)
+            {
+                return _agent.OfflineFallbackEnabled
+                    ? "클라우드 LLM 자율 수사 활성. 호출 실패/지연 시 23ms 로컬 결정론적 엔진으로 자동 폴백합니다."
+                    : "클라우드 LLM 자율 수사 활성. 오프라인 폴백 비활성 (장애 시 Fail-Secure 정책 적용).";
+            }
+            string reason = string.IsNullOrWhiteSpace(_agent.LastClientError) ? "클라우드 LLM 설정 없음" : _agent.LastClientError!;
+            return $"클라우드 LLM 비활성 ({reason}). 23ms 로컬 결정론적 엔진으로 수사합니다.";
+        }
+    }
+
+    [ObservableProperty]
+    private string _lastAppliedAtText = string.Empty;
+
+    private void RefreshAppliedEngineState()
+    {
+        IsAgentOnline = _agent?.IsOnlineGemini ?? false;
+        LastAppliedAtText = DateTime.Now.ToString("HH:mm:ss");
+        OnPropertyChanged(nameof(IsAgentOnline));
+        OnPropertyChanged(nameof(AppliedEngineStatusText));
+        OnPropertyChanged(nameof(AppliedEngineDetailText));
+        OnPropertyChanged(nameof(ActiveAiModelText));
+        _uiBridge?.NotifyEngineConfigurationChanged(AppliedEngineStatusText, IsAgentOnline);
+    }
+
+    private void OnAgentConfigurationApplied() => RunOnUi(RefreshAppliedEngineState);
+
+    private static void RunOnUi(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess())
+        {
+            action();
+        }
+        else
+        {
+            dispatcher.BeginInvoke(action);
+        }
+    }
+
+    // =========================================================================
+    // AppSettings.json Hot Reload (외부 편집 즉시 반영)
+    // =========================================================================
+    private FileSystemWatcher? _settingsWatcher;
+    private System.Threading.Timer? _settingsReloadDebounce;
+    private string? _lastAppliedSettingsHash;
+
+    private static string? ComputeSettingsHash(string path)
+    {
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                if (!File.Exists(path)) return null;
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+            }
+            catch (IOException)
+            {
+                Thread.Sleep(50);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private void StartSettingsWatcher()
+    {
+        try
+        {
+            string path = GeminiRestClient.SettingsFilePath;
+            string? dir = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
+
+            _lastAppliedSettingsHash = ComputeSettingsHash(path);
+            _settingsReloadDebounce = new System.Threading.Timer(_ => OnSettingsFileChangedDebounced(), null, Timeout.Infinite, Timeout.Infinite);
+            _settingsWatcher = new FileSystemWatcher(dir, Path.GetFileName(path))
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName | NotifyFilters.CreationTime
+            };
+            FileSystemEventHandler onChange = (_, _) => _settingsReloadDebounce?.Change(400, Timeout.Infinite);
+            _settingsWatcher.Changed += onChange;
+            _settingsWatcher.Created += onChange;
+            _settingsWatcher.Renamed += (_, _) => _settingsReloadDebounce?.Change(400, Timeout.Infinite);
+            _settingsWatcher.EnableRaisingEvents = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"[SettingsViewModel] 설정 파일 감시 시작 실패: {ex.Message}");
+        }
+    }
+
+    private void OnSettingsFileChangedDebounced()
+    {
+        string? hash = ComputeSettingsHash(GeminiRestClient.SettingsFilePath);
+        // 자체 저장(SaveSettings)으로 이미 적용된 내용이거나 실제 내용 변화가 없으면 무시
+        if (hash == null || hash == _lastAppliedSettingsHash) return;
+        _lastAppliedSettingsHash = hash;
+        RunOnUi(ApplyExternalSettingsChange);
+    }
+
+    /// <summary>
+    /// 설정 파일이 외부에서 변경되었을 때 폼 값, 에이전트, 센서/랩 런타임 파라미터를 즉시 재적용합니다.
+    /// </summary>
+    public void ApplyExternalSettingsChange()
+    {
+        LoadCurrentSettings();
+        _agent?.ReloadFromSettingsFile();
+        ApplySensorAndLabRuntime();
+        RefreshAppliedEngineState();
+        StatusMessage = $"[{DateTime.Now:HH:mm:ss}] 설정 파일 변경 감지: 즉시 재적용 완료 (수사 엔진: {AppliedEngineStatusText})";
+    }
+
+    private void ApplySensorAndLabRuntime()
+    {
+        _sensorController.Endpoint = $"{SensorHost}:{SensorPort}";
+        _sensorController.WatchdogTimeoutSec = WatchdogTimeoutSec;
+        _sensorController.ExtendTimeoutSec = CtsTimeoutSec;
+        if (_labRunner != null)
+        {
+            _labRunner.ReportExportDirectory = ReportExportPath;
+        }
+    }
 
     // =========================================================================
     // Common Action & Feedback Observables
@@ -277,7 +450,19 @@ public sealed partial class SettingsViewModel : ObservableObject
         _sensorController = sensorController ?? SensorProcessController.Instance;
         _labRunner = labRunner;
 
+        if (_agent != null)
+        {
+            _agent.ConfigurationApplied += OnAgentConfigurationApplied;
+        }
+
         LoadCurrentSettings();
+        RefreshAppliedEngineState();
+
+        // 실제 WPF 런타임에서만 설정 파일 감시 (단위 테스트 환경의 공유 파일 간섭 방지)
+        if (System.Windows.Application.Current != null && _agent != null)
+        {
+            StartSettingsWatcher();
+        }
     }
 
     // =========================================================================
@@ -291,105 +476,55 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public void LoadCurrentSettings()
     {
-        // 1. Credentials 파일 존재 확인
-        string targetCredPath = Path.Combine(AppContext.BaseDirectory, CredentialsPath);
-        if (!File.Exists(targetCredPath))
+        // 1. Credentials 파일 존재 확인 (실행 폴더 기준 단일 해석)
+        string targetCredPath = Path.IsPathRooted(CredentialsPath)
+            ? CredentialsPath
+            : Path.Combine(AppContext.BaseDirectory, CredentialsPath);
+        CredentialsFound = File.Exists(targetCredPath);
+
+        // 2. AppSettings.json 로드 (PhalanxConfigurationManager 단일 공급자)
+        try
         {
-            targetCredPath = Path.Combine(Directory.GetCurrentDirectory(), CredentialsPath);
+            var cfg = PhalanxConfigurationManager.Load();
+
+            if (!string.IsNullOrWhiteSpace(cfg.Gemini.ProjectId))
+                VertexProjectId = cfg.Gemini.ProjectId;
+            if (!string.IsNullOrWhiteSpace(cfg.Gemini.Location))
+                VertexLocation = cfg.Gemini.Location;
+            if (!string.IsNullOrWhiteSpace(cfg.Gemini.ModelName))
+                SelectedModel = cfg.Gemini.ModelName;
+            if (!string.IsNullOrWhiteSpace(cfg.Gemini.ApiKey))
+                GeminiApiKey = cfg.Gemini.ApiKey;
+
+            UseVertexAi = cfg.Gemini.UseVertexAI;
+
+            if (!string.IsNullOrWhiteSpace(cfg.Gemini.CredentialsPath))
+                CredentialsPath = cfg.Gemini.CredentialsPath;
+
+            MaxSteps = Math.Clamp(cfg.Gemini.MaxSteps, 1, 10);
+            WatchdogTimeoutSec = Math.Clamp(cfg.Gemini.WatchdogTimeoutSec, 1, 60);
+            CtsTimeoutSec = Math.Clamp(cfg.Gemini.CtsTimeoutSec, 5, 120);
+            OfflineFallbackEnabled = cfg.Gemini.OfflineFallback;
+            FailSecureEnabled = cfg.Gemini.FailSecure;
+
+            if (!string.IsNullOrWhiteSpace(cfg.Sensor.Host))
+                SensorHost = cfg.Sensor.Host;
+            SensorPort = Math.Clamp(cfg.Sensor.Port, 1024, 65535);
+
+            if (!string.IsNullOrWhiteSpace(cfg.Storage.DatabasePath))
+                DatabasePath = cfg.Storage.DatabasePath;
+            if (!string.IsNullOrWhiteSpace(cfg.Storage.ReportExportPath))
+                ReportExportPath = cfg.Storage.ReportExportPath;
+
+            SelectedThemeMode = string.IsNullOrWhiteSpace(cfg.Theme) ? "System" : cfg.Theme;
         }
-        CredentialsFound = File.Exists(targetCredPath) || File.Exists(CredentialsPath);
+        catch { }
 
-        // 2. AppSettings.json 로드
-        string appSettingsFile = Path.Combine(AppContext.BaseDirectory, "AppSettings.json");
-        if (!File.Exists(appSettingsFile))
-        {
-            appSettingsFile = Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json");
-        }
+        string resolvedCred = Path.IsPathRooted(CredentialsPath)
+            ? CredentialsPath
+            : Path.Combine(AppContext.BaseDirectory, CredentialsPath);
+        CredentialsFound = File.Exists(resolvedCred);
 
-        if (File.Exists(appSettingsFile))
-        {
-            try
-            {
-                var json = File.ReadAllText(appSettingsFile);
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                // Vertex / Gemini 섹션 우선 파싱
-                JsonElement geminiSec = root;
-                if (root.TryGetProperty("Gemini", out var g))
-                {
-                    geminiSec = g;
-                }
-
-                if (geminiSec.TryGetProperty("ProjectId", out var pid) && !string.IsNullOrWhiteSpace(pid.GetString()))
-                    VertexProjectId = pid.GetString()!;
-                else if (root.TryGetProperty("ProjectId", out var rpid) && !string.IsNullOrWhiteSpace(rpid.GetString()))
-                    VertexProjectId = rpid.GetString()!;
-
-                if (geminiSec.TryGetProperty("Location", out var loc) && !string.IsNullOrWhiteSpace(loc.GetString()))
-                    VertexLocation = loc.GetString()!;
-                else if (root.TryGetProperty("Location", out var rloc) && !string.IsNullOrWhiteSpace(rloc.GetString()))
-                    VertexLocation = rloc.GetString()!;
-
-                if (geminiSec.TryGetProperty("ModelName", out var m) && !string.IsNullOrWhiteSpace(m.GetString()))
-                    SelectedModel = m.GetString()!;
-
-                if (geminiSec.TryGetProperty("ApiKey", out var k) && !string.IsNullOrWhiteSpace(k.GetString()))
-                    GeminiApiKey = k.GetString()!;
-                else if (root.TryGetProperty("ApiKey", out var rk) && !string.IsNullOrWhiteSpace(rk.GetString()))
-                    GeminiApiKey = rk.GetString()!;
-
-                if (root.TryGetProperty("UseVertexAI", out var uv))
-                    UseVertexAi = uv.GetBoolean();
-                else if (geminiSec.TryGetProperty("UseVertexAI", out var guv))
-                    UseVertexAi = guv.GetBoolean();
-
-                if (geminiSec.TryGetProperty("CredentialsPath", out var cp) && !string.IsNullOrWhiteSpace(cp.GetString()))
-                    CredentialsPath = cp.GetString()!;
-                if (geminiSec.TryGetProperty("MaxSteps", out var ms) && ms.TryGetInt32(out var msVal))
-                    MaxSteps = Math.Clamp(msVal, 1, 10);
-                if (geminiSec.TryGetProperty("WatchdogTimeoutSec", out var wt) && wt.TryGetInt32(out var wtVal))
-                    WatchdogTimeoutSec = Math.Clamp(wtVal, 1, 60);
-                if (geminiSec.TryGetProperty("CtsTimeoutSec", out var ct) && ct.TryGetInt32(out var ctVal))
-                    CtsTimeoutSec = Math.Clamp(ctVal, 5, 120);
-                if (geminiSec.TryGetProperty("OfflineFallback", out var of))
-                    OfflineFallbackEnabled = of.GetBoolean();
-                if (geminiSec.TryGetProperty("FailSecure", out var fs))
-                    FailSecureEnabled = fs.GetBoolean();
-
-                // Sensor 섹션 파싱
-                if (root.TryGetProperty("Sensor", out var sensorSec))
-                {
-                    if (sensorSec.TryGetProperty("Host", out var sh) && !string.IsNullOrWhiteSpace(sh.GetString()))
-                        SensorHost = sh.GetString()!;
-                    if (sensorSec.TryGetProperty("Port", out var sp) && sp.TryGetInt32(out var spVal))
-                        SensorPort = Math.Clamp(spVal, 1024, 65535);
-                }
-
-                // Storage 섹션 파싱
-                if (root.TryGetProperty("Storage", out var storageSec))
-                {
-                    if (storageSec.TryGetProperty("DatabasePath", out var dbp) && !string.IsNullOrWhiteSpace(dbp.GetString()))
-                        DatabasePath = dbp.GetString()!;
-                    if (storageSec.TryGetProperty("ReportExportPath", out var rep) && !string.IsNullOrWhiteSpace(rep.GetString()))
-                        ReportExportPath = rep.GetString()!;
-                }
-
-                // Theme 섹션 파싱
-                if (root.TryGetProperty("Theme", out var tProp) && !string.IsNullOrWhiteSpace(tProp.GetString()))
-                    SelectedThemeMode = tProp.GetString()!;
-                else if (root.TryGetProperty("UI", out var uiSec) && uiSec.TryGetProperty("Theme", out var utProp) && !string.IsNullOrWhiteSpace(utProp.GetString()))
-                    SelectedThemeMode = utProp.GetString()!;
-                else
-                    SelectedThemeMode = "System";
-            }
-            catch { }
-
-            string resolvedCred = Path.IsPathRooted(CredentialsPath)
-                ? CredentialsPath
-                : Path.Combine(AppContext.BaseDirectory, CredentialsPath);
-            CredentialsFound = File.Exists(resolvedCred) || File.Exists(CredentialsPath);
-        }
 
         // 3. 런타임 상태 동기화
         IsAgentOnline = _agent?.IsOnlineGemini ?? false;
@@ -625,24 +760,25 @@ public sealed partial class SettingsViewModel : ObservableObject
             var sw = Stopwatch.StartNew();
             using var http = new HttpClient();
 
-            GeminiRestClient? testClient = null;
-            if (!UseVertexAi && !string.IsNullOrWhiteSpace(GeminiApiKey))
+            GeminiRestClient? testClient;
+            string? clientError = null;
+            if (!UseVertexAi)
             {
-                testClient = new GeminiRestClient(http, GeminiApiKey, SelectedModel);
+                testClient = string.IsNullOrWhiteSpace(GeminiApiKey)
+                    ? null
+                    : new GeminiRestClient(http, GeminiApiKey, SelectedModel);
+                if (testClient == null) clientError = "API Key 모드이지만 API Key가 입력되지 않았습니다.";
             }
             else
             {
-                testClient = GeminiRestClient.TryCreateFromLocalConfig(
-                    http,
-                    SelectedModel,
-                    explicitCredentialsPath: CredentialsPath,
-                    explicitProjectId: VertexProjectId,
-                    explicitLocation: VertexLocation);
+                // UI에 입력된 인증 파일 하나만 사용 (다른 위치로 자동 대체하지 않음)
+                testClient = GeminiRestClient.TryCreateVertexClient(
+                    http, CredentialsPath, VertexProjectId, VertexLocation, SelectedModel, out clientError);
             }
 
             if (testClient == null)
             {
-                TestStatusMessage = "FAIL: 인증 설정 생성 실패. google-credentials.json 경로 또는 ProjectId를 확인하십시오.";
+                TestStatusMessage = $"FAIL: {clientError}";
                 return;
             }
 
@@ -656,8 +792,9 @@ public sealed partial class SettingsViewModel : ObservableObject
             string resp = await testClient.GenerateContentAsync(testHistory, "You are an automated ping responder.", cts.Token, timeoutMs: 15000);
             sw.Stop();
 
-            TestStatusMessage = $"PASS: Gemini 연결 성공! 모델: {testClient.ModelName} (지연시간: {sw.Elapsed.TotalMilliseconds:F0} ms)";
-            IsAgentOnline = true;
+            TestStatusMessage = $"PASS: LLM 연결 성공! 모델: {testClient.ModelName} (지연시간: {sw.Elapsed.TotalMilliseconds:F0} ms) ➔ 하단의 [저장 및 적용]을 누르면 즉시 수사관에 활성화됩니다.";
+            // 연결 테스트는 설정을 적용하지 않으므로 온라인 표시는 실제 에이전트 상태를 그대로 반영
+            IsAgentOnline = _agent?.IsOnlineGemini ?? false;
         }
         catch (Exception ex)
         {
@@ -674,74 +811,55 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         try
         {
-            string appSettingsFile = Path.Combine(AppContext.BaseDirectory, "AppSettings.json");
-            JsonObject rootObj;
-
-            if (File.Exists(appSettingsFile))
+            // API Key 직접 인증 모드 판정: 라디오 버튼 선택 또는 유효 API 키 입력 + 인증키 미존재 시 자동 전환
+            bool isDirectKeyMode = IsApiKeyMode || (!string.IsNullOrWhiteSpace(GeminiApiKey) && !CredentialsFound);
+            if (isDirectKeyMode && UseVertexAi)
             {
-                var existingJson = File.ReadAllText(appSettingsFile);
-                rootObj = JsonNode.Parse(existingJson)?.AsObject() ?? new JsonObject();
-            }
-            else
-            {
-                rootObj = new JsonObject();
+                UseVertexAi = false;
             }
 
-            // Gemini 섹션 갱신
-            var geminiSec = rootObj["Gemini"] as JsonObject ?? new JsonObject();
-            geminiSec["ProjectId"] = VertexProjectId;
-            geminiSec["Location"] = VertexLocation;
-            geminiSec["ModelName"] = SelectedModel;
-            geminiSec["CredentialsPath"] = CredentialsPath;
-            geminiSec["ApiKey"] = GeminiApiKey;
-            geminiSec["UseVertexAI"] = UseVertexAi;
-            geminiSec["MaxSteps"] = MaxSteps;
-            geminiSec["WatchdogTimeoutSec"] = WatchdogTimeoutSec;
-            geminiSec["CtsTimeoutSec"] = CtsTimeoutSec;
-            geminiSec["OfflineFallback"] = OfflineFallbackEnabled;
-            geminiSec["FailSecure"] = FailSecureEnabled;
-
-            rootObj["Gemini"] = geminiSec;
-
-            // 하위 호환 필드
-            rootObj["ProjectId"] = VertexProjectId;
-            rootObj["Location"] = VertexLocation;
-            rootObj["ApiKey"] = GeminiApiKey;
-            rootObj["UseVertexAI"] = UseVertexAi;
-
-            // 센서 및 스토리지 섹션
             SensorPort = Math.Clamp(SensorPort, 1024, 65535);
-            var sensorSec = rootObj["Sensor"] as JsonObject ?? new JsonObject();
-            sensorSec["Host"] = SensorHost;
-            sensorSec["Port"] = SensorPort;
-            rootObj["Sensor"] = sensorSec;
 
-            var storageSec = rootObj["Storage"] as JsonObject ?? new JsonObject();
-            storageSec["DatabasePath"] = DatabasePath;
-            storageSec["ReportExportPath"] = ReportExportPath;
-            rootObj["Storage"] = storageSec;
-
-            rootObj["Theme"] = SelectedThemeMode;
-
-            var opt = new JsonSerializerOptions { WriteIndented = true };
-            string output = rootObj.ToJsonString(opt);
-
-            File.WriteAllText(appSettingsFile, output);
-
-            // 소스 디렉터리 AppSettings.json도 존재 시 동시 반영
-            string devAppSettings = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"));
-            if (File.Exists(devAppSettings))
+            var config = new PhalanxConfiguration
             {
-                try { File.WriteAllText(devAppSettings, output); } catch { }
-            }
+                Gemini = new GeminiSettings
+                {
+                    ProjectId = VertexProjectId,
+                    Location = VertexLocation,
+                    ModelName = SelectedModel,
+                    CredentialsPath = CredentialsPath,
+                    ApiKey = GeminiApiKey,
+                    UseVertexAI = UseVertexAi,
+                    MaxSteps = MaxSteps,
+                    WatchdogTimeoutSec = WatchdogTimeoutSec,
+                    CtsTimeoutSec = CtsTimeoutSec,
+                    OfflineFallback = OfflineFallbackEnabled,
+                    FailSecure = FailSecureEnabled
+                },
+                Sensor = new SensorSettings
+                {
+                    Host = SensorHost,
+                    Port = SensorPort
+                },
+                Storage = new StorageSettings
+                {
+                    DatabasePath = DatabasePath,
+                    ReportExportPath = ReportExportPath
+                },
+                Theme = SelectedThemeMode
+            };
+
+            PhalanxConfigurationManager.Save(config);
+            string appSettingsFile = PhalanxConfigurationManager.DefaultConfigPath;
+            _lastAppliedSettingsHash = ComputeSettingsHash(appSettingsFile);
 
             // 런타임 컴포넌트 실시간 동기화
             if (_agent != null)
             {
                 _agent.ReloadConfiguration(
-                    geminiApiKey: UseVertexAi ? null : GeminiApiKey,
+                    geminiApiKey: isDirectKeyMode ? GeminiApiKey : null,
                     modelName: SelectedModel,
-                    useVertexAi: UseVertexAi,
+                    useVertexAi: !isDirectKeyMode,
                     maxSteps: MaxSteps,
                     ctsTimeoutSec: CtsTimeoutSec,
                     offlineFallback: OfflineFallbackEnabled,
@@ -750,19 +868,12 @@ public sealed partial class SettingsViewModel : ObservableObject
                     projectId: VertexProjectId,
                     location: VertexLocation
                 );
-                IsAgentOnline = _agent.IsOnlineGemini;
             }
 
-            _sensorController.Endpoint = $"{SensorHost}:{SensorPort}";
-            _sensorController.WatchdogTimeoutSec = WatchdogTimeoutSec;
-            _sensorController.ExtendTimeoutSec = CtsTimeoutSec;
+            ApplySensorAndLabRuntime();
+            RefreshAppliedEngineState();
 
-            if (_labRunner != null)
-            {
-                _labRunner.ReportExportDirectory = ReportExportPath;
-            }
-
-            StatusMessage = $"[{DateTime.Now:HH:mm:ss}] 환경 설정이 성공적으로 저장되었습니다. (일부 항목은 재시작 시 적용됩니다)";
+            StatusMessage = $"[{DateTime.Now:HH:mm:ss}] 설정 저장 및 즉시 적용 완료 (수사 엔진: {AppliedEngineStatusText})";
         }
         catch (Exception ex)
         {
@@ -775,8 +886,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         UseVertexAi = true;
         VertexProjectId = "grc0-494913";
-        VertexLocation = "us-central1";
-        SelectedModel = "gemini-2.5-flash";
+        VertexLocation = "global";
+        SelectedModel = "gemini-3.7-flash";
         CredentialsPath = "Config/google-credentials.json";
         GeminiApiKey = string.Empty;
         MaxSteps = 5;

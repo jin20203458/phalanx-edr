@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
 using Microsoft.Win32;
+using Phalanx.Cockpit.Config;
 using Phalanx.Cockpit.Helpers;
 
 namespace Phalanx.Cockpit.Services;
@@ -210,26 +211,10 @@ public sealed class ThemeManager : IDisposable
     {
         try
         {
-            string appSettingsFile = Path.Combine(AppContext.BaseDirectory, "AppSettings.json");
-            if (!File.Exists(appSettingsFile)) return AppThemeMode.System;
-
-            string json = File.ReadAllText(appSettingsFile);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("Theme", out var tProp) && !string.IsNullOrWhiteSpace(tProp.GetString()))
+            var themeStr = PhalanxConfigurationManager.Current.Theme;
+            if (!string.IsNullOrWhiteSpace(themeStr) && Enum.TryParse<AppThemeMode>(themeStr, true, out var mode))
             {
-                if (Enum.TryParse<AppThemeMode>(tProp.GetString(), true, out var mode))
-                {
-                    return mode;
-                }
-            }
-            else if (root.TryGetProperty("UI", out var uiSec) && uiSec.TryGetProperty("Theme", out var utProp))
-            {
-                if (Enum.TryParse<AppThemeMode>(utProp.GetString(), true, out var mode))
-                {
-                    return mode;
-                }
+                return mode;
             }
         }
         catch

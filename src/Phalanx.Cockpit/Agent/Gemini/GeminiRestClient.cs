@@ -39,12 +39,12 @@ public class GeminiRestClient
     /// <summary>
     /// Google AI Studio API Key 기반 생성자
     /// </summary>
-    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-2.5-flash")
+    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-3.7-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
         _modelName = modelName;
-        _location = "us-central1";
+        _location = "global";
     }
 
     /// <summary>
@@ -54,167 +54,159 @@ public class GeminiRestClient
         HttpClient httpClient,
         Func<CancellationToken, Task<string>> tokenProvider,
         string projectId,
-        string location = "us-central1",
-        string modelName = "gemini-2.5-flash")
+        string location = "global",
+        string modelName = "gemini-3.7-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
         _projectId = projectId ?? throw new ArgumentNullException(nameof(projectId));
-        _location = string.IsNullOrWhiteSpace(location) ? "us-central1" : location;
+        _location = string.IsNullOrWhiteSpace(location) ? "global" : location;
         _modelName = modelName;
     }
 
     /// <summary>
-    /// Phalanx 자체 Config/google-credentials.json 및 AppSettings.json을 탐색하여 Vertex AI 클라이언트 생성
+    /// 런타임 설정 파일의 단일 고정 경로 (실행 폴더의 AppSettings.json).
+    /// 유료 API 오남용 방지를 위해 다른 위치는 탐색하지 않습니다.
     /// </summary>
-    public static GeminiRestClient? TryCreateFromLocalConfig(
-        HttpClient? httpClient = null,
-        string? modelName = null,
-        string? explicitCredentialsPath = null,
-        string? explicitProjectId = null,
-        string? explicitLocation = null)
+    public static string SettingsFilePath => Phalanx.Cockpit.Config.PhalanxConfigurationManager.DefaultConfigPath;
+
+    /// <summary>
+    /// 실행 폴더의 AppSettings.json에 명시된 값만으로 Gemini 클라이언트를 생성합니다.
+    /// 환경 변수나 기본 위치의 인증 파일을 자동 탐색하지 않으며, 설정 파일이 없거나 값이 유효하지 않으면 null을 반환합니다.
+    /// </summary>
+    public static GeminiRestClient? TryCreateFromSettings(
+        HttpClient? httpClient,
+        out string? error,
+        string? settingsPath = null)
     {
+        string path = settingsPath ?? SettingsFilePath;
+        if (!File.Exists(path))
+        {
+            error = $"설정 파일 없음: {path}";
+            return null;
+        }
+
         try
         {
-            string? credentialsPath = null;
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var root = doc.RootElement;
+            var gemini = root.TryGetProperty("Gemini", out var gSec) ? gSec : root;
 
-            // 0. 명시적 전달 경로 우선 확인
-            if (!string.IsNullOrWhiteSpace(explicitCredentialsPath))
+            bool useVertexAi = ReadBool(gemini, "UseVertexAI") ?? ReadBool(root, "UseVertexAI") ?? true;
+            string? modelName = ReadString(gemini, "ModelName");
+
+            if (!useVertexAi)
             {
-                if (File.Exists(explicitCredentialsPath))
+                string? apiKey = ReadString(gemini, "ApiKey") ?? ReadString(root, "ApiKey");
+                if (string.IsNullOrWhiteSpace(apiKey))
                 {
-                    credentialsPath = explicitCredentialsPath;
+                    error = "API Key 모드이지만 설정 파일에 ApiKey가 없습니다.";
+                    return null;
                 }
-                else
-                {
-                    string candidate = Path.Combine(AppContext.BaseDirectory, explicitCredentialsPath);
-                    if (File.Exists(candidate)) credentialsPath = candidate;
-                }
+                error = null;
+                return new GeminiRestClient(httpClient ?? new HttpClient(), apiKey, modelName ?? "gemini-3.7-flash");
             }
 
-            // 1. Google Cloud 표준 환경 변수 확인
-            if (credentialsPath == null)
+            string? credentialsPath = ReadString(gemini, "CredentialsPath");
+            if (string.IsNullOrWhiteSpace(credentialsPath))
             {
-                string? envCredPath = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
-                if (!string.IsNullOrWhiteSpace(envCredPath) && File.Exists(envCredPath))
-                {
-                    credentialsPath = envCredPath;
-                }
-            }
-
-            // 2. Phalanx 자체 로컬 Config 디렉터리 순회 탐색
-            if (credentialsPath == null)
-            {
-                string[] candidates = new[]
-                {
-                    Path.Combine(AppContext.BaseDirectory, "Config", "google-credentials.json"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "Config", "google-credentials.json"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "src", "Phalanx.Cockpit", "Config", "google-credentials.json"),
-                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\Config\google-credentials.json")),
-                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\Config\google-credentials.json"))
-                };
-
-                foreach (var candidate in candidates)
-                {
-                    if (File.Exists(candidate))
-                    {
-                        credentialsPath = candidate;
-                        break;
-                    }
-                }
-            }
-
-            if (credentialsPath == null || !File.Exists(credentialsPath))
-            {
+                error = "Vertex AI 모드이지만 설정 파일에 CredentialsPath가 없습니다.";
                 return null;
             }
 
-            string projectId = !string.IsNullOrWhiteSpace(explicitProjectId) ? explicitProjectId : "grc0-494913";
-            string location = !string.IsNullOrWhiteSpace(explicitLocation) ? explicitLocation.ToLowerInvariant() : "us-central1";
-            string model = modelName ?? "gemini-2.5-flash";
+            return TryCreateVertexClient(
+                httpClient,
+                credentialsPath,
+                ReadString(gemini, "ProjectId") ?? ReadString(root, "ProjectId"),
+                ReadString(gemini, "Location") ?? ReadString(root, "Location"),
+                modelName,
+                out error);
+        }
+        catch (Exception ex)
+        {
+            error = $"설정 파일 파싱 실패: {ex.Message}";
+            return null;
+        }
+    }
 
-            // AppSettings.json 탐색 (명시적 인자가 누락되었을 때만 파일에서 보충)
-            if (string.IsNullOrWhiteSpace(explicitProjectId) || string.IsNullOrWhiteSpace(explicitLocation))
-            {
-                string[] appSettingsCandidates = new[]
-                {
-                    Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "src", "Phalanx.Cockpit", "AppSettings.json"),
-                    Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json")),
-                    Path.Combine(Path.GetDirectoryName(credentialsPath) ?? string.Empty, "..", "AppSettings.json")
-                };
+    /// <summary>
+    /// 명시적으로 지정된 서비스 계정 키 파일 하나로만 Vertex AI 클라이언트를 생성합니다.
+    /// 상대 경로는 실행 폴더 기준으로 해석하며, 파일이 없으면 다른 위치로 대체하지 않고 null을 반환합니다.
+    /// </summary>
+    public static GeminiRestClient? TryCreateVertexClient(
+        HttpClient? httpClient,
+        string credentialsPath,
+        string? projectId,
+        string? location,
+        string? modelName,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(credentialsPath))
+        {
+            error = "인증 파일 경로가 비어 있습니다.";
+            return null;
+        }
 
-                foreach (var appSettingPath in appSettingsCandidates)
-                {
-                    if (File.Exists(appSettingPath))
-                    {
-                        try
-                        {
-                            var json = File.ReadAllText(appSettingPath);
-                            using var doc = JsonDocument.Parse(json);
-                            var root = doc.RootElement;
-                            JsonElement geminiSection = root;
-                            if (root.TryGetProperty("Gemini", out var gSec))
-                            {
-                                geminiSection = gSec;
-                            }
+        string resolvedPath = Path.IsPathRooted(credentialsPath)
+            ? credentialsPath
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, credentialsPath));
 
-                            if (string.IsNullOrWhiteSpace(explicitProjectId) && geminiSection.TryGetProperty("ProjectId", out var p) && !string.IsNullOrWhiteSpace(p.GetString()))
-                            {
-                                projectId = p.GetString()!;
-                            }
-                            if (string.IsNullOrWhiteSpace(explicitLocation) && geminiSection.TryGetProperty("Location", out var loc) && !string.IsNullOrWhiteSpace(loc.GetString()))
-                            {
-                                location = loc.GetString()!.ToLowerInvariant();
-                            }
-                            if (modelName == null && geminiSection.TryGetProperty("ModelName", out var m) && !string.IsNullOrWhiteSpace(m.GetString()))
-                            {
-                                model = m.GetString()!;
-                            }
-                            break;
-                        }
-                        catch { }
-                    }
-                }
-            }
+        if (!File.Exists(resolvedPath))
+        {
+            error = $"인증 파일 없음: {resolvedPath}";
+            return null;
+        }
 
-            string credJson = File.ReadAllText(credentialsPath);
+        try
+        {
+            string credJson = File.ReadAllText(resolvedPath);
+            string effectiveProjectId = !string.IsNullOrWhiteSpace(projectId) ? projectId : "grc0-494913";
             using (var credDoc = JsonDocument.Parse(credJson))
             {
                 if (credDoc.RootElement.TryGetProperty("project_id", out var pidElem) && !string.IsNullOrWhiteSpace(pidElem.GetString()))
                 {
-                    projectId = pidElem.GetString()!;
+                    effectiveProjectId = pidElem.GetString()!;
                 }
             }
 
             var specCred = CredentialFactory.FromJson<ServiceAccountCredential>(credJson);
             var googleCred = specCred.ToGoogleCredential().CreateScoped("https://www.googleapis.com/auth/cloud-platform");
 
+            error = null;
             return new GeminiRestClient(
                 httpClient: httpClient ?? new HttpClient(),
                 tokenProvider: async (ct) => await ((ITokenAccess)googleCred).GetAccessTokenForRequestAsync(null, ct),
-                projectId: projectId,
-                location: location,
-                modelName: model
+                projectId: effectiveProjectId,
+                location: string.IsNullOrWhiteSpace(location) ? "global" : location.ToLowerInvariant(),
+                modelName: string.IsNullOrWhiteSpace(modelName) ? "gemini-3.7-flash" : modelName
             );
         }
         catch (Exception ex)
         {
-            Trace.WriteLine($"[GeminiRestClient] Phalanx 로컬 Config 로드 실패: {ex.Message}");
+            error = $"인증 파일 로드 실패 ({resolvedPath}): {ex.Message}";
+            Trace.WriteLine($"[GeminiRestClient] {error}");
             return null;
         }
     }
 
-    /// <summary>
-    /// Phalanx 자체 AppSettings.json 및 Config/google-credentials.json을 자동 탐색하여 Vertex AI 클라이언트 비동기 생성
-    /// </summary>
-    public static Task<GeminiRestClient?> TryCreateFromLocalConfigAsync(
-        HttpClient? httpClient = null,
-        string? modelName = null,
-        CancellationToken cancellationToken = default)
+    private static string? ReadString(JsonElement section, string name)
     {
-        return Task.FromResult(TryCreateFromLocalConfig(httpClient, modelName));
+        return section.ValueKind == JsonValueKind.Object
+            && section.TryGetProperty(name, out var v)
+            && v.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(v.GetString())
+            ? v.GetString()
+            : null;
+    }
+
+    private static bool? ReadBool(JsonElement section, string name)
+    {
+        if (section.ValueKind == JsonValueKind.Object && section.TryGetProperty(name, out var v))
+        {
+            if (v.ValueKind == JsonValueKind.True) return true;
+            if (v.ValueKind == JsonValueKind.False) return false;
+        }
+        return null;
     }
 
     /// <summary>
@@ -273,13 +265,13 @@ public class GeminiRestClient
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    throw new HttpRequestException($"Gemini API HTTP {(int)response.StatusCode} 에러: {responseJson}");
+                    throw new HttpRequestException($"LLM API HTTP {(int)response.StatusCode} 에러: {responseJson}");
                 }
 
                 var geminiResponse = JsonSerializer.Deserialize<GeminiResponse>(responseJson, JsonOptions);
                 if (geminiResponse == null)
                 {
-                    throw new InvalidOperationException($"Gemini API 응답 역직렬화 실패: {responseJson}");
+                    throw new InvalidOperationException($"LLM API 응답 역직렬화 실패: {responseJson}");
                 }
 
                 return (geminiResponse, responseJson);
@@ -292,7 +284,7 @@ public class GeminiRestClient
             }
         }
 
-        throw new HttpRequestException("Gemini API 호출 최대 재시도 횟수 초과.");
+        throw new HttpRequestException("LLM API 호출 최대 재시도 횟수 초과.");
     }
 
     /// <summary>
@@ -314,7 +306,7 @@ public class GeminiRestClient
                 Temperature: null,
                 MaxOutputTokens: 4096,
                 ResponseMimeType: "application/json",
-                ThinkingConfig: SupportsThinkingLevel(_modelName) ? new ThinkingConfig(thinkingLevel) : null
+                ThinkingConfig: new ThinkingConfig(thinkingLevel)
             ),
             SafetySettings: DefaultSafetySettings
         );
@@ -324,18 +316,18 @@ public class GeminiRestClient
         if (geminiResponse.Candidates == null || geminiResponse.Candidates.Count == 0)
         {
             string reason = geminiResponse.PromptFeedback?.BlockReason ?? "빈 응답(Candidates 0건)";
-            throw new InvalidOperationException($"Gemini API가 응답을 반환하지 않았습니다. (이유: {reason})");
+            throw new InvalidOperationException($"LLM API가 응답을 반환하지 않았습니다. (이유: {reason})");
         }
 
         var candidate = geminiResponse.Candidates[0];
         if (candidate.FinishReason == "SAFETY")
         {
-            throw new InvalidOperationException("Gemini API가 안전 필터(SAFETY)에 의해 응답 생성을 차단했습니다.");
+            throw new InvalidOperationException("LLM API가 안전 필터(SAFETY)에 의해 응답 생성을 차단했습니다.");
         }
 
         if (candidate.Content?.Parts == null || candidate.Content.Parts.Count == 0)
         {
-            throw new InvalidOperationException("Gemini API 응답 내부에 유효한 Part가 없습니다.");
+            throw new InvalidOperationException("LLM API 응답 내부에 유효한 Part가 없습니다.");
         }
 
         var textParts = candidate.Content.Parts
@@ -361,10 +353,5 @@ public class GeminiRestClient
             new Content("user", [new Part(userPrompt)])
         ];
         return GenerateContentAsync(contents, systemInstruction, cancellationToken, timeoutMs, thinkingLevel);
-    }
-
-    private static bool SupportsThinkingLevel(string modelName)
-    {
-        return modelName.Contains("thinking", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -37,32 +37,78 @@
                     BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="0,0,0,1">
                     <StackPanel>
-                        <!--  Filters Bar  -->
-                        <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
-                            <Button
-                                Margin="0,0,4,0"
-                                Command="{Binding SetFilterCommand}"
-                                CommandParameter="ALL"
-                                Content="ALL"
-                                Style="{StaticResource CapsuleFilterButtonStyle}" />
-                            <Button
-                                Margin="0,0,4,0"
-                                Command="{Binding SetFilterCommand}"
-                                CommandParameter="CRITICAL"
-                                Content="CRITICAL"
-                                Style="{StaticResource CapsuleFilterButtonStyle}" />
-                            <Button
-                                Margin="0,0,4,0"
-                                Command="{Binding SetFilterCommand}"
-                                CommandParameter="SUSPENDED"
-                                Content="SUSPENDED"
-                                Style="{StaticResource CapsuleFilterButtonStyle}" />
-                            <Button
-                                Command="{Binding SetFilterCommand}"
-                                CommandParameter="BENIGN"
-                                Content="BENIGN"
-                                Style="{StaticResource CapsuleFilterButtonStyle}" />
-                        </StackPanel>
+                        <!--  Filters Bar & Live Active Engine Chip  -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <Button
+                                    Margin="0,0,4,0"
+                                    Command="{Binding SetFilterCommand}"
+                                    CommandParameter="ALL"
+                                    Content="ALL"
+                                    Style="{StaticResource CapsuleFilterButtonStyle}" />
+                                <Button
+                                    Margin="0,0,4,0"
+                                    Command="{Binding SetFilterCommand}"
+                                    CommandParameter="CRITICAL"
+                                    Content="CRITICAL"
+                                    Style="{StaticResource CapsuleFilterButtonStyle}" />
+                                <Button
+                                    Margin="0,0,4,0"
+                                    Command="{Binding SetFilterCommand}"
+                                    CommandParameter="SUSPENDED"
+                                    Content="SUSPENDED"
+                                    Style="{StaticResource CapsuleFilterButtonStyle}" />
+                                <Button
+                                    Command="{Binding SetFilterCommand}"
+                                    CommandParameter="BENIGN"
+                                    Content="BENIGN"
+                                    Style="{StaticResource CapsuleFilterButtonStyle}" />
+                            </StackPanel>
+
+                            <!--  Current Active Hunter Engine Live Status  -->
+                            <Border
+                                Grid.Column="1"
+                                Padding="8,2"
+                                VerticalAlignment="Center"
+                                Background="{DynamicResource CardBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="2"
+                                ToolTip="{Binding CurrentLiveEngineTooltip}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse
+                                        Width="6"
+                                        Height="6"
+                                        Margin="0,0,5,0"
+                                        VerticalAlignment="Center">
+                                        <Ellipse.Style>
+                                            <Style TargetType="Ellipse">
+                                                <Setter Property="Fill" Value="{DynamicResource DotSuspendedBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsCurrentLiveEngineOnline}" Value="True">
+                                                        <Setter Property="Fill" Value="{DynamicResource DotLiveBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <TextBlock
+                                        FontSize="9.5"
+                                        Foreground="{DynamicResource TextMutedBrush}"
+                                        Text="ACTIVE: " />
+                                    <TextBlock
+                                        FontSize="9.5"
+                                        FontWeight="Bold"
+                                        Foreground="{DynamicResource TextPrimaryBrush}"
+                                        Text="{Binding CurrentLiveEngineText}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
 
                         <!--  Search Input  -->
                         <Border
@@ -224,9 +270,10 @@
                                             Text="{Binding RelativeTime}" />
                                     </Grid>
 
-                                    <!--  Line 2: MITRE Tag + 1-Line Summary Title / Live Investigation Status  -->
+                                    <!--  Line 2: MITRE Tag + Engine Tag + 1-Line Summary Title / Live Investigation Status  -->
                                     <Grid Grid.Row="1">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
@@ -234,22 +281,70 @@
                                         <!--  MITRE Chip  -->
                                         <Border
                                             Grid.Column="0"
-                                            Margin="0,0,6,0"
-                                            Padding="5,1"
+                                            Margin="0,0,5,0"
+                                            Padding="6,2"
+                                            VerticalAlignment="Center"
                                             Background="{DynamicResource BadgeBgBrush}"
                                             BorderBrush="{DynamicResource BorderBrush}"
                                             BorderThickness="1"
                                             CornerRadius="2">
                                             <TextBlock
+                                                VerticalAlignment="Center"
                                                 FontSize="9.5"
                                                 FontWeight="SemiBold"
                                                 Foreground="{DynamicResource TextMutedBrush}"
                                                 Text="{Binding PrimaryMitreTactic}" />
                                         </Border>
 
+                                        <!--  Engine Badge Chip  -->
+                                        <Border
+                                            Grid.Column="1"
+                                            Margin="0,0,6,0"
+                                            Padding="6,2"
+                                            VerticalAlignment="Center"
+                                            BorderThickness="1"
+                                            CornerRadius="2"
+                                            ToolTip="{Binding EngineBadgeTooltip}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{DynamicResource BadgeBgBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsFallbackEngine}" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource SeveritySuspendedBgBrush}" />
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource SeveritySuspendedBorderBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsKernelReflexEngine}" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource SeverityCriticalBgBrush}" />
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource SeverityCriticalBorderBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock
+                                                VerticalAlignment="Center"
+                                                FontSize="9"
+                                                FontWeight="SemiBold">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+                                                        <Setter Property="Text" Value="{Binding EngineBadgeText}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFallbackEngine}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource SeveritySuspendedTextBrush}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsKernelReflexEngine}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Border>
+
                                         <!--  Summary Title / Live Investigation Status  -->
                                         <TextBlock
-                                            Grid.Column="1"
+                                            Grid.Column="2"
                                             VerticalAlignment="Center"
                                             FontSize="11"
                                             TextTrimming="CharacterEllipsis"
@@ -383,6 +478,49 @@
                                     </StackPanel>
                                 </Border>
 
+                                <!--  Engine Badge  -->
+                                <Border
+                                    Margin="0,0,8,0"
+                                    Padding="8,3"
+                                    BorderThickness="1"
+                                    CornerRadius="3"
+                                    ToolTip="{Binding SelectedIncident.EngineBadgeTooltip}">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{DynamicResource BadgeBgBrush}" />
+                                            <Setter Property="BorderBrush" Value="{DynamicResource BadgeBorderBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedIncident.IsFallbackEngine}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource SeveritySuspendedBgBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource SeveritySuspendedBorderBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding SelectedIncident.IsKernelReflexEngine}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource SeverityCriticalBgBrush}" />
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource SeverityCriticalBorderBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock
+                                        FontSize="10.5"
+                                        FontWeight="Bold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource BadgeTextBrush}" />
+                                                <Setter Property="Text" Value="{Binding SelectedIncident.EngineBadgeText}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SelectedIncident.IsFallbackEngine}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource SeveritySuspendedTextBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding SelectedIncident.IsKernelReflexEngine}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource SeverityCriticalTextBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Border>
+
                                 <TextBlock
                                     VerticalAlignment="Center"
                                     FontSize="11"
@@ -406,12 +544,13 @@
                         <!--  Quick Action Buttons  -->
                         <StackPanel
                             Grid.Column="1"
-                            VerticalAlignment="Top"
+                            VerticalAlignment="Center"
                             Orientation="Horizontal">
                             <!--  수사 진행 중일 때 노출되는 취소 버튼  -->
                             <Button
                                 Margin="0,0,8,0"
-                                Padding="12,5"
+                                Padding="12,6"
+                                VerticalAlignment="Center"
                                 Command="{Binding DataContext.CancelInvestigationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding SelectedIncident.IncidentId}"
                                 Content="조사 취소"
@@ -420,13 +559,44 @@
                                 Visibility="{Binding SelectedIncident.IsInvestigating, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
                             <Button
-                                Padding="14,8"
+                                Padding="12,6"
+                                VerticalAlignment="Center"
                                 Command="{Binding DataContext.OpenInvestigationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding SelectedIncident}"
                                 Content="심층 포렌식 조사실 열기 ➔"
                                 Style="{StaticResource CapsuleFilterButtonStyle}" />
                         </StackPanel>
                     </Grid>
+
+                    <!--  Fallback Alert Banner (클라우드 장애로 로컬 엔진 폴백 시 노출)  -->
+                    <Border
+                        Margin="0,0,0,16"
+                        Padding="14,10"
+                        Background="{DynamicResource SeveritySuspendedBgBrush}"
+                        BorderBrush="{DynamicResource SeveritySuspendedBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="3"
+                        Visibility="{Binding SelectedIncident.IsFallbackEngine, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Path Grid.Column="0" Width="16" Height="16" Margin="0,2,10,0" VerticalAlignment="Top"
+                                  Data="{StaticResource IconAlertTriangle}" Fill="{DynamicResource SeveritySuspendedTextBrush}" Stretch="Uniform" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock FontSize="12" FontWeight="Bold" Foreground="{DynamicResource SeveritySuspendedTextBrush}"
+                                           Text="[오프라인 수사 전환] 클라우드 LLM 연결 지연/장애로 인한 로컬 엔진 Fallback" />
+                                <TextBlock Margin="0,3,0,0" FontSize="11" Foreground="{DynamicResource SeveritySuspendedTextBrush}"
+                                           TextWrapping="Wrap" LineHeight="16">
+                                    <Run Text="원격 클라우드 LLM API 호출 지연 또는 인증 오류로 인하여 시스템 안전 확보를 위해 23ms 내장 로컬 결정론적 ReAct 엔진으로 자동 전환되어 조사가 완료되었습니다." />
+                                    <LineBreak />
+                                    <Run Text="폴백 사유: " FontWeight="SemiBold" />
+                                    <Run Text="{Binding SelectedIncident.FallbackReason, TargetNullValue='네트워크 타임아웃 또는 오프라인 구성'}" />
+                                </TextBlock>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
 
                     <!--  Section: Summary Title & Executive Narrative  -->
                     <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="사건 종합 수사 서사 (EXECUTIVE NARRATIVE)" />

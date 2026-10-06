@@ -13,6 +13,8 @@
     <SolidColorBrush x:Key="BorderBrush" Color="#262626" />
     <SolidColorBrush x:Key="BorderLightBrush" Color="#333333" />
     <SolidColorBrush x:Key="BorderFocusedBrush" Color="#4A4A4A" />
+    <SolidColorBrush x:Key="ScrollBarThumbBrush" Color="#4A4A4A" />
+    <SolidColorBrush x:Key="ScrollBarThumbHoverBrush" Color="#6E6E6E" />
 
     <!-- Typography Brushes (Obsidian Neutral Zinc Hierarchy) -->
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#EDEDED" />

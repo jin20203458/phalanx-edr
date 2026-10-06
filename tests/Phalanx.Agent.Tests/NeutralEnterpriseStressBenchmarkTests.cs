@@ -72,7 +72,7 @@ public class NeutralEnterpriseStressBenchmarkTests
             new RegistryInspectionTool()
         };
 
-        var agent = new AutonomousHunterAgent(tree, archive, tools, geminiApiKey: offlineOnly ? string.Empty : null);
+        var agent = new AutonomousHunterAgent(tree, archive, tools, geminiApiKey: string.Empty, geminiClient: offlineOnly ? null : LiveGeminiTestConfig.CreateClient());
         return (tree, archive, agent);
     }
 

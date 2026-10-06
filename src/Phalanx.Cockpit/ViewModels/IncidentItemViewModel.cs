@@ -12,6 +12,8 @@ public partial class IncidentItemViewModel : ObservableObject
     private string _incidentId = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FormattedTime))]
+    [NotifyPropertyChangedFor(nameof(RelativeTime))]
     private DateTime _timestamp = DateTime.UtcNow;
 
     [ObservableProperty]
@@ -78,14 +80,64 @@ public partial class IncidentItemViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(FormattedLatency))]
     private double _activeElapsedSeconds;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EngineBadgeText))]
+    [NotifyPropertyChangedFor(nameof(EngineBadgeTooltip))]
+    [NotifyPropertyChangedFor(nameof(IsFallbackEngine))]
+    [NotifyPropertyChangedFor(nameof(IsCloudEngine))]
+    [NotifyPropertyChangedFor(nameof(IsOfflineEngine))]
+    [NotifyPropertyChangedFor(nameof(IsKernelReflexEngine))]
+    private string _investigationEngine = "CLOUD_LLM";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EngineBadgeTooltip))]
+    private string? _fallbackReason;
+
+    /// <summary>
+    /// 클라우드 LLM 수사 시 사용된 모델명 (설정 파일 값 그대로, 특정 공급사 명칭 하드코딩 금지)
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EngineBadgeTooltip))]
+    private string? _engineModel;
+
+    public bool IsFallbackEngine => InvestigationEngine == "OFFLINE_FALLBACK";
+    public bool IsCloudEngine => InvestigationEngine == "CLOUD_LLM";
+    public bool IsOfflineEngine => InvestigationEngine == "OFFLINE_LOCAL";
+    public bool IsKernelReflexEngine => InvestigationEngine == "KERNEL_REFLEX";
+
+    public string EngineBadgeText => InvestigationEngine switch
+    {
+        "OFFLINE_FALLBACK" => "LOCAL FALLBACK",
+        "OFFLINE_LOCAL" => "LOCAL OFFLINE",
+        "KERNEL_REFLEX" => "KERNEL REFLEX",
+        "FAIL_SECURE" => "FAIL SECURE",
+        "USER_CANCELLED" => "CANCELLED",
+        _ => "CLOUD LLM"
+    };
+
+    public string EngineBadgeTooltip => IsFallbackEngine && !string.IsNullOrWhiteSpace(FallbackReason)
+        ? $"[사건 수사 기록] 클라우드 LLM 응답 지연/장애로 로컬 엔진 폴백됨\n사유: {FallbackReason}"
+        : InvestigationEngine switch
+        {
+            "CLOUD_LLM" => string.IsNullOrWhiteSpace(EngineModel)
+                ? "[사건 수사 기록] 클라우드 LLM 실시간 자율 추론"
+                : $"[사건 수사 기록] 클라우드 LLM 실시간 자율 추론 (모델: {EngineModel})",
+            "OFFLINE_FALLBACK" => "[사건 수사 기록] 클라우드 장애에 따른 로컬 결정론적 ReAct 수사 (23ms)",
+            "OFFLINE_LOCAL" => "[사건 수사 기록] 오프라인 전용 로컬 결정론적 ReAct 수사 (23ms)",
+            "KERNEL_REFLEX" => "[사건 수사 기록] 0.08ms 커널 반사 신경망 즉시 차단",
+            "FAIL_SECURE" => "[사건 수사 기록] API 장애 시 엔드포인트 보호를 위한 긴급 방어",
+            "USER_CANCELLED" => "[사건 수사 기록] 사용자에 의한 수동 수사 중단",
+            _ => $"[사건 수사 기록] {InvestigationEngine}"
+        };
+
     public string FormattedTime => Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
     public string RelativeTime
     {
         get
         {
-            var diff = DateTime.UtcNow - Timestamp;
-            if (diff.TotalMinutes < 1) return "방금 전";
+            var diff = DateTime.UtcNow - Timestamp.ToUniversalTime();
+            if (diff.TotalMinutes < 1 || diff.Ticks < 0) return "방금 전";
             if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}분 전";
             if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}시간 전";
             return $"{(int)diff.TotalDays}일 전";

@@ -27,26 +27,7 @@ public class DecodePayloadTool : IInvestigationTool
 
     public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
     {
-        string? input = null;
-        var caseInsensitive = new Dictionary<string, object>(parameters, StringComparer.OrdinalIgnoreCase);
-        foreach (var key in new[] { "encodedCommand", "encoded_command", "command", "payload", "cmd" })
-        {
-            if (caseInsensitive.TryGetValue(key, out var rawCmd) && rawCmd != null)
-            {
-                string? s = rawCmd switch
-                {
-                    string str => str,
-                    System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
-                    _ => rawCmd.ToString()
-                };
-
-                if (!string.IsNullOrWhiteSpace(s))
-                {
-                    input = s;
-                    break;
-                }
-            }
-        }
+        string? input = parameters.GetString("encodedCommand", "encoded_command", "command", "payload", "cmd");
 
         if (string.IsNullOrWhiteSpace(input))
         {
@@ -120,24 +101,15 @@ public class DecodePayloadTool : IInvestigationTool
             foreach (Match match in matches)
             {
                 string candidate = match.Value;
-                if (candidate.Length < 4) continue;
-
-                string normalized = candidate.Replace('-', '+').Replace('_', '/');
-                if (normalized.Length % 4 != 0)
+                byte[]? bytes = TryDecodeBase64Bytes(candidate);
+                if (bytes != null)
                 {
-                    normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4), '=');
-                }
-
-                try
-                {
-                    byte[] bytes = Convert.FromBase64String(normalized);
                     string? decoded = TryBytesToString(bytes);
                     if (!string.IsNullOrEmpty(decoded) && decoded != candidate)
                     {
                         return text.Replace(candidate, decoded);
                     }
                 }
-                catch { }
             }
         }
         catch { }
@@ -189,16 +161,9 @@ public class DecodePayloadTool : IInvestigationTool
         // 4. 전체 문자열이 Base64인 경우
         try
         {
-            string trimmed = text.Trim();
-            if (trimmed.Length >= 4)
+            byte[]? bytes = TryDecodeBase64Bytes(text);
+            if (bytes != null)
             {
-                string normalized = trimmed.Replace('-', '+').Replace('_', '/');
-                if (normalized.Length % 4 != 0)
-                {
-                    normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4), '=');
-                }
-
-                byte[] bytes = Convert.FromBase64String(normalized);
                 string? decoded = TryBytesToString(bytes);
                 if (!string.IsNullOrEmpty(decoded)) return decoded;
             }
@@ -311,10 +276,62 @@ public class DecodePayloadTool : IInvestigationTool
         return null;
     }
 
+    private static byte[]? TryDecodeBase64Bytes(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        string trimmed = text.Trim();
+        if (trimmed.Length < 4) return null;
+
+        // Base64 1자는 6비트이므로 (Length % 4 == 1)은 1바이트조차 불완전하므로 수학적으로 불능 상태 -> 조기 바이패스
+        int rem = trimmed.Length % 4;
+        if (rem == 1) return null;
+
+        // URL-Safe 정규화 (- -> +, _ -> /)
+        string normalized = trimmed.Replace('-', '+').Replace('_', '/');
+        if (rem == 2)
+        {
+            normalized += "==";
+        }
+        else if (rem == 3)
+        {
+            normalized += "=";
+        }
+
+        // 유효 Base64 문자 집합 사전 검사 (+, /, =, 영숫자)
+        foreach (char c in normalized)
+        {
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '='))
+            {
+                return null;
+            }
+        }
+
+        // 무할당/무예외 TryFromBase64Chars 디코딩 (FormatException 발생 0건)
+        int maxByteCount = (normalized.Length * 3) / 4;
+        byte[] buffer = new byte[maxByteCount];
+        if (Convert.TryFromBase64Chars(normalized.AsSpan(), buffer, out int bytesWritten))
+        {
+            if (bytesWritten == maxByteCount) return buffer;
+            return buffer[..bytesWritten];
+        }
+
+        return null;
+    }
+
     private static byte[]? TryParseHex(string hex)
     {
         string clean = hex.Replace("0x", "").Replace("\\x", "").Replace(" ", "").Replace(",", "").Trim();
         if (clean.Length < 4 || clean.Length % 2 != 0) return null;
+
+        // 비-Hex 문자 사전 전수 검사 (FormatException 발생 0건)
+        foreach (char c in clean)
+        {
+            if (!char.IsAsciiHexDigit(c))
+            {
+                return null;
+            }
+        }
 
         try
         {

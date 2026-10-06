@@ -521,10 +521,7 @@ public class ProcessTreeProjectionTests
             new ProcessEvent { ProcessId = 300, ParentProcessId = 0, ImageName = "root3.exe", Lifecycle = ProcessLifecycle.LifecycleSnapshot },
         ]);
 
-        foreach (var node in treeManager.AllNodes)
-        {
-            node.IsExpanded = true;
-        }
+        treeManager.ExpandAll();
 
         var child1 = treeManager.FindNodeByPid(101)!;
         child1.IsAlive = false;
@@ -733,6 +730,67 @@ public class ProcessTreeProjectionTests
         Assert.Contains("10개 중 10개 통과", vm.SimulatorLog);
         Assert.Contains("100.0%", vm.LatestAssertionText);
         Assert.Equal(10, vm.Scenarios.Count(s => s.Id != MainViewModel.CustomScenarioId));
+    }
+
+    [Fact]
+    public void FindNodeByPid_TerminatedProcess_ReturnsNodeFast()
+    {
+        var treeManager = new ProcessTreeProjectionManager();
+
+        // 1. 프로세스 시작 (HandleStartOrMitigated)
+        var startEvent = new ProcessEvent
+        {
+            ProcessId = 5555,
+            ParentProcessId = 1000,
+            ImageName = "target_proc.exe",
+            CommandLine = "target_proc.exe --run",
+            Lifecycle = ProcessLifecycle.LifecycleStart,
+            TimestampNs = 1000000
+        };
+        treeManager.ApplyDeltaEvent(startEvent);
+
+        var activeNode = treeManager.FindNodeByPid(5555);
+        Assert.NotNull(activeNode);
+        Assert.True(activeNode.IsAlive);
+
+        // 2. 프로세스 종료 (HandleStop)
+        var stopEvent = new ProcessEvent
+        {
+            ProcessId = 5555,
+            ParentProcessId = 1000,
+            ImageName = "target_proc.exe",
+            Lifecycle = ProcessLifecycle.LifecycleStop,
+            TimestampNs = 2000000,
+            ExitCode = 0
+        };
+        treeManager.ApplyDeltaEvent(stopEvent);
+
+        // 3. 종료 후 O(1) 인덱스에서 정상 검색 검증
+        var termNode = treeManager.FindNodeByPid(5555);
+        Assert.NotNull(termNode);
+        Assert.False(termNode.IsAlive);
+        Assert.Equal(activeNode.ProcessGuid, termNode.ProcessGuid);
+
+        // 4. PID 재사용: 동일 PID로 새 프로세스 시작 시 신규 노드 매핑 검증
+        var restartEvent = new ProcessEvent
+        {
+            ProcessId = 5555,
+            ParentProcessId = 1000,
+            ImageName = "target_proc_v2.exe",
+            Lifecycle = ProcessLifecycle.LifecycleStart,
+            TimestampNs = 3000000
+        };
+        treeManager.ApplyDeltaEvent(restartEvent);
+
+        var newNode = treeManager.FindNodeByPid(5555);
+        Assert.NotNull(newNode);
+        Assert.True(newNode.IsAlive);
+        Assert.Equal("target_proc_v2.exe", newNode.ImageName);
+        Assert.NotEqual(activeNode.ProcessGuid, newNode.ProcessGuid);
+
+        // 5. Clear() 호출 후 조회 시 null 반환 불변식 검증
+        treeManager.Clear();
+        Assert.Null(treeManager.FindNodeByPid(5555));
     }
 }
 

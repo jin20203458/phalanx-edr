@@ -43,26 +43,7 @@ public class ThreatReputationTool : IInvestigationTool
 
     public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
     {
-        string? indicator = null;
-        var caseInsensitive = new Dictionary<string, object>(parameters, StringComparer.OrdinalIgnoreCase);
-        foreach (var key in new[] { "targetIndicator", "target_indicator", "indicator", "ip", "domain", "url" })
-        {
-            if (caseInsensitive.TryGetValue(key, out var rawInd) && rawInd != null)
-            {
-                string? s = rawInd switch
-                {
-                    string str => str,
-                    System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
-                    _ => rawInd.ToString()
-                };
-
-                if (!string.IsNullOrWhiteSpace(s))
-                {
-                    indicator = s;
-                    break;
-                }
-            }
-        }
+        string? indicator = parameters.GetString("targetIndicator", "target_indicator", "indicator", "ip", "domain", "url");
 
         if (string.IsNullOrWhiteSpace(indicator))
         {

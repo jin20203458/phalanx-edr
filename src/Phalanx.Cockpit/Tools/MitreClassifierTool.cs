@@ -140,26 +140,7 @@ public class MitreClassifierTool : IInvestigationTool
 
     public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
     {
-        string? behavior = null;
-        var caseInsensitive = new Dictionary<string, object>(parameters, StringComparer.OrdinalIgnoreCase);
-        foreach (var key in (string[])[ "observedBehavior", "observed_behavior", "behavior", "command", "log" ])
-        {
-            if (caseInsensitive.TryGetValue(key, out var rawB) && rawB != null)
-            {
-                string? s = rawB switch
-                {
-                    string str => str,
-                    System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
-                    _ => rawB.ToString()
-                };
-
-                if (!string.IsNullOrWhiteSpace(s))
-                {
-                    behavior = s;
-                    break;
-                }
-            }
-        }
+        string? behavior = parameters.GetString("observedBehavior", "observed_behavior", "behavior", "command", "log");
 
         if (string.IsNullOrWhiteSpace(behavior))
         {

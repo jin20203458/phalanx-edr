@@ -28,6 +28,8 @@ public class ForensicArchiveManager : IDisposable
         _incidents.EnsureIndex(x => x.IncidentId, unique: true);
         _incidents.EnsureIndex(x => x.Timestamp);
         _traces.EnsureIndex(x => x.IncidentId);
+
+        MigrateLegacyEngines();
     }
 
     /// <summary>
@@ -39,6 +41,14 @@ public class ForensicArchiveManager : IDisposable
         return new ForensicArchiveManager(memStream);
     }
 
+    /// <summary>
+    /// 단위 테스트용 스트림 기반 인스턴스 팩토리 (사전 주입된 데이터의 마이그레이션 검증 전용)
+    /// </summary>
+    public static ForensicArchiveManager CreateFromStreamForTesting(MemoryStream stream)
+    {
+        return new ForensicArchiveManager(stream);
+    }
+
     private ForensicArchiveManager(MemoryStream stream)
     {
         _db = new LiteDatabase(stream);
@@ -48,6 +58,8 @@ public class ForensicArchiveManager : IDisposable
         _incidents.EnsureIndex(x => x.IncidentId, unique: true);
         _incidents.EnsureIndex(x => x.Timestamp);
         _traces.EnsureIndex(x => x.IncidentId);
+
+        MigrateLegacyEngines();
     }
 
     public void SaveIncident(IncidentRecord incident, IEnumerable<ReActTraceRecord>? traces = null)
@@ -103,6 +115,33 @@ public class ForensicArchiveManager : IDisposable
         {
             _db.Rollback();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// 과거 Phase 2/3 레코드 중 GEMINI_CLOUD, null 또는 빈 문자열로 저장된 레거시 엔진명을 CLOUD_LLM으로 영구 갱신합니다.
+    /// </summary>
+    private void MigrateLegacyEngines()
+    {
+        try
+        {
+            var allIncidents = _incidents.FindAll().ToList();
+            var legacyRecords = allIncidents
+                .Where(x => string.IsNullOrWhiteSpace(x.InvestigationEngine) || x.InvestigationEngine == "GEMINI_CLOUD")
+                .ToList();
+
+            if (legacyRecords.Count > 0)
+            {
+                foreach (var rec in legacyRecords)
+                {
+                    rec.InvestigationEngine = "CLOUD_LLM";
+                    _incidents.Update(rec);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.WriteLine($"[ForensicArchiveManager] 레거시 엔진 마이그레이션 실패: {ex.Message}");
         }
     }
 

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using Phalanx.Cockpit.Config;
 using Phalanx.Shared.Protos;
 using ActionType = Phalanx.Shared.Protos.MitigationCommand.Types.ActionType;
 
@@ -46,36 +47,10 @@ public class SensorProcessController
     {
         try
         {
-            string[] candidates = new[]
-            {
-                Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
-                Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"))
-            };
-
-            foreach (var path in candidates)
-            {
-                if (File.Exists(path))
-                {
-                    var json = File.ReadAllText(path);
-                    using var doc = System.Text.Json.JsonDocument.Parse(json);
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("Sensor", out var s))
-                    {
-                        string host = s.TryGetProperty("Host", out var h) && !string.IsNullOrWhiteSpace(h.GetString()) ? h.GetString()! : "127.0.0.1";
-                        int port = s.TryGetProperty("Port", out var p) && p.TryGetInt32(out var pVal) ? pVal : 50051;
-                        Endpoint = $"{host}:{port}";
-                    }
-                    if (root.TryGetProperty("Gemini", out var g))
-                    {
-                        if (g.TryGetProperty("WatchdogTimeoutSec", out var wt) && wt.TryGetInt32(out var wtVal))
-                            WatchdogTimeoutSec = Math.Clamp(wtVal, 1, 60);
-                        if (g.TryGetProperty("CtsTimeoutSec", out var ct) && ct.TryGetInt32(out var ctVal))
-                            ExtendTimeoutSec = Math.Clamp(ctVal, 5, 300);
-                    }
-                    break;
-                }
-            }
+            var config = PhalanxConfigurationManager.Current;
+            Endpoint = $"{config.Sensor.Host}:{config.Sensor.Port}";
+            WatchdogTimeoutSec = Math.Clamp(config.Gemini.WatchdogTimeoutSec, 1, 60);
+            ExtendTimeoutSec = Math.Clamp(config.Gemini.CtsTimeoutSec, 5, 300);
         }
         catch { }
     }

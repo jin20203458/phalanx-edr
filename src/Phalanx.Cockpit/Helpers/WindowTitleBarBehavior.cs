@@ -83,9 +83,4 @@ public static class WindowTitleBarBehavior
             System.Diagnostics.Debug.WriteLine($"[WindowTitleBarBehavior] DWM 모드 갱신 실패: {ex.Message}");
         }
     }
-
-    public static void ApplyDarkThemeTitleBar(Window window)
-    {
-        ApplyCurrentThemeTitleBar(window);
-    }
 }

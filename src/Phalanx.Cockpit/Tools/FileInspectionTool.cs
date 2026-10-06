@@ -25,30 +25,30 @@ public sealed class FileInspectionTool : IInvestigationTool
 
     #region Clean-Room 시뮬레이션 지원 (결정론적 테스트 및 모의 텔레메트리 랩)
 
-    public record SimulatedFileEntry(
-        bool Exists,
-        long FileSizeBytes,
-        string Sha256,
-        double Entropy,
-        bool IsSigned,
-        string SignerSubject,
-        string SignatureStatus,
-        bool IsPathMasqueraded,
-        bool IsDisguisedExecutable,
-        int AnomalyScore,
-        string DiagnosticReason
-    );
-
-    private static readonly ConcurrentDictionary<string, SimulatedFileEntry> _simulatedFiles =
-        new(StringComparer.OrdinalIgnoreCase);
+    public record SimulatedFileEntry : Phalanx.Cockpit.Tools.SimulatedFileEntry
+    {
+        public SimulatedFileEntry(
+            bool Exists,
+            long FileSizeBytes,
+            string Sha256,
+            double Entropy,
+            bool IsSigned,
+            string SignerSubject,
+            string SignatureStatus,
+            bool IsPathMasqueraded,
+            bool IsDisguisedExecutable,
+            int AnomalyScore,
+            string DiagnosticReason)
+            : base(Exists, FileSizeBytes, Sha256, Entropy, IsSigned, SignerSubject,
+                   SignatureStatus, IsPathMasqueraded, IsDisguisedExecutable, AnomalyScore, DiagnosticReason) { }
+    }
 
     /// <summary>
     /// 단위 테스트 및 어택랩 Clean-Room 모드용 모의 파일 텔레메트리 주입
     /// </summary>
-    public static void RegisterSimulatedFile(string path, SimulatedFileEntry entry)
+    public static void RegisterSimulatedFile(string path, Phalanx.Cockpit.Tools.SimulatedFileEntry entry)
     {
-        string norm = NormalizePath(path);
-        _simulatedFiles[norm] = entry;
+        CleanRoomSimulationStore.RegisterFile(path, entry);
     }
 
     /// <summary>
@@ -56,7 +56,7 @@ public sealed class FileInspectionTool : IInvestigationTool
     /// </summary>
     public static void ClearSimulatedFiles()
     {
-        _simulatedFiles.Clear();
+        CleanRoomSimulationStore.ClearFiles();
     }
 
     /// <summary>
@@ -250,7 +250,8 @@ public sealed class FileInspectionTool : IInvestigationTool
 
     public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
     {
-        string rawPath = ExtractFilePath(parameters);
+        string? rawPath = parameters.GetStringFallback(new[] { "filePath", "file_path", "path", "targetPath", "target_path" }, "filePath", "path");
+
         if (string.IsNullOrWhiteSpace(rawPath))
         {
             return Task.FromResult(new ToolResult(false, "[FileInspectionTool 오류] 'filePath' 인자가 누락되었거나 비어 있습니다."));
@@ -259,7 +260,7 @@ public sealed class FileInspectionTool : IInvestigationTool
         string normalized = NormalizePath(rawPath);
 
         // 1. Clean-Room 모의 파일 주입 우선 조회
-        if (_simulatedFiles.TryGetValue(normalized, out var sim))
+        if (CleanRoomSimulationStore.TryGetFile(normalized, out var sim))
         {
             var (isSideload, sideloadList, sideloadScore, sideloadReasons) = CheckDirectoryForSideloading(normalized);
             if (isSideload)
@@ -405,38 +406,6 @@ public sealed class FileInspectionTool : IInvestigationTool
     #endregion
 
     #region 보조 헬퍼 메서드
-
-    private static string ExtractFilePath(Dictionary<string, object> parameters)
-    {
-        string[] candidateKeys = { "filePath", "file_path", "path", "targetPath", "target_path" };
-        foreach (var key in candidateKeys)
-        {
-            if (parameters.TryGetValue(key, out var val) && val != null)
-            {
-                if (val is JsonElement je && je.ValueKind == JsonValueKind.String)
-                {
-                    return je.GetString() ?? string.Empty;
-                }
-                return val.ToString() ?? string.Empty;
-            }
-        }
-
-        // 키를 대소문자 무시하고 순회
-        foreach (var kvp in parameters)
-        {
-            if (string.Equals(kvp.Key, "filePath", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(kvp.Key, "path", StringComparison.OrdinalIgnoreCase))
-            {
-                if (kvp.Value is JsonElement je && je.ValueKind == JsonValueKind.String)
-                {
-                    return je.GetString() ?? string.Empty;
-                }
-                return kvp.Value?.ToString() ?? string.Empty;
-            }
-        }
-
-        return string.Empty;
-    }
 
     private static string NormalizePath(string path)
     {
@@ -617,7 +586,7 @@ public sealed class FileInspectionTool : IInvestigationTool
             string candidatePath = NormalizePath(rawCandidate);
 
             // 1. SimulatedFiles 내부 캐시 안전 확인
-            if (_simulatedFiles.TryGetValue(candidatePath, out var simEntry))
+            if (CleanRoomSimulationStore.TryGetFile(candidatePath, out var simEntry))
             {
                 if (simEntry.Exists && !simEntry.IsSigned)
                 {
@@ -750,7 +719,7 @@ public sealed class FileInspectionTool : IInvestigationTool
     }
 
     private static ToolResult FormatResult(
-        SimulatedFileEntry entry,
+        Phalanx.Cockpit.Tools.SimulatedFileEntry entry,
         string normalizedPath,
         bool isSimulated,
         bool isSideloading = false,

@@ -7,17 +7,6 @@ using System.Text.RegularExpressions;
 
 namespace Phalanx.Cockpit.Tools;
 
-public record SimulatedMemoryEntry(
-    long BaseAddress,
-    long RegionSize,
-    string Protect,
-    string MemoryType,
-    string? InjectedHeader,
-    List<string> ExtractedIps,
-    List<string> ExtractedUrls,
-    List<string> DetectedKeywords,
-    List<string>? LoadedModules = null
-);
 
 /// <summary>
 /// 동결된 타깃 프로세스의 가상 메모리(RAM)를 VAD(Virtual Address Descriptor) 타깃 순회 기법으로 스캔하여
@@ -39,16 +28,14 @@ public class ProcessMemoryScanTool : IInvestigationTool
         "System", "Idle", "Registry", "smss", "csrss", "wininit", "services", "lsass"
     };
 
-    private static readonly ConcurrentDictionary<uint, SimulatedMemoryEntry> SimulatedMemoryDb = new();
-
-    public static void RegisterSimulatedMemory(uint pid, SimulatedMemoryEntry entry)
+    public static void RegisterSimulatedMemory(uint pid, Phalanx.Cockpit.Tools.SimulatedMemoryEntry entry)
     {
-        SimulatedMemoryDb[pid] = entry;
+        CleanRoomSimulationStore.RegisterMemory(pid, entry);
     }
 
     public static void ClearSimulatedMemory(uint pid)
     {
-        SimulatedMemoryDb.TryRemove(pid, out _);
+        CleanRoomSimulationStore.ClearMemory(pid);
     }
 
     private const int ChunkSize = 65536; // 64 KB
@@ -56,17 +43,7 @@ public class ProcessMemoryScanTool : IInvestigationTool
 
     public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
     {
-        uint pid = 0;
-        var caseInsensitive = new Dictionary<string, object>(parameters, StringComparer.OrdinalIgnoreCase);
-        if (caseInsensitive.TryGetValue("targetPid", out var rawPid) ||
-            caseInsensitive.TryGetValue("target_pid", out rawPid) ||
-            caseInsensitive.TryGetValue("pid", out rawPid))
-        {
-            if (rawPid is uint u) pid = u;
-            else if (rawPid is int i && i > 0) pid = (uint)i;
-            else if (rawPid is string s && uint.TryParse(s, out var parsed)) pid = parsed;
-            else if (rawPid is System.Text.Json.JsonElement je && je.ValueKind == System.Text.Json.JsonValueKind.Number && je.TryGetUInt32(out var jPid)) pid = jPid;
-        }
+        uint pid = parameters.GetUInt32("targetPid", "target_pid", "pid") ?? 0;
 
         if (pid == 0)
         {
@@ -74,7 +51,7 @@ public class ProcessMemoryScanTool : IInvestigationTool
         }
 
         // 0. Clean-Room 모드 시뮬레이션 인젝션 메모리 검사
-        if (SimulatedMemoryDb.TryGetValue(pid, out var sim))
+        if (CleanRoomSimulationStore.TryGetMemory(pid, out var sim))
         {
             var sbSim = new StringBuilder();
             sbSim.AppendLine($"[ProcessMemoryScanTool 완료 - PID: {pid}, 스캔 용량: {sim.RegionSize / 1024} KB, Unbacked 실행 영역: 1개]");

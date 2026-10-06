@@ -26,32 +26,33 @@ public sealed class RegistryInspectionTool : IInvestigationTool
 
     #region Clean-Room 시뮬레이션 지원
 
-    public record SimulatedRegistryEntry(
-        bool Exists,
-        string KeyPath,
-        string? DefaultValue,
-        Dictionary<string, object> Values,
-        List<string> SubKeys,
-        bool IsIndirectExecution,
-        bool IsComHijack,
-        int AnomalyScore,
-        string DiagnosticReason,
-        List<string> ExtractedUrls,
-        List<string> ExtractedIps
-    );
+    public record SimulatedRegistryEntry : Phalanx.Cockpit.Tools.SimulatedRegistryEntry
+    {
+        public SimulatedRegistryEntry(
+            bool Exists,
+            string KeyPath,
+            string? DefaultValue,
+            Dictionary<string, object> Values,
+            List<string> SubKeys,
+            bool IsIndirectExecution,
+            bool IsComHijack,
+            int AnomalyScore,
+            string DiagnosticReason,
+            List<string> ExtractedUrls,
+            List<string> ExtractedIps)
+            : base(Exists, KeyPath, DefaultValue, Values, SubKeys, IsIndirectExecution,
+                   IsComHijack, AnomalyScore, DiagnosticReason, ExtractedUrls, ExtractedIps) { }
+    }
 
-    private static readonly ConcurrentDictionary<string, SimulatedRegistryEntry> _simulatedKeys =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    public static void RegisterSimulatedKey(string path, SimulatedRegistryEntry entry)
+    public static void RegisterSimulatedKey(string path, Phalanx.Cockpit.Tools.SimulatedRegistryEntry entry)
     {
         string norm = NormalizeKeyPath(path);
-        _simulatedKeys[norm] = entry;
+        CleanRoomSimulationStore.RegisterKey(norm, entry);
     }
 
     public static void ClearSimulatedKeys()
     {
-        _simulatedKeys.Clear();
+        CleanRoomSimulationStore.ClearKeys();
     }
 
     public static SimulatedRegistryEntry CreateSimulatedEntry(
@@ -88,7 +89,7 @@ public sealed class RegistryInspectionTool : IInvestigationTool
 
     public Task<ToolResult> ExecuteAsync(Dictionary<string, object> parameters)
     {
-        string rawPath = ExtractKeyPath(parameters);
+        string? rawPath = parameters.GetStringFallback(new[] { "registryKey", "keyPath", "key", "path", "targetKey" }, "key", "path");
         if (string.IsNullOrWhiteSpace(rawPath))
         {
             return Task.FromResult(new ToolResult(false, "[RegistryInspectionTool 오류] 'registryKey' 또는 'keyPath' 인자가 누락되었거나 비어 있습니다."));
@@ -97,7 +98,7 @@ public sealed class RegistryInspectionTool : IInvestigationTool
         string normalized = NormalizeKeyPath(rawPath);
 
         // 1. Clean-Room 모의 레지스트리 우선 조회
-        if (_simulatedKeys.TryGetValue(normalized, out var sim))
+        if (CleanRoomSimulationStore.TryGetKey(normalized, out var sim))
         {
             return Task.FromResult(FormatResult(sim, normalized, isSimulated: true));
         }
@@ -286,29 +287,6 @@ public sealed class RegistryInspectionTool : IInvestigationTool
 
     #region 보조 헬퍼 메서드
 
-    private static string ExtractKeyPath(Dictionary<string, object> parameters)
-    {
-        string[] candidateKeys = { "registryKey", "keyPath", "key", "path", "targetKey" };
-        foreach (var key in candidateKeys)
-        {
-            if (parameters.TryGetValue(key, out var val) && val != null)
-            {
-                if (val is JsonElement je && je.ValueKind == JsonValueKind.String) return je.GetString() ?? string.Empty;
-                return val.ToString() ?? string.Empty;
-            }
-        }
-
-        foreach (var kvp in parameters)
-        {
-            if (kvp.Key.Contains("key", StringComparison.OrdinalIgnoreCase) || kvp.Key.Contains("path", StringComparison.OrdinalIgnoreCase))
-            {
-                if (kvp.Value is JsonElement je && je.ValueKind == JsonValueKind.String) return je.GetString() ?? string.Empty;
-                return kvp.Value?.ToString() ?? string.Empty;
-            }
-        }
-
-        return string.Empty;
-    }
 
     private static string NormalizeKeyPath(string keyPath)
     {
@@ -352,7 +330,7 @@ public sealed class RegistryInspectionTool : IInvestigationTool
         return (RegistryHive.CurrentUser, norm);
     }
 
-    private static ToolResult FormatResult(SimulatedRegistryEntry entry, string normalizedPath, bool isSimulated)
+    private static ToolResult FormatResult(Phalanx.Cockpit.Tools.SimulatedRegistryEntry entry, string normalizedPath, bool isSimulated)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"[RegistryInspectionTool 포렌식 검증 결과{(isSimulated ? " (Clean-Room Simulation)" : "")}]");

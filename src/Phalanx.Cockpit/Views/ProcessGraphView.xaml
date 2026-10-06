@@ -60,6 +60,12 @@
                         Content="종료된 프로세스 숨기기"
                         IsChecked="{Binding HideTerminatedProcesses, Mode=TwoWay}"
                         ToolTip="이미 종료된 프로세스를 트리에서 감추고 현재 활성 프로세스만 표시합니다" />
+                    <CheckBox
+                        Margin="0,0,14,0"
+                        VerticalAlignment="Center"
+                        Content="선택 항목 화면 고정"
+                        IsChecked="{Binding IsSelectionPinned, Mode=TwoWay}"
+                        ToolTip="실시간 프로세스 갱신 시에도 현재 선택된 프로세스가 화면에 유지되도록 스크롤을 고정합니다" />
                     <Button
                         Padding="10,4"
                         Command="{Binding RefreshProcessTreeCommand}"

@@ -1,4 +1,4 @@
-using LiteDB;
+﻿using LiteDB;
 
 namespace Phalanx.Cockpit.Storage;
 
@@ -26,6 +26,9 @@ public class IncidentRecord
     public string RemediationStatus { get; set; } = "SECURED";
     public List<string> RemediationSteps { get; set; } = new();
     public double ElapsedMs { get; set; }
+    public string InvestigationEngine { get; set; } = "CLOUD_LLM"; // CLOUD_LLM, OFFLINE_FALLBACK, OFFLINE_LOCAL, KERNEL_REFLEX, USER_CANCELLED, FAIL_SECURE
+    public string? FallbackReason { get; set; }
+    public string? EngineModel { get; set; } // 클라우드 LLM 수사 시 실제 사용된 모델명 (설정값 기반, UI 표시용)
 }
 
 /// <summary>

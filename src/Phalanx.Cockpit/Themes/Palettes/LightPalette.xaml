@@ -14,6 +14,8 @@
     <SolidColorBrush x:Key="BorderBrush" Color="#E2E8F0" />
     <SolidColorBrush x:Key="BorderLightBrush" Color="#CBD5E1" />
     <SolidColorBrush x:Key="BorderFocusedBrush" Color="#2563EB" />
+    <SolidColorBrush x:Key="ScrollBarThumbBrush" Color="#94A3B8" />
+    <SolidColorBrush x:Key="ScrollBarThumbHoverBrush" Color="#64748B" />
 
     <!-- Typography Brushes (High Contrast Slate Hierarchy - WCAG AAA Compliant) -->
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#0F172A" />

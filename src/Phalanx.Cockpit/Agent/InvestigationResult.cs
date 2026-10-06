@@ -1,4 +1,4 @@
-using Phalanx.Cockpit.Storage;
+﻿using Phalanx.Cockpit.Storage;
 using Phalanx.Shared.Protos;
 
 namespace Phalanx.Cockpit.Agent;
@@ -14,5 +14,7 @@ public record InvestigationResult(
     List<ReActTraceRecord> Traces,
     TimeSpan Elapsed,
     IncidentRecord Record,
-    List<string>? RemediationSteps = null
+    List<string>? RemediationSteps = null,
+    string InvestigationEngine = "CLOUD_LLM",
+    string? FallbackReason = null
 );

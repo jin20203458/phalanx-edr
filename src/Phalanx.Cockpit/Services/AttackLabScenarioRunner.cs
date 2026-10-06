@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Phalanx.Cockpit.Agent;
+using Phalanx.Cockpit.Config;
 using Phalanx.Cockpit.CQRS;
 using Phalanx.Cockpit.Scenarios;
 using Phalanx.Cockpit.Tools;
@@ -71,28 +72,8 @@ public class AttackLabScenarioRunner
     {
         try
         {
-            string[] candidates = new[]
-            {
-                Path.Combine(AppContext.BaseDirectory, "AppSettings.json"),
-                Path.Combine(Directory.GetCurrentDirectory(), "AppSettings.json"),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, @"..\..\..\..\..\src\Phalanx.Cockpit\AppSettings.json"))
-            };
-
-            foreach (var path in candidates)
-            {
-                if (File.Exists(path))
-                {
-                    var json = File.ReadAllText(path);
-                    using var doc = JsonDocument.Parse(json);
-                    var root = doc.RootElement;
-                    if (root.TryGetProperty("Storage", out var st) && st.TryGetProperty("ReportExportPath", out var rep))
-                    {
-                        var dir = rep.GetString();
-                        if (!string.IsNullOrWhiteSpace(dir)) ReportExportDirectory = dir;
-                    }
-                    break;
-                }
-            }
+            var exportPath = PhalanxConfigurationManager.Current.Storage.ReportExportPath;
+            if (!string.IsNullOrWhiteSpace(exportPath)) ReportExportDirectory = exportPath;
         }
         catch { }
     }

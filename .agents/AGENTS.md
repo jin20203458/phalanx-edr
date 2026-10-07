@@ -20,11 +20,11 @@ Focus: Deterministic low-overhead ETW telemetry, zero-loss lock-swap queues, ato
 </critical_rules>
 
 <context_triggers>
-- **Architecture**: If modifying kernel-to-cockpit pipelines or IPC schemas, read `../Obsidian.Agent/Phalanx/docs/01_system_architecture.md`.
+- **Architecture**: If modifying system architecture, pipelines, or IPC schemas, read `../Obsidian.Agent/Phalanx/docs/01_system_architecture.md`.
 - **AI Agent & Tools**: If modifying ReAct loops, prompt schemas, or forensic tools, read `../Obsidian.Agent/Phalanx/docs/02_ai_agent_investigation_design.md`.
 - **Benchmarks**: If evaluating evasion scenarios or latency profiles, read `../Obsidian.Agent/Phalanx/docs/04_performance_benchmarks.md`.
 - **Handover & Roadmap**: If implementing new features or backlog items, read `../Obsidian.Agent/Phalanx/docs/03_implementation_roadmap.md`.
-- **Troubleshooting**: If debugging kernel, gRPC, or watchdog issues, read `../Obsidian.Agent/troubleshooting/phalanx.md` before coding.
+- **Troubleshooting**: If debugging or fixing errors, read `../Obsidian.Agent/troubleshooting/phalanx.md` before coding.
 </context_triggers>
 
 <post_action>

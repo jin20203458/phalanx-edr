@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.24)
 
+if (POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+endif()
+
 # vcpkg 툴체인 탐색 (우선순위: -DCMAKE_TOOLCHAIN_FILE > VCPKG_ROOT > %USERPROFILE%/vcpkg)
 # project() 호출 이전에 확정되어야 하므로 프리셋이 아닌 이 위치에서 결정합니다.
 if (NOT DEFINED CMAKE_TOOLCHAIN_FILE)

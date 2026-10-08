@@ -8,7 +8,8 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_MANIFEST_INSTALL": "OFF"
       }
     }
   ]

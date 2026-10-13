@@ -117,13 +117,13 @@ public class GeminiSettingsOnlyTests : IDisposable
         if (!File.Exists(BundledCredentials)) return; // 인증 파일이 없는 환경에서는 생성 경로를 검증할 수 없음
 
         string escaped = BundledCredentials.Replace("\\", "\\\\");
-        string settings = WriteSettings($$"""{ "UseVertexAI": true, "CredentialsPath": "{{escaped}}", "Location": "global", "ModelName": "gemini-3.7-flash" }""");
+        string settings = WriteSettings($$"""{ "UseVertexAI": true, "CredentialsPath": "{{escaped}}", "Location": "global", "ModelName": "gemini-3.8-flash" }""");
 
         var client = GeminiRestClient.TryCreateFromSettings(new HttpClient(), out var error, settings);
 
         Assert.NotNull(client);
         Assert.Null(error);
-        Assert.Equal("gemini-3.7-flash", client!.ModelName);
+        Assert.Equal("gemini-3.8-flash", client!.ModelName);
     }
 
     [Fact]
@@ -181,6 +181,6 @@ internal static class LiveGeminiTestConfig
     public static GeminiRestClient? CreateClient()
     {
         return GeminiRestClient.TryCreateVertexClient(
-            new HttpClient(), CredentialsPath, projectId: null, location: "global", modelName: "gemini-3.7-flash", out _);
+            new HttpClient(), CredentialsPath, projectId: null, location: "global", modelName: "gemini-3.8-flash", out _);
     }
 }

@@ -39,7 +39,7 @@ public class GeminiRestClient
     /// <summary>
     /// Google AI Studio API Key 기반 생성자
     /// </summary>
-    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-3.7-flash")
+    public GeminiRestClient(HttpClient httpClient, string apiKey, string modelName = "gemini-3.8-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
@@ -55,7 +55,7 @@ public class GeminiRestClient
         Func<CancellationToken, Task<string>> tokenProvider,
         string projectId,
         string location = "global",
-        string modelName = "gemini-3.7-flash")
+        string modelName = "gemini-3.8-flash")
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
@@ -104,7 +104,7 @@ public class GeminiRestClient
                     return null;
                 }
                 error = null;
-                return new GeminiRestClient(httpClient ?? new HttpClient(), apiKey, modelName ?? "gemini-3.7-flash");
+                return new GeminiRestClient(httpClient ?? new HttpClient(), apiKey, modelName ?? "gemini-3.8-flash");
             }
 
             string? credentialsPath = ReadString(gemini, "CredentialsPath");
@@ -178,7 +178,7 @@ public class GeminiRestClient
                 tokenProvider: async (ct) => await ((ITokenAccess)googleCred).GetAccessTokenForRequestAsync(null, ct),
                 projectId: effectiveProjectId,
                 location: string.IsNullOrWhiteSpace(location) ? "global" : location.ToLowerInvariant(),
-                modelName: string.IsNullOrWhiteSpace(modelName) ? "gemini-3.7-flash" : modelName
+                modelName: string.IsNullOrWhiteSpace(modelName) ? "gemini-3.8-flash" : modelName
             );
         }
         catch (Exception ex)

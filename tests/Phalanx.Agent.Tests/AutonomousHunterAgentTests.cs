@@ -611,7 +611,7 @@ public class AutonomousHunterAgentTests
         var detailedResults = new List<object>();
 
         _output.WriteLine("=========================================================================================");
-        _output.WriteLine("   PHALANX GEMINI 3.7 FLASH 멀티 시나리오 평균 턴 수 & 지연시간 실측 벤치마크 (Live 10 Scenarios)   ");
+        _output.WriteLine("   PHALANX GEMINI 3.8 FLASH 멀티 시나리오 평균 턴 수 & 지연시간 실측 벤치마크 (Live 10 Scenarios)   ");
         _output.WriteLine("=========================================================================================");
 
         foreach (var sc in scenarios)

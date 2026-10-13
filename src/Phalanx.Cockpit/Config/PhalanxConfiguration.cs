@@ -15,7 +15,7 @@ public class GeminiSettings
 {
     public string ProjectId { get; set; } = "";
     public string Location { get; set; } = "global";
-    public string ModelName { get; set; } = "gemini-3.7-flash";
+    public string ModelName { get; set; } = "gemini-3.8-flash";
     public string ApiKey { get; set; } = "";
     public bool UseVertexAI { get; set; } = true;
     public string CredentialsPath { get; set; } = "";

@@ -186,7 +186,7 @@ public class SettingsViewModelTests
 
         // 2. AI 엔진 표시: 입력 폼 값이 아닌 실제 적용 상태 (에이전트 미연결 시 LOCAL OFFLINE, 공급사 명칭 미노출)
         vm.UseVertexAi = true;
-        vm.SelectedModel = "gemini-3.7-flash";
+        vm.SelectedModel = "gemini-3.8-flash";
         Assert.Equal("LOCAL OFFLINE", vm.ActiveAiModelText);
         Assert.DoesNotContain("Gemini", vm.ActiveAiModelText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Google", vm.ActiveAiModelText, StringComparison.OrdinalIgnoreCase);
@@ -385,13 +385,13 @@ public class SettingsViewModelTests
 
             // 유효 API 키 입력 및 저장
             vm.GeminiApiKey = "AIzaSyValidDummyApiKey";
-            vm.SelectedModel = "gemini-3.7-flash";
+            vm.SelectedModel = "gemini-3.8-flash";
             vm.SaveSettingsCommand.Execute(null);
 
             // 검증: 에이전트가 온라인으로 즉시 전환
             Assert.True(agent.IsOnlineGemini);
             Assert.Contains("CLOUD LLM", vm.AppliedEngineStatusText);
-            Assert.Contains("gemini-3.7-flash", vm.AppliedEngineStatusText);
+            Assert.Contains("gemini-3.8-flash", vm.AppliedEngineStatusText);
 
             // 검증: UiBridge를 통해 전체 UI로 즉시 브로드캐스트됨
             Assert.NotNull(notifiedStatus);

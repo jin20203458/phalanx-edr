@@ -37,7 +37,6 @@ public record SafetySetting(
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ThinkingLevel
 {
-    minimal,
     low,
     medium,
     high
@@ -79,7 +78,7 @@ public record UsageMetadata(
 
 #region Structured AI Investigation Models (ReAct Response)
 /// <summary>
-/// Gemini 2.0 Flash가 반환하는 구조화된 수사 판단 및 액션 DTO
+/// Gemini 3.8 Flash가 반환하는 구조화된 수사 판단 및 액션 DTO
 /// </summary>
 public record AiInvestigationDecision(
     [property: JsonPropertyName("thought")] string Thought,

@@ -38,7 +38,7 @@ public class PhalanxConfigurationTests : IDisposable
         var config = PhalanxConfigurationManager.Load(nonExistentPath);
 
         Assert.NotNull(config);
-        Assert.Equal("gemini-3.7-flash", config.Gemini.ModelName);
+        Assert.Equal("gemini-3.8-flash", config.Gemini.ModelName);
         Assert.Equal("global", config.Gemini.Location);
         Assert.True(config.Gemini.UseVertexAI);
         Assert.Equal(5, config.Gemini.MaxSteps);
@@ -61,7 +61,7 @@ public class PhalanxConfigurationTests : IDisposable
           "Gemini": {
             "ProjectId": "my-vertex-proj",
             "Location": "asia-northeast3",
-            "ModelName": "gemini-3.7-flash",
+            "ModelName": "gemini-3.8-flash",
             "CredentialsPath": "config/service-account.json",
             "ApiKey": "test-key-1234",
             "UseVertexAI": true,

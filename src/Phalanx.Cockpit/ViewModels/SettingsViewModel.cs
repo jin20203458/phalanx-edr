@@ -155,11 +155,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     private string _vertexLocation = "global";
 
     [ObservableProperty]
-    private string _selectedModel = "gemini-3.7-flash";
+    private string _selectedModel = "gemini-3.8-flash";
 
     public IReadOnlyList<string> AvailableModels { get; } = new List<string>
     {
-        "gemini-3.7-flash",
+        "gemini-3.8-flash",
         "gemini-3.5-flash",
         "gemini-2.5-flash",
         "gemini-1.5-flash",
@@ -887,7 +887,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         UseVertexAi = true;
         VertexProjectId = "grc0-494913";
         VertexLocation = "global";
-        SelectedModel = "gemini-3.7-flash";
+        SelectedModel = "gemini-3.8-flash";
         CredentialsPath = "Config/google-credentials.json";
         GeminiApiKey = string.Empty;
         MaxSteps = 5;

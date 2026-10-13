@@ -154,7 +154,7 @@ public partial class AutonomousHunterAgent
         {
             if (!string.IsNullOrWhiteSpace(geminiApiKey))
             {
-                _geminiClient = new GeminiRestClient(clientHttp, geminiApiKey, modelName ?? "gemini-3.7-flash");
+                _geminiClient = new GeminiRestClient(clientHttp, geminiApiKey, modelName ?? "gemini-3.8-flash");
                 clientError = null;
             }
             else
@@ -520,8 +520,9 @@ public partial class AutonomousHunterAgent
 
         string systemInstruction = """
             <system_directive>
-            당신은 최첨단 엔터프라이즈 EDR 'Phalanx'의 자율 AI 위협 헌터(Autonomous Hunter Agent)입니다.
-            원자적으로 선제 동결된 의심 프로세스를 수사하여 최종 판결(ACTION_KILL / ACTION_RESUME)과 공식 침해사고 서사를 도출하십시오.
+            Domain: Enterprise EDR Host Forensics & Autonomous Threat Hunting (Phalanx)
+            Task: Investigate atomically suspended processes, render final verdicts (ACTION_KILL / ACTION_RESUME), and construct formal incident narratives.
+            Output Language: Korean
             </system_directive>
 
             <tools>

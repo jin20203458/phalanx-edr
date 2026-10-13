@@ -121,7 +121,7 @@ Phalanx는 외부 API 연동 없는 오프라인 모드를 기본으로 지원�
 | 모드 | 네트워크 요구사항 | 추론 엔진 | 설정 방법 |
 | :--- | :--- | :--- | :--- |
 | **Offline Mode (Default)** | 완전 격리 (오프라인) | 로컬 Fallback ReAct 엔진 | 별도 설정 불필요 (`LOCAL FALLBACK`) |
-| **Cloud LLM Mode** | 아웃바운드 인터넷 | Google Gemini 3.7 Flash | API 키 등록 (`CLOUD LLM`) |
+| **Cloud LLM Mode** | 아웃바운드 인터넷 | Google Gemini 3.8 Flash | API 키 등록 (`CLOUD LLM`) |
 
 ### Gemini 클라우드 API 설정
 
@@ -131,7 +131,7 @@ Phalanx는 외부 API 연동 없는 오프라인 모드를 기본으로 지원�
 {
   "Gemini": {
     "ApiKey": "YOUR_GEMINI_API_KEY",
-    "ModelName": "gemini-3.7-flash",
+    "ModelName": "gemini-3.8-flash",
     "UseVertexAI": false
   }
 }
